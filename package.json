@@ -103,5 +103,11 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.14.2",
     "zustand": "^5.0.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "core-js",
+      "esbuild"
+    ]
   }
 }
