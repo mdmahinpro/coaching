@@ -1,0 +1,35 @@
+# SPA rewrite rules and security headers
+# This file is copied to dist/ by Vite's public/ handling.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # ── React Router SPA fallback ─────────────────────────────────────
+  # Any request that doesn't match an existing file or directory
+  # is rewritten to index.html so the client-side router can handle it.
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# ── Security headers ────────────────────────────────────────────────
+
+<IfModule mod_headers.c>
+  # Force HTTPS for 1 year (including subdomains). Set to "max-age=0"
+  # during initial testing to avoid lock-in before TLS is ready.
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+  # Prevent browsers from MIME-sniffing a response away from the declared
+  # Content-Type — stops "text/html" serving of script files.
+  Header always set X-Content-Type-Options "nosniff"
+
+  # Deny framing from any origin (clickjacking defence). Change to
+  # ALLOW-FROM https://trusted.example.com if you embed in a trusted site.
+  Header always set X-Frame-Options "SAMEORIGIN"
+
+  # Enable browser XSS filter (legacy browsers). Modern CSP is preferred
+  # but this provides a safety net on older engines.
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
