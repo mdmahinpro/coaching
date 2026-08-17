@@ -15,7 +15,9 @@ export async function sendSMS(
   senderId = 'CoachMS'
 ): Promise<SMSResult> {
   const phoneArr = Array.isArray(phones) ? phones : [phones];
-  if (!phoneArr.length) return { sent: 0, failed: 0 };
+  if (!phoneArr.length) {
+    return { sent: 0, failed: 0 };
+  }
 
   let sentCount = 0;
   let failedCount = 0;
@@ -55,7 +57,7 @@ export async function sendSMS(
   // Log to DB
   try {
     await supabase.from('sms_logs').insert(
-      phoneArr.map(p => ({
+      phoneArr.map((p) => ({
         phone: p,
         message,
         type,

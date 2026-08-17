@@ -7,7 +7,16 @@ import { Avatar } from '@/components/shared/Avatar';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { Plus, Search, Pencil, Trash2, Download, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  Download,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { motion } from 'framer-motion';
@@ -43,8 +52,12 @@ const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
 const PAGE_SIZE = 20;
 
 const statusBadge = (s: string) => {
-  if (s === 'active') return <span className="badge-green">Active</span>;
-  if (s === 'inactive') return <span className="badge-yellow">Inactive</span>;
+  if (s === 'active') {
+    return <span className="badge-green">Active</span>;
+  }
+  if (s === 'inactive') {
+    return <span className="badge-yellow">Inactive</span>;
+  }
   return <span className="badge-red">Suspended</span>;
 };
 
@@ -67,14 +80,21 @@ export default function StudentsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase.from('students')
+      let query = supabase
+        .from('students')
         .select('*, batch:batches(id,name)', { count: 'exact' })
         .order('created_at', { ascending: false })
         .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-      if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,student_id.ilike.%${q}%`);
-      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
-      if (batchFilter !== 'all') query = query.eq('batch_id', batchFilter);
+      if (q) {
+        query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,student_id.ilike.%${q}%`);
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+      if (batchFilter !== 'all') {
+        query = query.eq('batch_id', batchFilter);
+      }
 
       const { data, count } = await query;
       const cleaned = (data ?? []).map((s: any) => ({
@@ -91,20 +111,29 @@ export default function StudentsPage() {
     }
   }, [q, statusFilter, batchFilter, page]);
 
-  useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    supabase.from('batches').select('id,name').eq('is_active', true)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
-        setBatches(cleaned);
-      },
-      (err: any) => {
-        handleSupabaseError(err);
-      });
+    load();
+  }, [load]);
+  useEffect(() => {
+    supabase
+      .from('batches')
+      .select('id,name')
+      .eq('is_active', true)
+      .then(
+        ({ data }) => {
+          const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
+          setBatches(cleaned);
+        },
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      );
   }, []);
 
   // Reset to page 1 on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, batchFilter]);
+  useEffect(() => {
+    setPage(1);
+  }, [q, statusFilter, batchFilter]);
 
   const handleSave = async (data: any) => {
     try {
@@ -112,7 +141,10 @@ export default function StudentsPage() {
         // Separate password from other fields for update
         const { password, ...updateFields } = data;
         const { error } = await supabase.from('students').update(updateFields).eq('id', editing.id);
-        if (error) { toast.error('Update failed'); return; }
+        if (error) {
+          toast.error('Update failed');
+          return;
+        }
         // If password was provided, hash it via RPC
         if (password && password.trim()) {
           await supabase.rpc('change_student_password', {
@@ -148,7 +180,10 @@ export default function StudentsPage() {
           p_is_approved: data.is_approved ?? true,
           p_photo_url: data.photo_url ?? null,
         });
-        if (error) { toast.error('Failed to add student: ' + error.message); return; }
+        if (error) {
+          toast.error('Failed to add student: ' + error.message);
+          return;
+        }
         // Update batch enrolled count
         if (data.batch_id) {
           await supabase.rpc('increment_enrolled', { batch_uuid: data.batch_id });
@@ -164,13 +199,18 @@ export default function StudentsPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget) {
+      return;
+    }
     try {
       // Remove related records before deleting the student to avoid orphaned rows
       await supabase.from('mcq_submissions').delete().eq('student_id', deleteTarget.id);
       await supabase.from('fees').delete().eq('student_id', deleteTarget.id);
       const { error } = await supabase.from('students').delete().eq('id', deleteTarget.id);
-      if (error) { toast.error('Delete failed'); return; }
+      if (error) {
+        toast.error('Delete failed');
+        return;
+      }
       // Decrement enrolled count for the student's batch
       if (deleteTarget.batch_id) {
         await supabase.rpc('decrement_enrolled', { batch_uuid: deleteTarget.batch_id });
@@ -184,14 +224,30 @@ export default function StudentsPage() {
   };
 
   const csvExport = () => {
-    const headers = ['Student ID', 'Name', 'Guardian', 'Phone', 'Email', 'Class', 'Batch', 'Status', 'Joined'];
-    const rows = students.map(s => [
-      s.student_id ?? '', s.name, s.guardian_name ?? '', s.phone,
-      s.email ?? '', s.class_level ?? '', s.batch?.name ?? '',
-      s.status, formatDate(s.created_at),
+    const headers = [
+      'Student ID',
+      'Name',
+      'Guardian',
+      'Phone',
+      'Email',
+      'Class',
+      'Batch',
+      'Status',
+      'Joined',
+    ];
+    const rows = students.map((s) => [
+      s.student_id ?? '',
+      s.name,
+      s.guardian_name ?? '',
+      s.phone,
+      s.email ?? '',
+      s.class_level ?? '',
+      s.batch?.name ?? '',
+      s.status,
+      formatDate(s.created_at),
     ]);
     const csv = [headers, ...rows]
-      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const a = document.createElement('a');
     const csvUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
@@ -211,10 +267,13 @@ export default function StudentsPage() {
           {/* Row 1: search + actions */}
           <div className="flex flex-col sm:flex-row gap-3 justify-between">
             <div className="relative max-w-xs w-full">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+              />
               <input
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={(e) => setSearch(e.target.value)}
                 className="input-field pl-9 py-2 text-sm"
                 placeholder="Name, ID or phone…"
               />
@@ -224,7 +283,10 @@ export default function StudentsPage() {
                 <Download size={14} /> CSV Export
               </button>
               <button
-                onClick={() => { setEditing(null); setModalOpen(true); }}
+                onClick={() => {
+                  setEditing(null);
+                  setModalOpen(true);
+                }}
                 className="btn-primary text-sm py-2"
               >
                 <Plus size={15} /> নতুন ছাত্র
@@ -234,7 +296,7 @@ export default function StudentsPage() {
 
           {/* Row 2: filters */}
           <div className="flex flex-wrap gap-2 items-center">
-            {STATUS_FILTERS.map(f => (
+            {STATUS_FILTERS.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setStatusFilter(f.id)}
@@ -245,15 +307,17 @@ export default function StudentsPage() {
             ))}
             <select
               value={batchFilter}
-              onChange={e => setBatchFilter(e.target.value)}
+              onChange={(e) => setBatchFilter(e.target.value)}
               className="input-field py-1.5 text-sm max-w-[180px]"
             >
               <option value="all">All Batches</option>
-              {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
             </select>
-            {total > 0 && (
-              <span className="text-slate-500 text-xs ml-auto">{total} students</span>
-            )}
+            {total > 0 && <span className="text-slate-500 text-xs ml-auto">{total} students</span>}
           </div>
         </div>
 
@@ -277,7 +341,13 @@ export default function StudentsPage() {
           ) : students.length === 0 ? (
             <div className="py-16 text-center">
               <p className="text-slate-500 text-sm">No students found.</p>
-              <button onClick={() => { setEditing(null); setModalOpen(true); }} className="btn-primary mt-4 text-sm">
+              <button
+                onClick={() => {
+                  setEditing(null);
+                  setModalOpen(true);
+                }}
+                className="btn-primary mt-4 text-sm"
+              >
                 <Plus size={14} /> Add First Student
               </button>
             </div>
@@ -289,8 +359,12 @@ export default function StudentsPage() {
                     <input
                       type="checkbox"
                       className="rounded accent-sky-400"
-                      checked={students.length > 0 && students.every(s => selectedIds.has(s.id))}
-                      onChange={e => setSelectedIds(e.target.checked ? new Set(students.map(s => s.id)) : new Set())}
+                      checked={students.length > 0 && students.every((s) => selectedIds.has(s.id))}
+                      onChange={(e) =>
+                        setSelectedIds(
+                          e.target.checked ? new Set(students.map((s) => s.id)) : new Set()
+                        )
+                      }
                     />
                   </th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium">Student</th>
@@ -316,11 +390,17 @@ export default function StudentsPage() {
                         type="checkbox"
                         className="rounded accent-sky-400"
                         checked={selectedIds.has(s.id)}
-                        onChange={e => setSelectedIds(prev => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(s.id); else next.delete(s.id);
-                          return next;
-                        })}
+                        onChange={(e) =>
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) {
+                              next.add(s.id);
+                            } else {
+                              next.delete(s.id);
+                            }
+                            return next;
+                          })
+                        }
                       />
                     </td>
                     <td className="px-4 py-3">
@@ -328,7 +408,9 @@ export default function StudentsPage() {
                         <Avatar name={s.name} size="sm" src={s.photo_url} />
                         <div>
                           <p className="font-medium text-white text-sm">{s.name}</p>
-                          <p className="text-slate-500 text-xs truncate max-w-[140px]">{s.email || s.guardian_name || '—'}</p>
+                          <p className="text-slate-500 text-xs truncate max-w-[140px]">
+                            {s.email || s.guardian_name || '—'}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -338,7 +420,11 @@ export default function StudentsPage() {
                     <td className="px-4 py-3 text-slate-300 text-sm">{s.class_level || '—'}</td>
                     <td className="px-4 py-3 text-slate-300 text-sm">{s.phone}</td>
                     <td className="px-4 py-3">
-                      {s.batch?.name ? <span className="badge-blue text-xs">{s.batch.name}</span> : <span className="text-slate-600">—</span>}
+                      {s.batch?.name ? (
+                        <span className="badge-blue text-xs">{s.batch.name}</span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">{statusBadge(s.status)}</td>
                     <td className="px-4 py-3">
@@ -351,7 +437,10 @@ export default function StudentsPage() {
                           <Eye size={14} />
                         </button>
                         <button
-                          onClick={() => { setEditing(s); setModalOpen(true); }}
+                          onClick={() => {
+                            setEditing(s);
+                            setModalOpen(true);
+                          }}
                           className="p-1.5 rounded-lg hover:bg-violet-500/15 text-slate-400 hover:text-violet-400 transition-colors"
                           title="Edit"
                         >
@@ -405,19 +494,37 @@ export default function StudentsPage() {
                       <p className="font-semibold text-white truncate">{s.name}</p>
                       {statusBadge(s.status)}
                     </div>
-                    {s.student_id && <p className="font-mono text-sky-400 text-xs">{s.student_id}</p>}
-                    <p className="text-slate-500 text-xs">{s.phone} · {s.class_level || '—'}</p>
-                    {s.batch?.name && <span className="badge-blue text-xs mt-1 inline-block">{s.batch.name}</span>}
+                    {s.student_id && (
+                      <p className="font-mono text-sky-400 text-xs">{s.student_id}</p>
+                    )}
+                    <p className="text-slate-500 text-xs">
+                      {s.phone} · {s.class_level || '—'}
+                    </p>
+                    {s.batch?.name && (
+                      <span className="badge-blue text-xs mt-1 inline-block">{s.batch.name}</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2 border-t border-white/5 pt-3">
-                  <button onClick={() => setDrawerStudent(s)} className="btn-outline flex-1 justify-center text-xs py-1.5">
+                  <button
+                    onClick={() => setDrawerStudent(s)}
+                    className="btn-outline flex-1 justify-center text-xs py-1.5"
+                  >
                     <Eye size={13} /> View
                   </button>
-                  <button onClick={() => { setEditing(s); setModalOpen(true); }} className="btn-outline flex-1 justify-center text-xs py-1.5">
+                  <button
+                    onClick={() => {
+                      setEditing(s);
+                      setModalOpen(true);
+                    }}
+                    className="btn-outline flex-1 justify-center text-xs py-1.5"
+                  >
                     <Pencil size={13} /> Edit
                   </button>
-                  <button onClick={() => setDeleteTarget(s)} className="btn-danger flex-none py-1.5 px-3 text-xs">
+                  <button
+                    onClick={() => setDeleteTarget(s)}
+                    className="btn-danger flex-none py-1.5 px-3 text-xs"
+                  >
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -434,7 +541,7 @@ export default function StudentsPage() {
             </p>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="w-8 h-8 flex items-center justify-center rounded-lg border border-navy-700 text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
@@ -458,7 +565,7 @@ export default function StudentsPage() {
                 );
               })}
               <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 className="w-8 h-8 flex items-center justify-center rounded-lg border border-navy-700 text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
@@ -473,7 +580,10 @@ export default function StudentsPage() {
       <StudentDrawer
         student={drawerStudent}
         onClose={() => setDrawerStudent(null)}
-        onStatusChange={() => { load(); setDrawerStudent(null); }}
+        onStatusChange={() => {
+          load();
+          setDrawerStudent(null);
+        }}
       />
 
       {/* Add/Edit Modal */}
@@ -482,7 +592,10 @@ export default function StudentsPage() {
         student={editing ? { ...editing } : undefined}
         batches={batches}
         onSave={handleSave}
-        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onClose={() => {
+          setModalOpen(false);
+          setEditing(null);
+        }}
       />
 
       {/* Delete Confirm */}

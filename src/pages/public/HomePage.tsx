@@ -192,7 +192,7 @@ export default function HomePage() {
                     <Star key={j} size={14} className="text-amber-400 fill-amber-400" />
                   ))}
                 </div>
-                <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">"{t.text}"</p>
+                <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3 border-t border-white/5 pt-4">
                   <Avatar name={t.name} size="sm" />
                   <div>

@@ -71,32 +71,32 @@ export const defaults: Settings = {
 
 /* ── key mapping: Settings field ↔ site_settings.key ── */
 export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
-  centerName:       'institute_name',
-  centerTagline:    'tagline',
-  centerAddress:    'address',
-  centerPhone:      'phone',
-  centerEmail:      'email',
-  centerWhatsapp:   'whatsapp',
-  currency:         'currency',
-  logoUrl:          'logo_url',
-  bannerUrl:        'banner_url',
-  heroTitle:        'hero_title',
-  heroSubtitle:     'hero_subtitle',
-  admissionOpen:    'admission_open',
-  bkashNumber:      'bkash_number',
-  nagadNumber:      'nagad_number',
-  admissionFee:     'admission_fee',
-  smsApiKey:        'sms_api_key',
-  smsSenderId:      'sms_sender_id',
-  statStudents:     'stat_students',
-  statTeachers:     'stat_teachers',
-  statBatches:      'stat_batches',
-  statSuccessRate:  'stat_success_rate',
-  statAutoFromDb:   'stat_auto_from_db',
-  socialFacebook:   'social_facebook',
-  socialYoutube:    'social_youtube',
-  socialInstagram:  'social_instagram',
-  primaryColor:     'primary_color',
+  centerName: 'institute_name',
+  centerTagline: 'tagline',
+  centerAddress: 'address',
+  centerPhone: 'phone',
+  centerEmail: 'email',
+  centerWhatsapp: 'whatsapp',
+  currency: 'currency',
+  logoUrl: 'logo_url',
+  bannerUrl: 'banner_url',
+  heroTitle: 'hero_title',
+  heroSubtitle: 'hero_subtitle',
+  admissionOpen: 'admission_open',
+  bkashNumber: 'bkash_number',
+  nagadNumber: 'nagad_number',
+  admissionFee: 'admission_fee',
+  smsApiKey: 'sms_api_key',
+  smsSenderId: 'sms_sender_id',
+  statStudents: 'stat_students',
+  statTeachers: 'stat_teachers',
+  statBatches: 'stat_batches',
+  statSuccessRate: 'stat_success_rate',
+  statAutoFromDb: 'stat_auto_from_db',
+  socialFacebook: 'social_facebook',
+  socialYoutube: 'social_youtube',
+  socialInstagram: 'social_instagram',
+  primaryColor: 'primary_color',
 };
 
 /* Reverse map: db key → settings field */
@@ -105,13 +105,23 @@ const DB_TO_FIELD = Object.fromEntries(
 ) as Record<string, keyof Settings>;
 
 /* Fields that are stored as numbers in Settings */
-const NUMBER_FIELDS = new Set<keyof Settings>(['admissionFee','statStudents','statTeachers','statBatches','statSuccessRate']);
+const NUMBER_FIELDS = new Set<keyof Settings>([
+  'admissionFee',
+  'statStudents',
+  'statTeachers',
+  'statBatches',
+  'statSuccessRate',
+]);
 /* Fields that are stored as booleans */
-const BOOL_FIELDS   = new Set<keyof Settings>(['admissionOpen','statAutoFromDb']);
+const BOOL_FIELDS = new Set<keyof Settings>(['admissionOpen', 'statAutoFromDb']);
 
 function castValue(field: keyof Settings, raw: string): Settings[keyof Settings] {
-  if (BOOL_FIELDS.has(field))   return (raw === 'true') as any;
-  if (NUMBER_FIELDS.has(field)) return (Number(raw) ?? 0) as any;
+  if (BOOL_FIELDS.has(field)) {
+    return (raw === 'true') as any;
+  }
+  if (NUMBER_FIELDS.has(field)) {
+    return (Number(raw) ?? 0) as any;
+  }
   return raw as any;
 }
 
@@ -127,7 +137,9 @@ export const useSettingsStore = create<SettingsState>()(
       loadFromDB: async () => {
         try {
           const { data, error } = await supabase.from('site_settings').select('key,value');
-          if (error || !data) return;
+          if (error || !data) {
+            return;
+          }
 
           const patch: Partial<Settings> = {};
           for (const row of data) {
@@ -144,7 +156,9 @@ export const useSettingsStore = create<SettingsState>()(
 
           /* Apply primary color to CSS immediately */
           const color = patch.primaryColor ?? get().settings.primaryColor;
-          if (color) document.documentElement.style.setProperty('--primary', color);
+          if (color) {
+            document.documentElement.style.setProperty('--primary', color);
+          }
         } catch (err) {
           handleSupabaseError(err);
         }
@@ -153,13 +167,17 @@ export const useSettingsStore = create<SettingsState>()(
       saveToDB: async (s: Settings) => {
         try {
           const entries = (Object.keys(SETTINGS_KEY_MAP) as Array<keyof Settings>).map((field) => ({
-            key:   SETTINGS_KEY_MAP[field],
+            key: SETTINGS_KEY_MAP[field],
             value: String(s[field]),
           }));
 
           /* Batch upsert in one call */
-          const { error } = await supabase.from('site_settings').upsert(entries, { onConflict: 'key' });
-          if (error) throw new Error(error.message);
+          const { error } = await supabase
+            .from('site_settings')
+            .upsert(entries, { onConflict: 'key' });
+          if (error) {
+            throw new Error(error.message);
+          }
         } catch (err) {
           handleSupabaseError(err);
         }

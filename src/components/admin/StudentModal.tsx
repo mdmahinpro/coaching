@@ -41,23 +41,43 @@ async function compressImage(file: File): Promise<Blob> {
     img.onload = () => {
       const maxDim = 400;
       let { width, height } = img;
-      if (width > height && width > maxDim) { height = Math.round((height / width) * maxDim); width = maxDim; }
-      else if (height > maxDim) { width = Math.round((width / height) * maxDim); height = maxDim; }
+      if (width > height && width > maxDim) {
+        height = Math.round((height / width) * maxDim);
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round((width / height) * maxDim);
+        height = maxDim;
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
+      canvas.width = width;
+      canvas.height = height;
       canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
       let quality = 0.85;
       const attempt = () => {
-        canvas.toBlob(blob => {
-          if (!blob) { reject(new Error('Compression failed')); return; }
-          if (blob.size <= MAX_SIZE_KB * 1024 || quality <= 0.1) { resolve(blob); }
-          else { quality -= 0.1; attempt(); }
-        }, 'image/jpeg', quality);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Compression failed'));
+              return;
+            }
+            if (blob.size <= MAX_SIZE_KB * 1024 || quality <= 0.1) {
+              resolve(blob);
+            } else {
+              quality -= 0.1;
+              attempt();
+            }
+          },
+          'image/jpeg',
+          quality
+        );
       };
       attempt();
     };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
     img.src = url;
   });
 }
@@ -66,15 +86,23 @@ async function generateStudentId(): Promise<string> {
   const year = new Date().getFullYear().toString().slice(2);
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
-      const { data } = await supabase.from('students').select('student_id')
+      const { data } = await supabase
+        .from('students')
+        .select('student_id')
         .like('student_id', `CF${year}%`)
         .order('student_id', { ascending: false })
         .limit(1);
       const last = data?.[0]?.student_id;
       const lastSeq = last ? parseInt(last.slice(4)) : 0;
       const candidate = `CF${year}${String(lastSeq + 1).padStart(4, '0')}`;
-      const { data: existing } = await supabase.from('students').select('id').eq('student_id', candidate).maybeSingle();
-      if (!existing) return candidate;
+      const { data: existing } = await supabase
+        .from('students')
+        .select('id')
+        .eq('student_id', candidate)
+        .maybeSingle();
+      if (!existing) {
+        return candidate;
+      }
     } catch (err) {
       handleSupabaseError(err);
     }
@@ -82,14 +110,29 @@ async function generateStudentId(): Promise<string> {
   return `CF${year}${Date.now().toString().slice(-4)}`;
 }
 
-function Field({ label, error, children, required }: { label: string; error?: string; children: React.ReactNode; required?: boolean }) {
+function Field({
+  label,
+  error,
+  children,
+  required,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+  required?: boolean;
+}) {
   return (
     <div>
       <label className="text-xs text-slate-400 mb-1.5 block">
         {label} {required && <span className="text-red-400">*</span>}
       </label>
       {children}
-      {error && <p className="text-red-400 text-xs mt-1 flex items-center gap-1"><AlertCircle size={11} />{error}</p>}
+      {error && (
+        <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+          <AlertCircle size={11} />
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -102,7 +145,15 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
-  const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    control,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { status: 'active', is_approved: true },
   });
@@ -134,9 +185,13 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
 
   // Auto-fill portal password from guardian/student phone — only when adding a new student
   useEffect(() => {
-    if (student) return; // don't overwrite manually set passwords on edit
+    if (student) {
+      return;
+    } // don't overwrite manually set passwords on edit
     const pw = (guardianPhone || phone || '').slice(-6);
-    if (pw) setValue('password', pw);
+    if (pw) {
+      setValue('password', pw);
+    }
   }, [guardianPhone, phone, student]);
 
   const handlePhotoSelect = (file: File) => {
@@ -166,7 +221,9 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
         }
         const id = student?.id ?? crypto.randomUUID();
         const path = `student-photos/${id}.jpg`;
-        const { error: storErr } = await supabase.storage.from('avatars').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
+        const { error: storErr } = await supabase.storage
+          .from('avatars')
+          .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
         if (!storErr) {
           const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
           photo_url = `${urlData.publicUrl}?t=${Date.now()}`;
@@ -207,12 +264,17 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
             {/* Header */}
             <div className="sticky top-0 bg-navy-800/95 backdrop-blur-sm flex items-center justify-between px-6 py-4 border-b border-white/5 z-10">
               <div>
-                <h2 className="font-inter font-bold text-white">{student?.id ? 'Edit Student' : 'নতুন ছাত্র যোগ করুন'}</h2>
+                <h2 className="font-inter font-bold text-white">
+                  {student?.id ? 'Edit Student' : 'নতুন ছাত্র যোগ করুন'}
+                </h2>
                 {!student?.id && (
                   <p className="text-slate-500 text-xs mt-0.5">Student ID will be auto-generated</p>
                 )}
               </div>
-              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -226,12 +288,26 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                     className={`w-20 h-20 rounded-xl border-2 border-dashed flex items-center justify-center shrink-0 cursor-pointer transition-all overflow-hidden
                       ${dragOver ? 'border-sky-400 bg-sky-400/10' : 'border-navy-600 hover:border-sky-400/50 hover:bg-white/3'}`}
                     onClick={() => fileRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
                     onDragLeave={() => setDragOver(false)}
-                    onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) handlePhotoSelect(f); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      const f = e.dataTransfer.files[0];
+                      if (f?.type.startsWith('image/')) {
+                        handlePhotoSelect(f);
+                      }
+                    }}
                   >
                     {photoPreview ? (
-                      <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                      <img
+                        src={photoPreview}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <User size={24} className="text-slate-600" />
                     )}
@@ -244,15 +320,27 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                     >
                       <Upload size={14} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
                     </button>
-                    <p className="text-slate-600 text-xs">JPG/PNG, max {MAX_SIZE_KB}KB. Auto-compressed if larger.</p>
-                    {photoError && <p className="text-red-400 text-xs mt-1 flex items-center gap-1"><AlertCircle size={11} />{photoError}</p>}
+                    <p className="text-slate-600 text-xs">
+                      JPG/PNG, max {MAX_SIZE_KB}KB. Auto-compressed if larger.
+                    </p>
+                    {photoError && (
+                      <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle size={11} />
+                        {photoError}
+                      </p>
+                    )}
                   </div>
                   <input
                     ref={fileRef}
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoSelect(f); }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        handlePhotoSelect(f);
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -260,7 +348,11 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
               {/* Personal info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Full Name" required error={errors.name?.message}>
-                  <input {...register('name')} className="input-field" placeholder="Student's full name" />
+                  <input
+                    {...register('name')}
+                    className="input-field"
+                    placeholder="Student's full name"
+                  />
                 </Field>
                 <Field label="Phone" required error={errors.phone?.message}>
                   <input {...register('phone')} className="input-field" placeholder="01XXXXXXXXX" />
@@ -271,8 +363,23 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                 <Field label="Class Level">
                   <select {...register('class_level')} className="input-field">
                     <option value="">Select class</option>
-                    {['Class 6', 'Class 7', 'Class 8', 'JSC', 'Class 9', 'Class 10', 'SSC', 'Class 11', 'Class 12', 'HSC', 'IELTS', 'Admission Test'].map(c => (
-                      <option key={c} value={c}>{c}</option>
+                    {[
+                      'Class 6',
+                      'Class 7',
+                      'Class 8',
+                      'JSC',
+                      'Class 9',
+                      'Class 10',
+                      'SSC',
+                      'Class 11',
+                      'Class 12',
+                      'HSC',
+                      'IELTS',
+                      'Admission Test',
+                    ].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -285,21 +392,38 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                   </select>
                 </Field>
                 <Field label="Guardian Name">
-                  <input {...register('guardian_name')} className="input-field" placeholder="Parent / Guardian" />
+                  <input
+                    {...register('guardian_name')}
+                    className="input-field"
+                    placeholder="Parent / Guardian"
+                  />
                 </Field>
                 <Field label="Guardian Phone">
-                  <input {...register('guardian_phone')} className="input-field" placeholder="01XXXXXXXXX" />
+                  <input
+                    {...register('guardian_phone')}
+                    className="input-field"
+                    placeholder="01XXXXXXXXX"
+                  />
                 </Field>
                 <Field label="Assign Batch">
                   <select {...register('batch_id')} className="input-field">
                     <option value="">No batch</option>
-                    {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    {batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
                   </select>
                 </Field>
               </div>
 
               <Field label="Address">
-                <textarea {...register('address')} className="input-field" rows={2} placeholder="Full address" />
+                <textarea
+                  {...register('address')}
+                  className="input-field"
+                  rows={2}
+                  placeholder="Full address"
+                />
               </Field>
 
               {/* Status & Approval */}
@@ -335,24 +459,42 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
 
               {/* Portal password */}
               <div className="card p-4 border-dashed border-sky-400/20">
-                <p className="text-slate-400 text-xs mb-2">Portal Login Credentials (auto-generated)</p>
+                <p className="text-slate-400 text-xs mb-2">
+                  Portal Login Credentials (auto-generated)
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <p className="text-slate-600 text-[10px] mb-1">Email</p>
-                    <p className="font-mono text-sky-400 text-xs">{phone ? `${phone}@coaching.local` : '—'}</p>
+                    <p className="font-mono text-sky-400 text-xs">
+                      {phone ? `${phone}@coaching.local` : '—'}
+                    </p>
                   </div>
                   <Field label="Portal Password">
-                    <input {...register('password')} className="input-field font-mono text-sm" placeholder="Last 6 digits" />
+                    <input
+                      {...register('password')}
+                      className="input-field font-mono text-sm"
+                      placeholder="Last 6 digits"
+                    />
                   </Field>
                 </div>
               </div>
 
               {/* Footer actions */}
               <div className="flex gap-3 justify-end pt-2 border-t border-white/5">
-                <button type="button" onClick={onClose} className="btn-outline text-sm">Cancel</button>
-                <button type="submit" disabled={isSubmitting || uploading} className="btn-primary text-sm">
+                <button type="button" onClick={onClose} className="btn-outline text-sm">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || uploading}
+                  className="btn-primary text-sm"
+                >
                   <Save size={15} />
-                  {isSubmitting || uploading ? 'Saving…' : student?.id ? 'Update Student' : 'Add Student'}
+                  {isSubmitting || uploading
+                    ? 'Saving…'
+                    : student?.id
+                      ? 'Update Student'
+                      : 'Add Student'}
                 </button>
               </div>
             </form>

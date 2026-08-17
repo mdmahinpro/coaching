@@ -14,7 +14,9 @@ export function SuspendModal({ open, studentName, onConfirm, onCancel }: Props) 
   const [loading, setLoading] = useState(false);
 
   const handle = async () => {
-    if (!reason.trim()) return;
+    if (!reason.trim()) {
+      return;
+    }
     setLoading(true);
     await onConfirm(reason.trim());
     setLoading(false);
@@ -38,7 +40,10 @@ export function SuspendModal({ open, studentName, onConfirm, onCancel }: Props) 
             exit={{ opacity: 0, scale: 0.92 }}
             className="relative card-glass w-full max-w-md z-10 p-6"
           >
-            <button onClick={onCancel} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+            <button
+              onClick={onCancel}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
               <X size={18} />
             </button>
             <div className="flex items-start gap-3 mb-5">
@@ -48,7 +53,8 @@ export function SuspendModal({ open, studentName, onConfirm, onCancel }: Props) 
               <div>
                 <h3 className="font-inter font-semibold text-white mb-1">Suspend Student</h3>
                 <p className="text-slate-400 text-sm">
-                  Suspending <span className="text-white font-medium">{studentName}</span> will prevent portal login and stop future fee generation.
+                  Suspending <span className="text-white font-medium">{studentName}</span> will
+                  prevent portal login and stop future fee generation.
                 </p>
               </div>
             </div>
@@ -56,7 +62,7 @@ export function SuspendModal({ open, studentName, onConfirm, onCancel }: Props) 
               <label className="text-xs text-slate-400 mb-1.5 block">Reason for suspension *</label>
               <textarea
                 value={reason}
-                onChange={e => setReason(e.target.value)}
+                onChange={(e) => setReason(e.target.value)}
                 className="input-field"
                 rows={3}
                 placeholder="e.g. Non-payment of fees, disciplinary action…"
@@ -64,12 +70,10 @@ export function SuspendModal({ open, studentName, onConfirm, onCancel }: Props) 
               {!reason.trim() && <p className="text-xs text-slate-600 mt-1">Reason is required</p>}
             </div>
             <div className="flex gap-3 justify-end">
-              <button onClick={onCancel} className="btn-outline text-sm">Cancel</button>
-              <button
-                onClick={handle}
-                disabled={!reason.trim() || loading}
-                className="btn-danger"
-              >
+              <button onClick={onCancel} className="btn-outline text-sm">
+                Cancel
+              </button>
+              <button onClick={handle} disabled={!reason.trim() || loading} className="btn-danger">
                 {loading ? 'Suspending…' : 'Suspend Student'}
               </button>
             </div>

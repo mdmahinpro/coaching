@@ -11,10 +11,8 @@ const parsed = envSchema.safeParse({
 });
 
 if (!parsed.success) {
-  const issues = parsed.error.issues.map(i => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
-  throw new Error(
-    `Invalid environment variables:\n${issues}\nPlease check your .env file.`,
-  );
+  const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+  throw new Error(`Invalid environment variables:\n${issues}\nPlease check your .env file.`);
 }
 
 export const env = parsed.data;

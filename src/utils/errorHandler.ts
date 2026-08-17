@@ -9,7 +9,9 @@ export interface SupabaseError {
 }
 
 export function handleSupabaseError(error: unknown): void {
-  if (!error) return;
+  if (!error) {
+    return;
+  }
 
   let message = 'Something went wrong. Please try again.';
 

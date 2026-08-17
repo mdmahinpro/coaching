@@ -115,9 +115,9 @@ describe('useStudentStore', () => {
       error: null,
     } as any);
 
-    await expect(
-      useStudentStore.getState().login('01700000000', 'password123')
-    ).rejects.toThrow('আপনার অ্যাকাউন্ট এখনো অনুমোদিত হয়নি।');
+    await expect(useStudentStore.getState().login('01700000000', 'password123')).rejects.toThrow(
+      'আপনার অ্যাকাউন্ট এখনো অনুমোদিত হয়নি।'
+    );
   });
 
   it('login throws on suspended account', async () => {
@@ -136,9 +136,9 @@ describe('useStudentStore', () => {
       error: null,
     } as any);
 
-    await expect(
-      useStudentStore.getState().login('01700000000', 'password123')
-    ).rejects.toThrow('আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে।');
+    await expect(useStudentStore.getState().login('01700000000', 'password123')).rejects.toThrow(
+      'আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে।'
+    );
   });
 
   it('login throws on invalid credentials', async () => {
@@ -149,8 +149,8 @@ describe('useStudentStore', () => {
       error: null,
     } as any);
 
-    await expect(
-      useStudentStore.getState().login('01700000000', 'wrongpass')
-    ).rejects.toThrow('ফোন নম্বর বা পাসওয়ার্ড ভুল।');
+    await expect(useStudentStore.getState().login('01700000000', 'wrongpass')).rejects.toThrow(
+      'ফোন নম্বর বা পাসওয়ার্ড ভুল।'
+    );
   });
 });

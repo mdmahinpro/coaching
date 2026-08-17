@@ -22,14 +22,23 @@ interface Props<T extends { id?: string | number }> {
 }
 
 export function DataTable<T extends { id?: string | number }>({
-  columns, data, loading, emptyMessage, className, rowKey,
+  columns,
+  data,
+  loading,
+  emptyMessage,
+  className,
+  rowKey,
 }: Props<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const handleSort = (key: string) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
   };
 
   const sorted = sortKey
@@ -41,14 +50,16 @@ export function DataTable<T extends { id?: string | number }>({
       })
     : data;
 
-  if (loading) return <LoadingSkeleton rows={5} />;
+  if (loading) {
+    return <LoadingSkeleton rows={5} />;
+  }
 
   return (
     <div className={cn('overflow-x-auto', className)}>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-navy-700">
-            {columns.map(col => (
+            {columns.map((col) => (
               <th
                 key={String(col.key)}
                 className={cn(
@@ -60,11 +71,16 @@ export function DataTable<T extends { id?: string | number }>({
               >
                 <span className="flex items-center gap-1">
                   {col.header}
-                  {col.sortable && (
-                    sortKey === String(col.key)
-                      ? sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                      : <ChevronsUpDown size={14} className="opacity-40" />
-                  )}
+                  {col.sortable &&
+                    (sortKey === String(col.key) ? (
+                      sortDir === 'asc' ? (
+                        <ChevronUp size={14} />
+                      ) : (
+                        <ChevronDown size={14} />
+                      )
+                    ) : (
+                      <ChevronsUpDown size={14} className="opacity-40" />
+                    ))}
                 </span>
               </th>
             ))}
@@ -80,11 +96,14 @@ export function DataTable<T extends { id?: string | number }>({
           ) : (
             sorted.map((row, i) => (
               <tr
-                key={rowKey ? rowKey(row) : row.id ?? i}
+                key={rowKey ? rowKey(row) : (row.id ?? i)}
                 className="border-b border-navy-700/50 hover:bg-white/3 transition-colors"
               >
-                {columns.map(col => (
-                  <td key={String(col.key)} className={cn('px-4 py-3 text-slate-300', col.className)}>
+                {columns.map((col) => (
+                  <td
+                    key={String(col.key)}
+                    className={cn('px-4 py-3 text-slate-300', col.className)}
+                  >
                     {col.render
                       ? col.render(row)
                       : String((row as Record<string, unknown>)[String(col.key)] ?? '')}

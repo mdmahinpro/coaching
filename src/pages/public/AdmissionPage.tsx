@@ -64,7 +64,7 @@ export default function AdmissionPage() {
       ? ['name', 'email', 'phone', 'guardian_name', 'guardian_phone']
       : ['batch_id'];
     const ok = await trigger(fields);
-    if (ok) setStep(s => s + 1);
+    if (ok) {setStep(s => s + 1);}
   };
 
   const onSubmit = async (data: F) => {
@@ -262,7 +262,7 @@ export default function AdmissionPage() {
                 </div>
 
                 <p className="text-slate-500 text-xs">
-                  তথ্য নিশ্চিত করুন এবং "Submit Application" বাটনে ক্লিক করুন।
+                  তথ্য নিশ্চিত করুন এবং &quot;Submit Application&quot; বাটনে ক্লিক করুন।
                 </p>
 
                 <div className="pt-2 flex justify-between">

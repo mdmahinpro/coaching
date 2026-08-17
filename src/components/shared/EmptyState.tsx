@@ -18,9 +18,7 @@ export function EmptyState({
 }: Props) {
   return (
     <div className={cn('flex flex-col items-center justify-center py-16 text-center', className)}>
-      <div className="mb-4 text-slate-500">
-        {icon ?? <Inbox size={48} strokeWidth={1.2} />}
-      </div>
+      <div className="mb-4 text-slate-500">{icon ?? <Inbox size={48} strokeWidth={1.2} />}</div>
       <p className="text-lg font-semibold text-slate-400 mb-1">{title}</p>
       <p className="text-sm text-slate-500 mb-4">{description}</p>
       {action}

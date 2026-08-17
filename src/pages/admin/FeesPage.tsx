@@ -6,17 +6,44 @@ import toast from 'react-hot-toast';
 import { formatDate, formatCurrency, cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  DollarSign, TrendingUp, AlertTriangle, FileText, Send,
-  Search, Printer, RefreshCw, CheckCircle2, X, Loader2,
-  History, Eye, User, ChevronDown, ChevronUp,
+  DollarSign,
+  TrendingUp,
+  AlertTriangle,
+  FileText,
+  Send,
+  Search,
+  Printer,
+  RefreshCw,
+  CheckCircle2,
+  X,
+  Loader2,
+  History,
+  Eye,
+  User,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
 import { generateReceipt } from '@/lib/pdf';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { calculateFinalAmount, daysOverdue } from '@/utils/money';
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 const now = new Date();
 
 type Tab = 'overview' | 'generate' | 'record' | 'due' | 'audit';
@@ -43,7 +70,9 @@ async function logFeeAudit(params: {
   month?: string;
 }) {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     await supabase.from('fee_audit_logs').insert({
       fee_id: params.fee_id ?? null,
       action: params.action,
@@ -59,14 +88,6 @@ async function logFeeAudit(params: {
   }
 }
 
-const daysOverdue = (month: string): number => {
-  try {
-    const d = new Date(month + ' 01');
-    d.setMonth(d.getMonth() + 1, 0);
-    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
-  } catch { return 0; }
-};
-
 // ── Overview Tab ─────────────────────────────────────────────────────────────
 function OverviewTab() {
   const { settings } = useSettingsStore();
@@ -80,54 +101,86 @@ function OverviewTab() {
     setLoading(true);
     Promise.all([
       // Display table — joined, limited to 20 most recent
-      supabase.from('fees')
+      supabase
+        .from('fees')
         .select('*, student:students(name, student_id, photo_url), batch:batches(name)')
         .order('payment_date', { ascending: false })
         .limit(20),
       // Stats — all records, include note so we can use final_amount for collected
       supabase.from('fees').select('amount, status, month, note'),
-    ]).then(([{ data: displayData }, { data: statsData }]) => {
-      if (cancelled) return;
-      const cleaned = (displayData ?? []).map((p: any) => ({
-        ...p,
-        student: p.student ? { ...p.student, name: sanitize(p.student.name) } : p.student,
-        batch: p.batch ? { ...p.batch, name: sanitize(p.batch.name) } : p.batch,
-      }));
-      setPayments(cleaned);
-      const all = statsData ?? [];
-      const parseNote = (n: string | null) => { try { return JSON.parse(n || '{}'); } catch { return {}; } };
-      const nowLocal = new Date();
-      const thisMonth = `${MONTHS[nowLocal.getMonth()]} ${nowLocal.getFullYear()}`;
-      setFeeStats({
-        due: all.filter(p => p.month === thisMonth).reduce((s, p) => s + (p.amount ?? 0), 0),
-        collected: all.filter(p => p.status === 'paid').reduce((s, p) => {
-          const meta = parseNote(p.note);
-          return s + (meta.final_amount ?? p.amount ?? 0);
-        }, 0),
-        pending: all.filter(p => p.status === 'pending').reduce((s, p) => s + (p.amount ?? 0), 0),
-        overdue: all.filter(p => p.status === 'overdue').length,
-      });
-      setLoading(false);
-    }).catch((err) => {
-      if (!cancelled) {
-        handleSupabaseError(err);
+    ])
+      .then(([{ data: displayData }, { data: statsData }]) => {
+        if (cancelled) {
+          return;
+        }
+        const cleaned = (displayData ?? []).map((p: any) => ({
+          ...p,
+          student: p.student ? { ...p.student, name: sanitize(p.student.name) } : p.student,
+          batch: p.batch ? { ...p.batch, name: sanitize(p.batch.name) } : p.batch,
+        }));
+        setPayments(cleaned);
+        const all = statsData ?? [];
+        const parseNote = (n: string | null) => {
+          try {
+            return JSON.parse(n || '{}');
+          } catch {
+            return {};
+          }
+        };
+        const nowLocal = new Date();
+        const thisMonth = `${MONTHS[nowLocal.getMonth()]} ${nowLocal.getFullYear()}`;
+        setFeeStats({
+          due: all.filter((p) => p.month === thisMonth).reduce((s, p) => s + (p.amount ?? 0), 0),
+          collected: all
+            .filter((p) => p.status === 'paid')
+            .reduce((s, p) => {
+              const meta = parseNote(p.note);
+              return s + (meta.final_amount ?? p.amount ?? 0);
+            }, 0),
+          pending: all
+            .filter((p) => p.status === 'pending')
+            .reduce((s, p) => s + (p.amount ?? 0), 0),
+          overdue: all.filter((p) => p.status === 'overdue').length,
+        });
         setLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          handleSupabaseError(err);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const paid = payments.filter(p => p.status === 'paid');
+  const paid = payments.filter((p) => p.status === 'paid');
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'This Month Due', value: formatCurrency(feeStats.due), color: 'text-sky-400', icon: DollarSign },
-          { label: 'Collected', value: formatCurrency(feeStats.collected), color: 'text-emerald-400', icon: TrendingUp },
-          { label: 'Pending', value: formatCurrency(feeStats.pending), color: 'text-amber-400', icon: RefreshCw },
+          {
+            label: 'This Month Due',
+            value: formatCurrency(feeStats.due),
+            color: 'text-sky-400',
+            icon: DollarSign,
+          },
+          {
+            label: 'Collected',
+            value: formatCurrency(feeStats.collected),
+            color: 'text-emerald-400',
+            icon: TrendingUp,
+          },
+          {
+            label: 'Pending',
+            value: formatCurrency(feeStats.pending),
+            color: 'text-amber-400',
+            icon: RefreshCw,
+          },
           { label: 'Overdue', value: feeStats.overdue, color: 'text-red-400', icon: AlertTriangle },
-        ].map(s => (
+        ].map((s) => (
           <div key={s.label} className="card p-4">
             <div className="flex items-center gap-2 mb-2">
               <s.icon size={16} className={s.color} />
@@ -144,7 +197,9 @@ function OverviewTab() {
         </div>
         {loading ? (
           <div className="divide-y divide-navy-700/30">
-            {Array.from({length:5}).map((_,i) => <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />
+            ))}
           </div>
         ) : paid.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-10">No payments recorded yet</p>
@@ -153,27 +208,50 @@ function OverviewTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-navy-700/50">
-                  {['Receipt #','Student','Month','Amount','Method','Date',''].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-slate-400 font-medium whitespace-nowrap text-xs">{h}</th>
+                  {['Receipt #', 'Student', 'Month', 'Amount', 'Method', 'Date', ''].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-3 text-slate-400 font-medium whitespace-nowrap text-xs"
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {paid.slice(0, 20).map(p => {
-                  const meta = (() => { try { return JSON.parse(p.note || '{}'); } catch { return {}; } })();
+                {paid.slice(0, 20).map((p) => {
+                  const meta = (() => {
+                    try {
+                      return JSON.parse(p.note || '{}');
+                    } catch {
+                      return {};
+                    }
+                  })();
                   return (
                     <tr key={p.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
-                      <td className="px-4 py-3 font-mono text-sky-400 text-xs">{meta.receipt_no || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-sky-400 text-xs">
+                        {meta.receipt_no || '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Avatar name={p.student?.name || '?'} size="sm" src={p.student?.photo_url} />
+                          <Avatar
+                            name={p.student?.name || '?'}
+                            size="sm"
+                            src={p.student?.photo_url}
+                          />
                           <span className="text-white text-sm">{p.student?.name || '—'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-300 text-sm">{p.month}</td>
-                      <td className="px-4 py-3 font-medium text-emerald-400">{formatCurrency(meta.final_amount ?? p.amount ?? 0)}</td>
-                      <td className="px-4 py-3 text-slate-400 text-sm capitalize">{meta.payment_method || '—'}</td>
-                      <td className="px-4 py-3 text-slate-400 text-xs">{p.payment_date ? formatDate(p.payment_date) : '—'}</td>
+                      <td className="px-4 py-3 font-medium text-emerald-400">
+                        {formatCurrency(meta.final_amount ?? p.amount ?? 0)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-sm capitalize">
+                        {meta.payment_method || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {p.payment_date ? formatDate(p.payment_date) : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         {meta.receipt_no && (
                           <button
@@ -182,7 +260,9 @@ function OverviewTab() {
                               try {
                                 await generateReceipt({
                                   receiptNo: meta.receipt_no,
-                                  date: p.payment_date ? formatDate(p.payment_date) : formatDate(new Date().toISOString()),
+                                  date: p.payment_date
+                                    ? formatDate(p.payment_date)
+                                    : formatDate(new Date().toISOString()),
                                   studentName: p.student?.name || '',
                                   studentId: p.student?.student_id,
                                   batchName: p.batch?.name,
@@ -205,7 +285,11 @@ function OverviewTab() {
                             className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 transition-colors disabled:opacity-50"
                             title="Print Receipt"
                           >
-                            {genReceiptLoading ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+                            {genReceiptLoading ? (
+                              <Loader2 size={13} className="animate-spin" />
+                            ) : (
+                              <Printer size={13} />
+                            )}
                           </button>
                         )}
                       </td>
@@ -229,19 +313,30 @@ function GenerateTab({ batches }: { batches: any[] }) {
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [result, setResult] = useState<{ created: number; skippedExisting: number; skippedSuspended: number } | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    skippedExisting: number;
+    skippedSuspended: number;
+  } | null>(null);
 
   const loadPreview = useCallback(async () => {
     setLoading(true);
     setResult(null);
-    let q = supabase.from('students').select('*', { count: 'exact', head: true }).eq('status', 'active');
-    if (batchId !== 'all') q = q.eq('batch_id', batchId);
+    let q = supabase
+      .from('students')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+    if (batchId !== 'all') {
+      q = q.eq('batch_id', batchId);
+    }
     const { count } = await q;
     setPreviewCount(count ?? 0);
     setLoading(false);
   }, [batchId]);
 
-  useEffect(() => { loadPreview(); }, [loadPreview]);
+  useEffect(() => {
+    loadPreview();
+  }, [loadPreview]);
 
   const handleGenerate = async () => {
     const monthStr = `${month} ${year}`;
@@ -251,27 +346,38 @@ function GenerateTab({ batches }: { batches: any[] }) {
     try {
       // Fetch students
       let sq = supabase.from('students').select('id, name, batch_id, status');
-      if (batchId !== 'all') sq = sq.eq('batch_id', batchId);
+      if (batchId !== 'all') {
+        sq = sq.eq('batch_id', batchId);
+      }
       const { data: allStudents } = await sq;
 
-      const suspended = (allStudents ?? []).filter(s => s.status === 'suspended');
-      const active = (allStudents ?? []).filter(s => s.status === 'active');
+      const suspended = (allStudents ?? []).filter((s) => s.status === 'suspended');
+      const active = (allStudents ?? []).filter((s) => s.status === 'active');
 
       // Fetch existing fee records for this month — filter by student_id only, not batch_id,
       // so students who changed batches don't get duplicate fees generated.
-      const { data: existing } = await supabase.from('fees').select('student_id').eq('month', monthStr);
-      const existingIds = new Set((existing ?? []).map(e => e.student_id));
+      const { data: existing } = await supabase
+        .from('fees')
+        .select('student_id')
+        .eq('month', monthStr);
+      const existingIds = new Set((existing ?? []).map((e) => e.student_id));
 
-      const toCreate = active.filter(s => !existingIds.has(s.id));
+      const toCreate = active.filter((s) => !existingIds.has(s.id));
 
       // Get batch fee amounts — per-batch when generating for all batches
       const batchFeeMap: Record<string, number> = {};
       if (batchId !== 'all') {
-        const { data: bd } = await supabase.from('batches').select('monthly_fee').eq('id', batchId).single();
+        const { data: bd } = await supabase
+          .from('batches')
+          .select('monthly_fee')
+          .eq('id', batchId)
+          .single();
         batchFeeMap[batchId] = bd?.monthly_fee ?? 1500;
       } else {
         const { data: batchData } = await supabase.from('batches').select('id, monthly_fee');
-        (batchData ?? []).forEach(b => { batchFeeMap[b.id] = b.monthly_fee ?? 1500; });
+        (batchData ?? []).forEach((b) => {
+          batchFeeMap[b.id] = b.monthly_fee ?? 1500;
+        });
       }
 
       let created = 0;
@@ -279,7 +385,7 @@ function GenerateTab({ batches }: { batches: any[] }) {
         const due = new Date(`${monthStr} 01`);
         due.setDate(10); // due on 10th
         const { error } = await supabase.from('fees').insert(
-          toCreate.map(s => ({
+          toCreate.map((s) => ({
             student_id: s.id,
             batch_id: s.batch_id ?? null,
             amount: s.batch_id ? (batchFeeMap[s.batch_id] ?? 1500) : 1500,
@@ -310,14 +416,15 @@ function GenerateTab({ batches }: { batches: any[] }) {
       setResult({
         created,
         skippedExisting: active.length - toCreate.length,
-      skippedSuspended: suspended.length,
-    });
-    setGenerating(false);
-    toast.success(`Generated ${created} fee records!`);
-  } catch (err) {
-    handleSupabaseError(err);
-    setGenerating(false);
-  }};
+        skippedSuspended: suspended.length,
+      });
+      setGenerating(false);
+      toast.success(`Generated ${created} fee records!`);
+    } catch (err) {
+      handleSupabaseError(err);
+      setGenerating(false);
+    }
+  };
 
   const years = Array.from({ length: 4 }, (_, i) => String(now.getFullYear() - 1 + i));
 
@@ -328,22 +435,42 @@ function GenerateTab({ batches }: { batches: any[] }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-slate-400 mb-1.5 block">Month</label>
-            <select value={month} onChange={e => setMonth(e.target.value)} className="input-field">
-              {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+            <select
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="input-field"
+            >
+              {MONTHS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1.5 block">Year</label>
-            <select value={year} onChange={e => setYear(e.target.value)} className="input-field">
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            <select value={year} onChange={(e) => setYear(e.target.value)} className="input-field">
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
             </select>
           </div>
         </div>
         <div>
           <label className="text-xs text-slate-400 mb-1.5 block">Batch</label>
-          <select value={batchId} onChange={e => setBatchId(e.target.value)} className="input-field">
+          <select
+            value={batchId}
+            onChange={(e) => setBatchId(e.target.value)}
+            className="input-field"
+          >
             <option value="all">All Batches</option>
-            {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -357,10 +484,18 @@ function GenerateTab({ batches }: { batches: any[] }) {
         ) : (
           <div>
             <p className="text-white font-medium text-sm">
-              <span className="text-sky-400 font-bold text-lg">{previewCount}</span> active students will get fee records
+              <span className="text-sky-400 font-bold text-lg">{previewCount}</span> active students
+              will get fee records
             </p>
-            <p className="text-slate-500 text-xs mt-1">for <span className="text-white">{month} {year}</span></p>
-            <p className="text-amber-400/80 text-xs mt-2">⚠ Suspended students are automatically skipped</p>
+            <p className="text-slate-500 text-xs mt-1">
+              for{' '}
+              <span className="text-white">
+                {month} {year}
+              </span>
+            </p>
+            <p className="text-amber-400/80 text-xs mt-2">
+              ⚠ Suspended students are automatically skipped
+            </p>
           </div>
         )}
       </div>
@@ -370,7 +505,15 @@ function GenerateTab({ batches }: { batches: any[] }) {
         disabled={generating || loading}
         className="btn-primary w-full justify-center"
       >
-        {generating ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><FileText size={15} /> Generate Fees for {month} {year}</>}
+        {generating ? (
+          <>
+            <Loader2 size={15} className="animate-spin" /> Generating…
+          </>
+        ) : (
+          <>
+            <FileText size={15} /> Generate Fees for {month} {year}
+          </>
+        )}
       </button>
 
       {/* Result */}
@@ -427,37 +570,61 @@ function RecordPaymentTab() {
   const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!dq) { setResults([]); setShowDropdown(false); return; }
-    supabase.from('students')
+    if (!dq) {
+      setResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    supabase
+      .from('students')
       .select('id, name, student_id, phone, photo_url, batch:batches(id,name)')
       .or(`name.ilike.%${dq}%,student_id.ilike.%${dq}%`)
       .eq('status', 'active')
       .limit(8)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((s: any) => ({
-          ...s,
-          name: sanitize(s.name),
-          batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
-        }));
-        setResults(cleaned);
-        setShowDropdown(true);
-      },(err: any) => {  handleSupabaseError(err);});
+      .then(
+        ({ data }) => {
+          const cleaned = (data ?? []).map((s: any) => ({
+            ...s,
+            name: sanitize(s.name),
+            batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
+          }));
+          setResults(cleaned);
+          setShowDropdown(true);
+        },
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      );
   }, [dq]);
 
   useEffect(() => {
-    if (!selectedStudent) return;
-    supabase.from('fees')
+    if (!selectedStudent) {
+      return;
+    }
+    supabase
+      .from('fees')
       .select('*, batch:batches(name)')
       .eq('student_id', selectedStudent.id)
       .neq('status', 'paid')
       .order('due_date', { ascending: true })
-      .then(({ data }) => { setUnpaidFees((data ?? []).map((f: any) => ({ ...f, batch: { name: sanitize(f.batch?.name ?? '') } }))); },(err: any) => {  handleSupabaseError(err);});
+      .then(
+        ({ data }) => {
+          setUnpaidFees(
+            (data ?? []).map((f: any) => ({ ...f, batch: { name: sanitize(f.batch?.name ?? '') } }))
+          );
+        },
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      );
   }, [selectedStudent]);
 
-  const finalAmount = Math.max(0, (selectedFee?.amount ?? 0) - discount);
+  const finalAmount = calculateFinalAmount(selectedFee?.amount ?? 0, discount);
 
   const handleSave = async () => {
-    if (!selectedFee || !selectedStudent) return;
+    if (!selectedFee || !selectedStudent) {
+      return;
+    }
     setSaving(true);
     const receiptNo = generateReceiptNo();
     const meta = {
@@ -471,13 +638,20 @@ function RecordPaymentTab() {
       notes,
     };
 
-    const { error } = await supabase.from('fees').update({
-      status: 'paid',
-      payment_date: new Date().toISOString(),
-      note: JSON.stringify(meta),
-    }).eq('id', selectedFee.id);
+    const { error } = await supabase
+      .from('fees')
+      .update({
+        status: 'paid',
+        payment_date: new Date().toISOString(),
+        note: JSON.stringify(meta),
+      })
+      .eq('id', selectedFee.id);
 
-    if (error) { toast.error('Payment failed: ' + error.message); setSaving(false); return; }
+    if (error) {
+      toast.error('Payment failed: ' + error.message);
+      setSaving(false);
+      return;
+    }
 
     // Audit log — fire-and-forget, never blocks payment flow
     logFeeAudit({
@@ -502,19 +676,32 @@ function RecordPaymentTab() {
     if (sendSMSFlag && selectedStudent.phone) {
       try {
         const msg = `প্রিয় ${selectedStudent.name}, ৳${finalAmount} ফি গ্রহণ করা হয়েছে। রশিদ: ${receiptNo}। ধন্যবাদ - ${settings.centerName}`;
-        await sendSMS(selectedStudent.phone, msg, 'FEE_PAID', settings.smsApiKey, settings.smsSenderId);
+        await sendSMS(
+          selectedStudent.phone,
+          msg,
+          'FEE_PAID',
+          settings.smsApiKey,
+          settings.smsSenderId
+        );
       } catch (err) {
         handleSupabaseError(err);
       }
     }
 
     setSavedReceipt(receiptNo);
-    setSavedData({ ...meta, studentName: selectedStudent.name, studentId: selectedStudent.student_id, batchName: selectedFee.batch?.name, month: selectedFee.month, feeAmount: selectedFee.amount });
+    setSavedData({
+      ...meta,
+      studentName: selectedStudent.name,
+      studentId: selectedStudent.student_id,
+      batchName: selectedFee.batch?.name,
+      month: selectedFee.month,
+      feeAmount: selectedFee.amount,
+    });
     toast.success(`Payment recorded! Receipt: ${receiptNo}`);
     setSaving(false);
 
     // Reset for next payment
-    setUnpaidFees(prev => prev.filter(f => f.id !== selectedFee.id));
+    setUnpaidFees((prev) => prev.filter((f) => f.id !== selectedFee.id));
     setSelectedFee(null);
     setDiscount(0);
     setDiscountReason('');
@@ -523,7 +710,9 @@ function RecordPaymentTab() {
   };
 
   const printReceipt = async () => {
-    if (!savedData) return;
+    if (!savedData) {
+      return;
+    }
     try {
       await generateReceipt({
         receiptNo: savedReceipt!,
@@ -547,7 +736,12 @@ function RecordPaymentTab() {
     }
   };
 
-  const PAYMENT_METHODS: { id: 'cash' | 'bkash' | 'nagad'; label: string; icon: string; sub?: string }[] = [
+  const PAYMENT_METHODS: {
+    id: 'cash' | 'bkash' | 'nagad';
+    label: string;
+    icon: string;
+    sub?: string;
+  }[] = [
     { id: 'cash', label: 'Cash', icon: '💵' },
     { id: 'bkash', label: 'bKash', icon: '🅱️', sub: '01XXXXXXXXX' },
     { id: 'nagad', label: 'Nagad', icon: '🟠', sub: '01XXXXXXXXX' },
@@ -562,7 +756,12 @@ function RecordPaymentTab() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             value={query}
-            onChange={e => { setQuery(e.target.value); setSelectedStudent(null); setSelectedFee(null); setSavedReceipt(null); }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedStudent(null);
+              setSelectedFee(null);
+              setSavedReceipt(null);
+            }}
             className="input-field pl-9"
             placeholder="Name or Student ID…"
           />
@@ -574,10 +773,15 @@ function RecordPaymentTab() {
                 exit={{ opacity: 0, y: -4 }}
                 className="absolute top-full left-0 right-0 mt-1 card-glass border border-navy-600 z-20 max-h-52 overflow-y-auto"
               >
-                {results.map(s => (
+                {results.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => { setSelectedStudent(s); setQuery(s.name); setShowDropdown(false); setSavedReceipt(null); }}
+                    onClick={() => {
+                      setSelectedStudent(s);
+                      setQuery(s.name);
+                      setShowDropdown(false);
+                      setSavedReceipt(null);
+                    }}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
                   >
                     <Avatar name={s.name} size="sm" src={s.photo_url} />
@@ -595,7 +799,11 @@ function RecordPaymentTab() {
 
       <AnimatePresence>
         {selectedStudent && (
-          <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} className="space-y-4">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
             {/* Student card */}
             <div className="card p-4 flex items-center gap-4">
               <Avatar name={selectedStudent.name} size="md" src={selectedStudent.photo_url} />
@@ -616,13 +824,15 @@ function RecordPaymentTab() {
               <div>
                 <label className="text-xs text-slate-400 mb-2 block">Select Fee Record</label>
                 <div className="space-y-2">
-                  {unpaidFees.map(f => (
+                  {unpaidFees.map((f) => (
                     <button
                       key={f.id}
                       onClick={() => setSelectedFee(f)}
                       className={cn(
                         'w-full card p-3 flex items-center justify-between border-2 transition-all text-left',
-                        selectedFee?.id === f.id ? 'border-sky-400/60 bg-sky-400/5' : 'border-transparent hover:border-white/10'
+                        selectedFee?.id === f.id
+                          ? 'border-sky-400/60 bg-sky-400/5'
+                          : 'border-transparent hover:border-white/10'
                       )}
                     >
                       <div>
@@ -630,8 +840,16 @@ function RecordPaymentTab() {
                         <p className="text-slate-500 text-xs">{f.batch?.name}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-inter font-bold text-white">{formatCurrency(f.amount)}</p>
-                        <span className={f.status === 'overdue' ? 'badge-red text-xs' : 'badge-yellow text-xs'}>{f.status}</span>
+                        <p className="font-inter font-bold text-white">
+                          {formatCurrency(f.amount)}
+                        </p>
+                        <span
+                          className={
+                            f.status === 'overdue' ? 'badge-red text-xs' : 'badge-yellow text-xs'
+                          }
+                        >
+                          {f.status}
+                        </span>
                       </div>
                     </button>
                   ))}
@@ -651,35 +869,44 @@ function RecordPaymentTab() {
                       min={0}
                       max={selectedFee.amount}
                       value={discount}
-                      onChange={e => setDiscount(Number(e.target.value))}
+                      onChange={(e) => setDiscount(Number(e.target.value))}
                       className="input-field"
                       placeholder="0"
                     />
                   </div>
                   <div>
                     <label className="text-xs text-slate-400 mb-1.5 block">Reason</label>
-                    <input value={discountReason} onChange={e => setDiscountReason(e.target.value)} className="input-field" placeholder="Optional" />
+                    <input
+                      value={discountReason}
+                      onChange={(e) => setDiscountReason(e.target.value)}
+                      className="input-field"
+                      placeholder="Optional"
+                    />
                   </div>
                 </div>
 
                 {/* Final amount preview */}
                 <div className="card p-3 flex items-center justify-between">
                   <span className="text-slate-400 text-sm">Final Amount</span>
-                  <span className="font-inter font-black text-emerald-400 text-xl">{formatCurrency(finalAmount)}</span>
+                  <span className="font-inter font-black text-emerald-400 text-xl">
+                    {formatCurrency(finalAmount)}
+                  </span>
                 </div>
 
                 {/* Payment method */}
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Payment Method</label>
                   <div className="grid grid-cols-3 gap-2">
-                    {PAYMENT_METHODS.map(m => (
+                    {PAYMENT_METHODS.map((m) => (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => setPaymentMethod(m.id)}
                         className={cn(
                           'card p-3 flex flex-col items-center gap-1 border-2 transition-all',
-                          paymentMethod === m.id ? 'border-sky-400/60 bg-sky-400/5' : 'border-transparent hover:border-white/10'
+                          paymentMethod === m.id
+                            ? 'border-sky-400/60 bg-sky-400/5'
+                            : 'border-transparent hover:border-white/10'
                         )}
                       >
                         <span className="text-xl">{m.icon}</span>
@@ -694,41 +921,93 @@ function RecordPaymentTab() {
                 {paymentMethod !== 'cash' && (
                   <div>
                     <label className="text-xs text-slate-400 mb-1.5 block">Transaction ID</label>
-                    <input value={transactionId} onChange={e => setTransactionId(e.target.value)} className="input-field font-mono" placeholder="TRXXXXXXXXXXXXXXXID" />
+                    <input
+                      value={transactionId}
+                      onChange={(e) => setTransactionId(e.target.value)}
+                      className="input-field font-mono"
+                      placeholder="TRXXXXXXXXXXXXXXXID"
+                    />
                   </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-slate-400 mb-1.5 block">Received By</label>
-                    <input value={receivedBy} onChange={e => setReceivedBy(e.target.value)} className="input-field" placeholder="Staff name" />
+                    <input
+                      value={receivedBy}
+                      onChange={(e) => setReceivedBy(e.target.value)}
+                      className="input-field"
+                      placeholder="Staff name"
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-400 mb-1.5 block">Notes</label>
-                    <input value={notes} onChange={e => setNotes(e.target.value)} className="input-field" placeholder="Optional" />
+                    <input
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="input-field"
+                      placeholder="Optional"
+                    />
                   </div>
                 </div>
 
                 {/* SMS checkbox */}
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={sendSMSFlag} onChange={e => setSendSMSFlag(e.target.checked)} className="rounded accent-sky-400 w-4 h-4" />
+                  <input
+                    type="checkbox"
+                    checked={sendSMSFlag}
+                    onChange={(e) => setSendSMSFlag(e.target.checked)}
+                    className="rounded accent-sky-400 w-4 h-4"
+                  />
                   <span className="text-slate-400 text-sm">Send payment confirmation SMS</span>
                 </label>
 
-                <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
-                  {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><CheckCircle2 size={15} /> Record Payment</>}
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="btn-primary w-full justify-center"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={15} /> Record Payment
+                    </>
+                  )}
                 </button>
               </div>
             )}
 
             {/* Receipt success */}
             {savedReceipt && savedData && (
-              <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }} className="card p-4 border border-emerald-400/20 text-center">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="card p-4 border border-emerald-400/20 text-center"
+              >
                 <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
                 <p className="text-white font-semibold mb-1">Payment Recorded!</p>
                 <p className="font-mono text-sky-400 text-sm mb-3">{savedReceipt}</p>
-                <button onClick={async () => { setPrintReceiptLoading(true); await printReceipt(); setPrintReceiptLoading(false); }} disabled={printReceiptLoading} className="btn-outline justify-center w-full">
-                  {printReceiptLoading ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><Printer size={15} /> Print Receipt (PDF)</>}
+                <button
+                  onClick={async () => {
+                    setPrintReceiptLoading(true);
+                    await printReceipt();
+                    setPrintReceiptLoading(false);
+                  }}
+                  disabled={printReceiptLoading}
+                  className="btn-outline justify-center w-full"
+                >
+                  {printReceiptLoading ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Generating…
+                    </>
+                  ) : (
+                    <>
+                      <Printer size={15} /> Print Receipt (PDF)
+                    </>
+                  )}
                 </button>
               </motion.div>
             )}
@@ -757,23 +1036,34 @@ function DueReportTab({ batches }: { batches: any[] }) {
       const nowLoad = new Date();
       const thisMonthLoad = `${MONTHS[nowLoad.getMonth()]} ${nowLoad.getFullYear()}`;
       const lastMonthLoad = `${MONTHS[nowLoad.getMonth() === 0 ? 11 : nowLoad.getMonth() - 1]} ${nowLoad.getMonth() === 0 ? nowLoad.getFullYear() - 1 : nowLoad.getFullYear()}`;
-      let q = supabase.from('fees')
+      let q = supabase
+        .from('fees')
         .select('*, student:students(id, name, student_id, phone, photo_url), batch:batches(name)')
         .neq('status', 'paid')
         .order('due_date', { ascending: true });
 
-      if (filter === 'this_month') q = q.eq('month', thisMonthLoad);
-      else if (filter === 'last_month') q = q.eq('month', lastMonthLoad);
-      else if (filter === 'overdue_2') {
+      if (filter === 'this_month') {
+        q = q.eq('month', thisMonthLoad);
+      } else if (filter === 'last_month') {
+        q = q.eq('month', lastMonthLoad);
+      } else if (filter === 'overdue_2') {
         // months older than 2 months
         const cutoff = new Date();
         cutoff.setMonth(cutoff.getMonth() - 2);
         q = q.lt('due_date', cutoff.toISOString().slice(0, 10));
       }
-      if (batchFilter !== 'all') q = q.eq('batch_id', batchFilter);
+      if (batchFilter !== 'all') {
+        q = q.eq('batch_id', batchFilter);
+      }
 
       const { data } = await q.limit(100);
-      setDues((data ?? []).map((f: any) => ({ ...f, student: f.student ? { ...f.student, name: sanitize(f.student.name ?? '') } : f.student, batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name ?? '') } : f.batch })));
+      setDues(
+        (data ?? []).map((f: any) => ({
+          ...f,
+          student: f.student ? { ...f.student, name: sanitize(f.student.name ?? '') } : f.student,
+          batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name ?? '') } : f.batch,
+        }))
+      );
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -781,24 +1071,43 @@ function DueReportTab({ batches }: { batches: any[] }) {
     }
   }, [filter, batchFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const sendReminder = async (fee: any) => {
-    if (!fee.student?.phone) { toast.error('No phone number'); return; }
+    if (!fee.student?.phone) {
+      toast.error('No phone number');
+      return;
+    }
     setSending(fee.id);
     const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-    const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER', settings.smsApiKey, settings.smsSenderId);
+    const res = await sendSMS(
+      fee.student.phone,
+      msg,
+      'FEE_REMINDER',
+      settings.smsApiKey,
+      settings.smsSenderId
+    );
     toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${fee.student.name}`);
     setSending(null);
   };
 
   const sendBulkSMS = async () => {
-    const targets = dues.filter(f => selected.has(f.id) && f.student?.phone);
-    if (!targets.length) return;
+    const targets = dues.filter((f) => selected.has(f.id) && f.student?.phone);
+    if (!targets.length) {
+      return;
+    }
     setBulkSending(true);
     for (const fee of targets) {
       const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-      await sendSMS(fee.student.phone, msg, 'FEE_REMINDER', settings.smsApiKey, settings.smsSenderId);
+      await sendSMS(
+        fee.student.phone,
+        msg,
+        'FEE_REMINDER',
+        settings.smsApiKey,
+        settings.smsSenderId
+      );
     }
     toast.success(`SMS sent to ${targets.length} students`);
     setBulkSending(false);
@@ -806,8 +1115,11 @@ function DueReportTab({ batches }: { batches: any[] }) {
   };
 
   const toggleAll = () => {
-    if (selected.size === dues.length) setSelected(new Set());
-    else setSelected(new Set(dues.map(f => f.id)));
+    if (selected.size === dues.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(dues.map((f) => f.id)));
+    }
   };
 
   const DUE_FILTERS: { id: DueFilter; label: string }[] = [
@@ -820,15 +1132,33 @@ function DueReportTab({ batches }: { batches: any[] }) {
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
-        {DUE_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)} className={`filter-pill ${filter === f.id ? 'active' : ''}`}>{f.label}</button>
+        {DUE_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`filter-pill ${filter === f.id ? 'active' : ''}`}
+          >
+            {f.label}
+          </button>
         ))}
-        <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)} className="input-field py-1.5 text-sm max-w-[160px]">
+        <select
+          value={batchFilter}
+          onChange={(e) => setBatchFilter(e.target.value)}
+          className="input-field py-1.5 text-sm max-w-[160px]"
+        >
           <option value="all">All Batches</option>
-          {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          {batches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
         </select>
         {selected.size > 0 && (
-          <button onClick={sendBulkSMS} disabled={bulkSending} className="btn-primary text-sm py-1.5 ml-auto">
+          <button
+            onClick={sendBulkSMS}
+            disabled={bulkSending}
+            className="btn-primary text-sm py-1.5 ml-auto"
+          >
             {bulkSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             Send SMS to {selected.size} selected
           </button>
@@ -838,7 +1168,9 @@ function DueReportTab({ batches }: { batches: any[] }) {
       <div className="card overflow-hidden">
         {loading ? (
           <div className="divide-y divide-navy-700/30">
-            {Array.from({length:5}).map((_,i) => <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />
+            ))}
           </div>
         ) : dues.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-10">No dues found for this filter</p>
@@ -847,19 +1179,30 @@ function DueReportTab({ batches }: { batches: any[] }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-navy-700/50">
-                  <th className="px-4 py-3 w-8"><input type="checkbox" className="rounded accent-sky-400" onChange={toggleAll} checked={selected.size === dues.length && dues.length > 0} /></th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Student ID</th>
+                  <th className="px-4 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      className="rounded accent-sky-400"
+                      onChange={toggleAll}
+                      checked={selected.size === dues.length && dues.length > 0}
+                    />
+                  </th>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">
+                    Student ID
+                  </th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Name</th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Batch</th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Month</th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Amount</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Days Overdue</th>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">
+                    Days Overdue
+                  </th>
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Phone</th>
                   <th className="px-4 py-3 text-slate-400 font-medium text-xs">SMS</th>
                 </tr>
               </thead>
               <tbody>
-                {dues.map(f => {
+                {dues.map((f) => {
                   const days = daysOverdue(f.month);
                   return (
                     <tr key={f.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
@@ -868,18 +1211,43 @@ function DueReportTab({ batches }: { batches: any[] }) {
                           type="checkbox"
                           className="rounded accent-sky-400"
                           checked={selected.has(f.id)}
-                          onChange={e => setSelected(prev => { const n = new Set(prev); e.target.checked ? n.add(f.id) : n.delete(f.id); return n; })}
+                          onChange={(e) =>
+                            setSelected((prev) => {
+                              const n = new Set(prev);
+                              e.target.checked ? n.add(f.id) : n.delete(f.id);
+                              return n;
+                            })
+                          }
                         />
                       </td>
-                      <td className="px-4 py-3 font-mono text-sky-400 text-xs">{f.student?.student_id || '—'}</td>
-                      <td className="px-4 py-3 text-white text-sm">{f.student?.name || '—'}</td>
-                      <td className="px-4 py-3"><span className="badge-blue text-xs">{f.batch?.name || '—'}</span></td>
-                      <td className="px-4 py-3 text-slate-300 text-sm">{f.month}</td>
-                      <td className="px-4 py-3 font-medium text-red-400">{formatCurrency(f.amount)}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn('font-medium text-sm', days > 30 ? 'text-red-400' : days > 10 ? 'text-amber-400' : 'text-slate-400')}>{days}d</span>
+                      <td className="px-4 py-3 font-mono text-sky-400 text-xs">
+                        {f.student?.student_id || '—'}
                       </td>
-                      <td className="px-4 py-3 text-slate-400 text-sm">{f.student?.phone || '—'}</td>
+                      <td className="px-4 py-3 text-white text-sm">{f.student?.name || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className="badge-blue text-xs">{f.batch?.name || '—'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 text-sm">{f.month}</td>
+                      <td className="px-4 py-3 font-medium text-red-400">
+                        {formatCurrency(f.amount)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={cn(
+                            'font-medium text-sm',
+                            days > 30
+                              ? 'text-red-400'
+                              : days > 10
+                                ? 'text-amber-400'
+                                : 'text-slate-400'
+                          )}
+                        >
+                          {days}d
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-sm">
+                        {f.student?.phone || '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => sendReminder(f)}
@@ -887,7 +1255,11 @@ function DueReportTab({ batches }: { batches: any[] }) {
                           className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                           title="Send SMS Reminder"
                         >
-                          {sending === f.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                          {sending === f.id ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <Send size={13} />
+                          )}
                         </button>
                       </td>
                     </tr>
@@ -904,9 +1276,13 @@ function DueReportTab({ batches }: { batches: any[] }) {
 
 // ── Audit Log Tab ─────────────────────────────────────────────────────────────
 const ACTION_META: Record<string, { label: string; color: string; bg: string }> = {
-  payment_recorded: { label: 'Payment Recorded', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-  fee_generated:    { label: 'Fees Generated',   color: 'text-sky-400',     bg: 'bg-sky-400/10'     },
-  fee_deleted:      { label: 'Fee Deleted',       color: 'text-red-400',     bg: 'bg-red-400/10'     },
+  payment_recorded: {
+    label: 'Payment Recorded',
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-400/10',
+  },
+  fee_generated: { label: 'Fees Generated', color: 'text-sky-400', bg: 'bg-sky-400/10' },
+  fee_deleted: { label: 'Fee Deleted', color: 'text-red-400', bg: 'bg-red-400/10' },
 };
 
 function AuditLogTab() {
@@ -918,26 +1294,31 @@ function AuditLogTab() {
   const [hasMore, setHasMore] = useState(false);
   const PER_PAGE = 50;
 
-  const load = useCallback(async (reset = false) => {
-    setLoading(true);
-    try {
-      const currentPage = reset ? 0 : page;
-      let q = supabase
-        .from('fee_audit_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(currentPage * PER_PAGE, (currentPage + 1) * PER_PAGE - 1);
-      if (filter !== 'all') q = q.eq('action', filter);
-      const { data } = await q;
-      const rows = data ?? [];
-      setLogs(prev => currentPage === 0 ? rows : [...prev, ...rows]);
-      setHasMore(rows.length === PER_PAGE);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, page]);
+  const load = useCallback(
+    async (reset = false) => {
+      setLoading(true);
+      try {
+        const currentPage = reset ? 0 : page;
+        let q = supabase
+          .from('fee_audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(currentPage * PER_PAGE, (currentPage + 1) * PER_PAGE - 1);
+        if (filter !== 'all') {
+          q = q.eq('action', filter);
+        }
+        const { data } = await q;
+        const rows = data ?? [];
+        setLogs((prev) => (currentPage === 0 ? rows : [...prev, ...rows]));
+        setHasMore(rows.length === PER_PAGE);
+      } catch (err) {
+        handleSupabaseError(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filter, page]
+  );
 
   useEffect(() => {
     setPage(0);
@@ -946,16 +1327,24 @@ function AuditLogTab() {
   }, [filter]);
 
   useEffect(() => {
-    if (page > 0) load();
+    if (page > 0) {
+      load();
+    }
   }, [page]);
 
   const formatDetail = (log: any): string => {
     if (log.action === 'payment_recorded' && log.new_data) {
       const d = log.new_data as any;
       const parts: string[] = [`৳${d.final_amount ?? '?'}`];
-      if ((d.discount ?? 0) > 0) parts.push(`(৳${d.discount} discount)`);
-      if (d.payment_method) parts.push(`via ${d.payment_method}`);
-      if (d.receipt_no) parts.push(`• ${d.receipt_no}`);
+      if ((d.discount ?? 0) > 0) {
+        parts.push(`(৳${d.discount} discount)`);
+      }
+      if (d.payment_method) {
+        parts.push(`via ${d.payment_method}`);
+      }
+      if (d.receipt_no) {
+        parts.push(`• ${d.receipt_no}`);
+      }
       return parts.join(' ');
     }
     if (log.action === 'fee_generated' && log.new_data) {
@@ -977,7 +1366,7 @@ function AuditLogTab() {
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div className="flex gap-2 flex-wrap">
-          {FILTER_OPTIONS.map(f => (
+          {FILTER_OPTIONS.map((f) => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
@@ -1003,7 +1392,9 @@ function AuditLogTab() {
           <div className="text-center py-16">
             <History size={32} className="text-slate-600 mx-auto mb-3" />
             <p className="text-slate-500 text-sm font-medium">No audit entries yet</p>
-            <p className="text-slate-600 text-xs mt-1">Every payment recorded or fee generated will appear here</p>
+            <p className="text-slate-600 text-xs mt-1">
+              Every payment recorded or fee generated will appear here
+            </p>
           </div>
         ) : (
           <>
@@ -1011,29 +1402,57 @@ function AuditLogTab() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-navy-700/50">
-                    {['Date & Time', 'Action', 'Admin', 'Student', 'Month', 'Summary', ''].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap">{h}</th>
-                    ))}
+                    {['Date & Time', 'Action', 'Admin', 'Student', 'Month', 'Summary', ''].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      )
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map(log => {
-                    const meta = ACTION_META[log.action] ?? { label: log.action, color: 'text-slate-400', bg: 'bg-slate-400/10' };
+                  {logs.map((log) => {
+                    const meta = ACTION_META[log.action] ?? {
+                      label: log.action,
+                      color: 'text-slate-400',
+                      bg: 'bg-slate-400/10',
+                    };
                     const isExp = expanded === log.id;
                     const dt = new Date(log.created_at);
                     return (
                       <>
-                        <tr key={log.id} className="border-b border-navy-700/30 hover:bg-white/[0.02] transition-colors">
+                        <tr
+                          key={log.id}
+                          className="border-b border-navy-700/30 hover:bg-white/[0.02] transition-colors"
+                        >
                           <td className="px-4 py-3 whitespace-nowrap">
                             <p className="text-slate-300 text-xs">
-                              {dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              {dt.toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
                             </p>
                             <p className="text-slate-600 text-xs">
-                              {dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              {dt.toLocaleTimeString('en-GB', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                              })}
                             </p>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full', meta.color, meta.bg)}>
+                            <span
+                              className={cn(
+                                'text-xs font-medium px-2.5 py-1 rounded-full',
+                                meta.color,
+                                meta.bg
+                              )}
+                            >
                               {meta.label}
                             </span>
                           </td>
@@ -1043,17 +1462,23 @@ function AuditLogTab() {
                                 <User size={11} className="text-slate-500 shrink-0" />
                                 {log.admin_email}
                               </span>
-                            ) : <span className="text-slate-600 text-xs">—</span>}
+                            ) : (
+                              <span className="text-slate-600 text-xs">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             {log.student_name ? (
                               <div>
                                 <p className="text-white text-sm font-medium">{log.student_name}</p>
                                 {log.student_code && (
-                                  <p className="font-mono text-sky-400 text-xs">{log.student_code}</p>
+                                  <p className="font-mono text-sky-400 text-xs">
+                                    {log.student_code}
+                                  </p>
                                 )}
                               </div>
-                            ) : <span className="text-slate-600 text-xs">—</span>}
+                            ) : (
+                              <span className="text-slate-600 text-xs">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-slate-300 text-sm whitespace-nowrap">
                             {log.month || '—'}
@@ -1077,7 +1502,9 @@ function AuditLogTab() {
                             <td colSpan={7} className="px-6 py-4 bg-navy-900/50">
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <p className="text-slate-500 text-xs font-medium mb-2 uppercase tracking-wide">Before</p>
+                                  <p className="text-slate-500 text-xs font-medium mb-2 uppercase tracking-wide">
+                                    Before
+                                  </p>
                                   <pre className="text-slate-400 text-xs bg-navy-800/70 border border-navy-700/50 rounded-lg p-3 overflow-x-auto font-mono leading-relaxed">
                                     {log.old_data
                                       ? JSON.stringify(log.old_data, null, 2)
@@ -1085,11 +1512,11 @@ function AuditLogTab() {
                                   </pre>
                                 </div>
                                 <div>
-                                  <p className="text-slate-500 text-xs font-medium mb-2 uppercase tracking-wide">After</p>
+                                  <p className="text-slate-500 text-xs font-medium mb-2 uppercase tracking-wide">
+                                    After
+                                  </p>
                                   <pre className="text-slate-400 text-xs bg-navy-800/70 border border-navy-700/50 rounded-lg p-3 overflow-x-auto font-mono leading-relaxed">
-                                    {log.new_data
-                                      ? JSON.stringify(log.new_data, null, 2)
-                                      : 'null'}
+                                    {log.new_data ? JSON.stringify(log.new_data, null, 2) : 'null'}
                                   </pre>
                                 </div>
                               </div>
@@ -1107,7 +1534,7 @@ function AuditLogTab() {
             {hasMore && (
               <div className="p-4 text-center border-t border-navy-700/50">
                 <button
-                  onClick={() => setPage(p => p + 1)}
+                  onClick={() => setPage((p) => p + 1)}
                   disabled={loading}
                   className="btn-outline text-sm"
                 >
@@ -1133,10 +1560,12 @@ export default function FeesPage() {
       .select('id,name,monthly_fee')
       .eq('is_active', true)
       .order('name')
-      .then(({ data }) => setBatches(data ?? []),
-      (err: any) => {
-        handleSupabaseError(err);
-      });
+      .then(
+        ({ data }) => setBatches(data ?? []),
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      );
   }, []);
 
   return (
@@ -1149,7 +1578,9 @@ export default function FeesPage() {
             onClick={() => setTab(t.id)}
             className={
               'px-5 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-all ' +
-              (tab === t.id ? 'text-sky-400 border-sky-400' : 'text-slate-400 border-transparent hover:text-white')
+              (tab === t.id
+                ? 'text-sky-400 border-sky-400'
+                : 'text-slate-400 border-transparent hover:text-white')
             }
           >
             {t.label}

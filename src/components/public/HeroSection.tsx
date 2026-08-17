@@ -8,13 +8,13 @@ import { useIntersection } from '@/hooks/useIntersection';
 function useCountUp(target: number, duration = 1800, active = false) {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (!active) return;
+    if (!active) {return;}
     let start = 0;
     const step = target / (duration / 16);
     const timer = setInterval(() => {
       start += step;
       if (start >= target) { setCount(target); clearInterval(timer); }
-      else setCount(Math.floor(start));
+      else {setCount(Math.floor(start));}
     }, 16);
     return () => clearInterval(timer);
   }, [target, duration, active]);
@@ -144,9 +144,9 @@ export function HeroSection() {
                     transition={{ delay: 0.5 + i * 0.12 }}
                     className="pl-6 flex items-center gap-2"
                   >
-                    <span style={{ color: line.color }} className="font-semibold">'</span>
+                    <span style={{ color: line.color }} className="font-semibold">&apos;</span>
                     <span style={{ color: line.color }}>{line.label}</span>
-                    <span style={{ color: line.color }} className="font-semibold">'</span>
+                    <span style={{ color: line.color }} className="font-semibold">&apos;</span>
                     <span className="text-slate-500 text-xs">{line.note}</span>
                     <span className="text-slate-400">,</span>
                   </motion.div>

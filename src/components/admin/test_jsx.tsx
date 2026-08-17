@@ -12,8 +12,14 @@ function TestComponent() {
             <div className="relative group">Avatar</div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="card p-3"><p>Name</p><p>{student.name}</p></div>
-            <div className="card p-3"><p>Status</p><p>{student.status}</p></div>
+            <div className="card p-3">
+              <p>Name</p>
+              <p>{student.name}</p>
+            </div>
+            <div className="card p-3">
+              <p>Status</p>
+              <p>{student.status}</p>
+            </div>
           </div>
           {student.address && (
             <div className="card p-3">
@@ -21,9 +27,7 @@ function TestComponent() {
               <p>{student.address}</p>
             </div>
           )}
-          {student.status === 'suspended' && (
-            <p className="text-red-400">Suspended</p>
-          )}
+          {student.status === 'suspended' && <p className="text-red-400">Suspended</p>}
         </div>
       )}
 

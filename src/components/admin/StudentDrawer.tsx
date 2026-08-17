@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Copy, Check, DollarSign, BookOpen, MessageSquare, User, ShieldOff, ShieldCheck, KeyRound, Save, Loader2 } from 'lucide-react';
+import {
+  X,
+  Copy,
+  Check,
+  DollarSign,
+  BookOpen,
+  MessageSquare,
+  User,
+  ShieldOff,
+  ShieldCheck,
+  KeyRound,
+  Save,
+  Loader2,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { Avatar } from '@/components/shared/Avatar';
@@ -69,41 +82,69 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   }, [student?.id]);
 
   useEffect(() => {
-    if (!student || tab !== 'fees') return;
+    if (!student || tab !== 'fees') {
+      return;
+    }
     setFeesLoading(true);
     // Promise.resolve wraps the builder (typed PromiseLike) so .finally is available
-    Promise.resolve(supabase.from('fees').select('*, batch:batches(name)').eq('student_id', student.id)
-      .order('due_date', { ascending: false }))
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((f: any) => ({
-          ...f,
-          batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name) } : f.batch,
-        }));
-        setFees(cleaned);
-      },(err: any) => { handleSupabaseError(err); })
-      .finally(() => { setFeesLoading(false); });
+    Promise.resolve(
+      supabase
+        .from('fees')
+        .select('*, batch:batches(name)')
+        .eq('student_id', student.id)
+        .order('due_date', { ascending: false })
+    )
+      .then(
+        ({ data }) => {
+          const cleaned = (data ?? []).map((f: any) => ({
+            ...f,
+            batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name) } : f.batch,
+          }));
+          setFees(cleaned);
+        },
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      )
+      .finally(() => {
+        setFeesLoading(false);
+      });
   }, [student?.id, tab]);
 
   useEffect(() => {
-    if (!student || tab !== 'exams') return;
+    if (!student || tab !== 'exams') {
+      return;
+    }
     setExamsLoading(true);
     // Use mcq_submissions table (the actual exam results table)
-    Promise.resolve(supabase.from('mcq_submissions')
-      .select('*, exam:exams(title, exam_date, total_marks)')
-      .eq('student_id', student.id)
-      .order('submitted_at', { ascending: false }))
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((r: any) => ({
-          ...r,
-          exam: r.exam ? { ...r.exam, title: sanitize(r.exam.title) } : r.exam,
-        }));
-        setExams(cleaned);
-      },(err: any) => { handleSupabaseError(err); })
-      .finally(() => { setExamsLoading(false); });
+    Promise.resolve(
+      supabase
+        .from('mcq_submissions')
+        .select('*, exam:exams(title, exam_date, total_marks)')
+        .eq('student_id', student.id)
+        .order('submitted_at', { ascending: false })
+    )
+      .then(
+        ({ data }) => {
+          const cleaned = (data ?? []).map((r: any) => ({
+            ...r,
+            exam: r.exam ? { ...r.exam, title: sanitize(r.exam.title) } : r.exam,
+          }));
+          setExams(cleaned);
+        },
+        (err: any) => {
+          handleSupabaseError(err);
+        }
+      )
+      .finally(() => {
+        setExamsLoading(false);
+      });
   }, [student?.id, tab]);
 
   const handleResetPassword = async () => {
-    if (!student || !newPw.trim()) return;
+    if (!student || !newPw.trim()) {
+      return;
+    }
     setSavingPw(true);
     try {
       await supabase.rpc('change_student_password', {
@@ -120,20 +161,28 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   };
 
   const copyId = () => {
-    if (!student?.student_id) return;
+    if (!student?.student_id) {
+      return;
+    }
     navigator.clipboard.writeText(student.student_id);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
   const handleSuspend = async (reason: string) => {
-    if (!student) return;
+    if (!student) {
+      return;
+    }
     setStatusLoading(true);
     try {
-      const { error } = await supabase.from('students')
+      const { error } = await supabase
+        .from('students')
         .update({ status: 'suspended', suspension_reason: reason })
         .eq('id', student.id);
-      if (error) { toast.error('Failed to suspend'); return; }
+      if (error) {
+        toast.error('Failed to suspend');
+        return;
+      }
       toast.success('Student suspended');
       setSuspendOpen(false);
       onStatusChange();
@@ -145,11 +194,19 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   };
 
   const handleActivate = async () => {
-    if (!student) return;
+    if (!student) {
+      return;
+    }
     setStatusLoading(true);
     try {
-      const { error } = await supabase.from('students').update({ status: 'active' }).eq('id', student.id);
-      if (error) { toast.error('Failed to activate'); return; }
+      const { error } = await supabase
+        .from('students')
+        .update({ status: 'active' })
+        .eq('id', student.id);
+      if (error) {
+        toast.error('Failed to activate');
+        return;
+      }
       toast.success('Student activated');
       onStatusChange();
     } catch (err) {
@@ -159,10 +216,19 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
     }
   };
 
-  const totalPaid = fees.filter(f => f.status === 'paid').reduce((s, f) => {
-    try { const note = JSON.parse(f.note ?? '{}'); return s + (note.final_amount ?? f.amount ?? 0); } catch { return s + (f.amount ?? 0); }
-  }, 0);
-  const totalDue = fees.filter(f => f.status === 'pending').reduce((s, f) => s + (f.amount ?? 0), 0);
+  const totalPaid = fees
+    .filter((f) => f.status === 'paid')
+    .reduce((s, f) => {
+      try {
+        const note = JSON.parse(f.note ?? '{}');
+        return s + (note.final_amount ?? f.amount ?? 0);
+      } catch {
+        return s + (f.amount ?? 0);
+      }
+    }, 0);
+  const totalDue = fees
+    .filter((f) => f.status === 'pending')
+    .reduce((s, f) => s + (f.amount ?? 0), 0);
 
   return (
     <>
@@ -203,14 +269,17 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                     </div>
                   </div>
                 </div>
-                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                >
                   <X size={18} />
                 </button>
               </div>
 
               {/* Tabs */}
               <div className="flex border-b border-navy-700/50 shrink-0">
-                {TABS.map(t => (
+                {TABS.map((t) => (
                   <button
                     key={t.id}
                     onClick={() => setTab(t.id)}
@@ -228,15 +297,18 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
 
               {/* Tab content */}
               <div className="flex-1 overflow-y-auto">
-
                 {/* Profile Tab */}
                 {tab === 'profile' ? (
                   <div className="p-5 space-y-5">
                     {/* Large avatar */}
                     <div className="flex justify-center">
                       <div className="relative group">
-                        <Avatar name={student.name} size="lg" src={student.photo_url}
-                          className="!w-20 !h-20 text-2xl cursor-pointer ring-2 ring-sky-400/20 ring-offset-2 ring-offset-navy-800" />
+                        <Avatar
+                          name={student.name}
+                          size="lg"
+                          src={student.photo_url}
+                          className="!w-20 !h-20 text-2xl cursor-pointer ring-2 ring-sky-400/20 ring-offset-2 ring-offset-navy-800"
+                        />
                       </div>
                     </div>
 
@@ -248,10 +320,15 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         { label: 'Guardian', value: student.guardian_name || '—' },
                         { label: 'Guardian Phone', value: student.guardian_phone || '—' },
                         { label: 'Class Level', value: student.class_level || '—' },
-                        { label: 'Gender', value: student.gender ? student.gender.charAt(0).toUpperCase() + student.gender.slice(1) : '—' },
+                        {
+                          label: 'Gender',
+                          value: student.gender
+                            ? student.gender.charAt(0).toUpperCase() + student.gender.slice(1)
+                            : '—',
+                        },
                         { label: 'Joined', value: formatDate(student.created_at) },
                         { label: 'Approved', value: student.is_approved ? 'Yes' : 'No' },
-                      ].map(item => (
+                      ].map((item) => (
                         <div key={item.label} className="card p-3">
                           <p className="text-slate-500 text-[10px] mb-1">{item.label}</p>
                           <p className="text-white text-sm font-medium truncate">{item.value}</p>
@@ -285,28 +362,32 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                           <span className="text-slate-500 text-xs">Phone (Login ID)</span>
                           <span className="font-mono text-sky-400 text-xs">{student.phone}</span>
                         </div>
-                      {/* Reset password */}
-                      <div className="border-t border-white/5 pt-3">
-                        <p className="text-slate-600 text-[10px] mb-2">Reset portal password</p>
-                        <div className="flex gap-2">
-                          <input
-                            value={newPw}
-                            onChange={e => setNewPw(e.target.value)}
-                            className="input-field flex-1 py-1.5 text-xs font-mono"
-                            placeholder="New password…"
-                            onKeyDown={e => e.key === 'Enter' && handleResetPassword()}
-                          />
-                          <button
-                            onClick={handleResetPassword}
-                            disabled={savingPw || !newPw.trim()}
-                            className="btn-outline py-1.5 px-3 text-xs shrink-0"
-                          >
-                            {savingPw ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
-                          </button>
+                        {/* Reset password */}
+                        <div className="border-t border-white/5 pt-3">
+                          <p className="text-slate-600 text-[10px] mb-2">Reset portal password</p>
+                          <div className="flex gap-2">
+                            <input
+                              value={newPw}
+                              onChange={(e) => setNewPw(e.target.value)}
+                              className="input-field flex-1 py-1.5 text-xs font-mono"
+                              placeholder="New password…"
+                              onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
+                            />
+                            <button
+                              onClick={handleResetPassword}
+                              disabled={savingPw || !newPw.trim()}
+                              className="btn-outline py-1.5 px-3 text-xs shrink-0"
+                            >
+                              {savingPw ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                <Save size={11} />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
                     {/* Action buttons */}
                     <div className="flex gap-3 pt-2">
@@ -316,7 +397,8 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                           disabled={statusLoading}
                           className="btn-outline flex-1 justify-center text-sm text-emerald-400 border-emerald-400/30 hover:bg-emerald-400/10"
                         >
-                          <ShieldCheck size={15} /> {statusLoading ? 'Activating…' : 'Activate Student'}
+                          <ShieldCheck size={15} />{' '}
+                          {statusLoading ? 'Activating…' : 'Activate Student'}
                         </button>
                       ) : (
                         <button
@@ -328,7 +410,9 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                       )}
                     </div>
                     {student.status === 'suspended' && (
-                      <p className="text-red-400/80 text-xs text-center">Suspended -- no fees generated, portal login blocked</p>
+                      <p className="text-red-400/80 text-xs text-center">
+                        Suspended -- no fees generated, portal login blocked
+                      </p>
                     )}
                   </div>
                 ) : null}
@@ -340,11 +424,15 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                     <div className="grid grid-cols-2 gap-3 mb-5">
                       <div className="card p-3 text-center">
                         <p className="text-slate-500 text-xs mb-1">Total Paid</p>
-                        <p className="font-inter font-bold text-emerald-400 text-lg">{formatCurrency(totalPaid)}</p>
+                        <p className="font-inter font-bold text-emerald-400 text-lg">
+                          {formatCurrency(totalPaid)}
+                        </p>
                       </div>
                       <div className="card p-3 text-center">
                         <p className="text-slate-500 text-xs mb-1">Total Due</p>
-                        <p className="font-inter font-bold text-red-400 text-lg">{formatCurrency(totalDue)}</p>
+                        <p className="font-inter font-bold text-red-400 text-lg">
+                          {formatCurrency(totalDue)}
+                        </p>
                       </div>
                     </div>
                     {feesLoading ? (
@@ -354,18 +442,37 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         ))}
                       </div>
                     ) : fees.length === 0 ? (
-                      <p className="text-slate-500 text-sm text-center py-8">No fee records found</p>
+                      <p className="text-slate-500 text-sm text-center py-8">
+                        No fee records found
+                      </p>
                     ) : (
                       <div className="space-y-2">
-                        {fees.map(f => (
-                          <div key={f.id} className="card p-3 flex items-center justify-between gap-3">
+                        {fees.map((f) => (
+                          <div
+                            key={f.id}
+                            className="card p-3 flex items-center justify-between gap-3"
+                          >
                             <div className="min-w-0">
-                              <p className="text-white text-xs font-medium truncate">{f.batch?.name || 'Unknown Batch'}</p>
-                              <p className="text-slate-500 text-[10px]">{f.due_date ? formatDate(f.due_date) : '—'}</p>
+                              <p className="text-white text-xs font-medium truncate">
+                                {f.batch?.name || 'Unknown Batch'}
+                              </p>
+                              <p className="text-slate-500 text-[10px]">
+                                {f.due_date ? formatDate(f.due_date) : '—'}
+                              </p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className="font-mono text-white text-xs">{formatCurrency(f.amount ?? 0)}</span>
-                              <span className={f.status === 'paid' ? 'badge-green' : f.status === 'waived' ? 'badge-violet' : 'badge-red'}>
+                              <span className="font-mono text-white text-xs">
+                                {formatCurrency(f.amount ?? 0)}
+                              </span>
+                              <span
+                                className={
+                                  f.status === 'paid'
+                                    ? 'badge-green'
+                                    : f.status === 'waived'
+                                      ? 'badge-violet'
+                                      : 'badge-red'
+                                }
+                              >
                                 {f.status}
                               </span>
                             </div>
@@ -386,21 +493,31 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         ))}
                       </div>
                     ) : exams.length === 0 ? (
-                      <p className="text-slate-500 text-sm text-center py-8">No exam submissions found</p>
+                      <p className="text-slate-500 text-sm text-center py-8">
+                        No exam submissions found
+                      </p>
                     ) : (
                       <div className="space-y-2">
-                        {exams.map(r => (
+                        {exams.map((r) => (
                           <div key={r.id} className="card p-3">
                             <div className="flex items-center justify-between mb-1">
-                              <p className="text-white text-xs font-medium truncate pr-2">{r.exam?.title || 'Exam'}</p>
+                              <p className="text-white text-xs font-medium truncate pr-2">
+                                {r.exam?.title || 'Exam'}
+                              </p>
                               <div className="flex items-center gap-2 shrink-0">
                                 {r.score != null && (
-                                  <span className="font-mono text-sky-400 text-xs">{r.score}/{r.total_marks ?? '—'}</span>
+                                  <span className="font-mono text-sky-400 text-xs">
+                                    {r.score}/{r.total_marks ?? '—'}
+                                  </span>
                                 )}
-                                {r.grade && <span className="badge-blue text-[10px]">{r.grade}</span>}
+                                {r.grade && (
+                                  <span className="badge-blue text-[10px]">{r.grade}</span>
+                                )}
                               </div>
                             </div>
-                            <p className="text-slate-500 text-[10px]">{r.exam?.exam_date ? formatDate(r.exam.exam_date) : '—'}</p>
+                            <p className="text-slate-500 text-[10px]">
+                              {r.exam?.exam_date ? formatDate(r.exam.exam_date) : '—'}
+                            </p>
                           </div>
                         ))}
                       </div>
@@ -416,7 +533,9 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         <MessageSquare size={22} className="text-slate-500" />
                       </div>
                       <p className="text-slate-500 text-sm">SMS log will appear here</p>
-                      <p className="text-slate-600 text-xs mt-1">Configure SMS in Admin → Settings</p>
+                      <p className="text-slate-600 text-xs mt-1">
+                        Configure SMS in Admin → Settings
+                      </p>
                     </div>
                   </div>
                 ) : null}

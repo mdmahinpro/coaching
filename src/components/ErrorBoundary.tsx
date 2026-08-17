@@ -2,8 +2,13 @@ import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { logError } from '@/utils/logger';
 
-interface Props { children: ReactNode }
-interface State { hasError: boolean; error: Error | null }
+interface Props {
+  children: ReactNode;
+}
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -37,10 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 {this.state.error.message}
               </pre>
             )}
-            <button
-              onClick={() => window.location.reload()}
-              className="btn-primary mx-auto"
-            >
+            <button onClick={() => window.location.reload()} className="btn-primary mx-auto">
               <RefreshCw size={15} /> পেজ রিলোড করুন
             </button>
           </div>

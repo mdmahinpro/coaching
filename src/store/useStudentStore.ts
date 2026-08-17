@@ -63,9 +63,15 @@ export const useStudentStore = create<StudentState>()(
             throw new Error('ফোন নম্বর বা পাসওয়ার্ড ভুল।');
           }
           const row = (data as any[])[0];
-          if (!row) throw new Error('ফোন নম্বর বা পাসওয়ার্ড ভুল।');
-          if (!row.is_approved) throw new Error('আপনার অ্যাকাউন্ট এখনো অনুমোদিত হয়নি।');
-          if (row.status === 'suspended') throw new Error('আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে।');
+          if (!row) {
+            throw new Error('ফোন নম্বর বা পাসওয়ার্ড ভুল।');
+          }
+          if (!row.is_approved) {
+            throw new Error('আপনার অ্যাকাউন্ট এখনো অনুমোদিত হয়নি।');
+          }
+          if (row.status === 'suspended') {
+            throw new Error('আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে।');
+          }
           const session: StudentSession = {
             id: row.id,
             name: sanitize(row.name ?? ''),
@@ -104,7 +110,9 @@ export const useStudentStore = create<StudentState>()(
             p_is_approved: data.is_approved ?? false,
             p_photo_url: data.photo_url ?? null,
           });
-          if (error) throw new Error(error.message || 'Registration failed');
+          if (error) {
+            throw new Error(error.message || 'Registration failed');
+          }
           const r = (row as any[])[0];
           const session: StudentSession = {
             id: r.id,

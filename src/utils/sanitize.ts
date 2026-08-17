@@ -13,17 +13,38 @@
 // The real DOMPurify (npm) is more thorough — install it when possible.
 
 const FALLBACK_ALLOWED_TAGS = [
-  'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li',
-  'span', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'blockquote', 'code', 'pre', 'hr', 'sub', 'sup',
+  'p',
+  'br',
+  'strong',
+  'em',
+  'u',
+  's',
+  'a',
+  'ul',
+  'ol',
+  'li',
+  'span',
+  'div',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'blockquote',
+  'code',
+  'pre',
+  'hr',
+  'sub',
+  'sup',
 ];
 
-const FALLBACK_ALLOWED_ATTRS = [
-  'href', 'title', 'class', 'id', 'target', 'rel', 'style',
-];
+const FALLBACK_ALLOWED_ATTRS = ['href', 'title', 'class', 'id', 'target', 'rel', 'style'];
 
 function fallbackSanitize(dirty: string): string {
-  if (!dirty || typeof dirty !== 'string') return '';
+  if (!dirty || typeof dirty !== 'string') {
+    return '';
+  }
 
   try {
     const doc = new DOMParser().parseFromString(dirty, 'text/html');
@@ -44,7 +65,16 @@ function fallbackSanitize(dirty: string): string {
       }
 
       // Other dangerous tags — strip tag but keep text content
-      const dangerousTags = ['iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select'];
+      const dangerousTags = [
+        'iframe',
+        'object',
+        'embed',
+        'form',
+        'input',
+        'button',
+        'textarea',
+        'select',
+      ];
       if (dangerousTags.includes(tag)) {
         toRemove.push(node);
         continue;
@@ -147,7 +177,8 @@ try {
       FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
       FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'formaction'],
     });
-    sanitizeFn = (dirty: string) => purify.sanitize(dirty, { RETURN_DOM: false, RETURN_DOM_FRAGMENT: false });
+    sanitizeFn = (dirty: string) =>
+      purify.sanitize(dirty, { RETURN_DOM: false, RETURN_DOM_FRAGMENT: false });
   }
 } catch {
   // DOMPurify not installed — fallback is already set
@@ -167,7 +198,9 @@ try {
  *   <div dangerouslySetInnerHTML={{ __html: clean }} />
  */
 export function sanitize(dirty: string): string {
-  if (!dirty || typeof dirty !== 'string') return '';
+  if (!dirty || typeof dirty !== 'string') {
+    return '';
+  }
   return sanitizeFn(dirty);
 }
 
@@ -176,7 +209,9 @@ export function sanitize(dirty: string): string {
  * Use this when you want to display text with zero HTML.
  */
 export function stripHtml(html: string): string {
-  if (!html || typeof html !== 'string') return '';
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
   return html
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')

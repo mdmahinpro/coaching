@@ -21,7 +21,11 @@ export default function AdminLoginPage() {
   const { signIn } = useAuthStore();
   const { settings } = useSettingsStore();
   const navigate = useNavigate();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<F>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<F>({
     resolver: zodResolver(schema),
   });
 
@@ -41,7 +45,13 @@ export default function AdminLoginPage() {
     <div className="min-h-screen bg-navy-900 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background glows */}
       <div className="absolute inset-0 pointer-events-none">
-        <div style={{ background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(56,189,248,0.10) 0%, transparent 70%)' }} className="absolute inset-0" />
+        <div
+          style={{
+            background:
+              'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(56,189,248,0.10) 0%, transparent 70%)',
+          }}
+          className="absolute inset-0"
+        />
         <div className="hero-grid absolute inset-0 opacity-30" />
         <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-sky-500/6 rounded-full blur-3xl" />
         <div className="absolute bottom-1/3 right-1/3 w-96 h-96 bg-violet-500/6 rounded-full blur-3xl" />
@@ -49,7 +59,10 @@ export default function AdminLoginPage() {
 
       <div className="w-full max-w-sm relative">
         {/* Back link */}
-        <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-6 transition-colors w-fit">
+        <Link
+          to="/"
+          className="flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm mb-6 transition-colors w-fit"
+        >
           <ArrowLeft size={14} /> Back to site
         </Link>
 
@@ -73,7 +86,10 @@ export default function AdminLoginPage() {
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">Email Address</label>
                 <div className="relative">
-                  <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Mail
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
                   <input
                     {...register('email')}
                     className="input-field pl-9"
@@ -81,14 +97,19 @@ export default function AdminLoginPage() {
                     autoComplete="email"
                   />
                 </div>
-                {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email.message}</p>}
+                {errors.email && (
+                  <p className="text-red-400 text-xs mt-1">{errors.email.message}</p>
+                )}
               </div>
 
               {/* Password */}
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">Password</label>
                 <div className="relative">
-                  <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Lock
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
                   <input
                     {...register('password')}
                     type={showPw ? 'text' : 'password'}
@@ -98,13 +119,15 @@ export default function AdminLoginPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPw(s => !s)}
+                    onClick={() => setShowPw((s) => !s)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
                   >
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
-                {errors.password && <p className="text-red-400 text-xs mt-1">{errors.password.message}</p>}
+                {errors.password && (
+                  <p className="text-red-400 text-xs mt-1">{errors.password.message}</p>
+                )}
               </div>
 
               <button
@@ -115,12 +138,21 @@ export default function AdminLoginPage() {
                 {isSubmitting ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
                     Signing in…
                   </span>
-                ) : 'লগইন করুন'}
+                ) : (
+                  'লগইন করুন'
+                )}
               </button>
             </form>
           </div>
@@ -128,7 +160,9 @@ export default function AdminLoginPage() {
 
         <p className="text-center text-slate-600 text-xs mt-6">
           Admin access only · Student portal{' '}
-          <Link to="/portal/login" className="text-sky-500 hover:underline">here</Link>
+          <Link to="/portal/login" className="text-sky-500 hover:underline">
+            here
+          </Link>
         </p>
       </div>
     </div>

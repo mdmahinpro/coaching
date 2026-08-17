@@ -29,7 +29,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
   };
   const icon = methodIcon[r.paymentMethod?.toLowerCase() ?? ''] ?? '💳';
 
-  const html = /* html */`<!DOCTYPE html>
+  const html = /* html */ `<!DOCTYPE html>
 <html lang="bn">
 <head>
   <meta charset="UTF-8" />
@@ -364,14 +364,18 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
               <span class="payment-chip-label">${escapeHtml(r.paymentMethod)}</span>
             </div>
           </div>
-          ${r.transactionId ? `
+          ${
+            r.transactionId
+              ? `
           <div class="info-row">
             <span class="info-label">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
               Transaction ID
             </span>
             <span class="info-value" style="font-family:monospace;font-size:12px;color:#0369a1">${escapeHtml(r.transactionId!)}</span>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
         </div>
 
         <!-- Amount breakdown -->
@@ -382,12 +386,16 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
               <div class="amt-item-label">Original Fee</div>
               <div class="amt-item-val amt-fee">৳${r.feeAmount.toLocaleString('en-IN')}</div>
             </div>
-            ${discount > 0 ? `
+            ${
+              discount > 0
+                ? `
             <div class="amt-divider"></div>
             <div class="amt-item">
               <div class="amt-item-label">Discount</div>
               <div class="amt-item-val amt-disc">−৳${discount.toLocaleString('en-IN')}</div>
-            </div>` : ''}
+            </div>`
+                : ''
+            }
           </div>
           <div class="total-row">
             <span class="total-label">Amount Paid &nbsp;·&nbsp; পরিশোধিত</span>
@@ -420,11 +428,13 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
 
   try {
     const el = container.firstElementChild as HTMLElement | null;
-    if (!el) throw new Error('Failed to create receipt container');
+    if (!el) {
+      throw new Error('Failed to create receipt container');
+    }
 
     // Wait for fonts and assets
     await document.fonts.ready;
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     const canvas = await html2canvas(el, {
       scale: 2,
@@ -501,10 +511,11 @@ export interface ResultCardData {
 export async function generateResultCard(r: ResultCardData): Promise<void> {
   const pct = r.totalMarks > 0 ? Math.round((r.score / r.totalMarks) * 100) : 0;
   const passed = r.score >= r.passMarks;
-  const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
-  const fmtTime = (s?: number) => !s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`;
+  const grade =
+    pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
+  const fmtTime = (s?: number) => (!s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`);
 
-  const html = /* html */`<!DOCTYPE html>
+  const html = /* html */ `<!DOCTYPE html>
 <html lang="bn">
 <head>
   <meta charset="UTF-8" />
@@ -688,11 +699,13 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
 
   try {
     const el = container.firstElementChild as HTMLElement | null;
-    if (!el) throw new Error('Failed to create result card container');
+    if (!el) {
+      throw new Error('Failed to create result card container');
+    }
 
     // Wait for fonts and assets
     await document.fonts.ready;
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     const canvas = await html2canvas(el, {
       scale: 2,

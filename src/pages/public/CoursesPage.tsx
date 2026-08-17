@@ -24,9 +24,9 @@ export default function CoursesPage() {
 
   useEffect(() => {
     let query = supabase.from('batches').select('*').eq('is_active', true);
-    if (q) query = query.ilike('name', `%${q}%`);
-    if (subject !== 'All Subjects') query = query.ilike('subject', `%${subject}%`);
-    if (level !== 'All') query = query.ilike('name', `%${level}%`);
+    if (q) {query = query.ilike('name', `%${q}%`);}
+    if (subject !== 'All Subjects') {query = query.ilike('subject', `%${subject}%`);}
+    if (level !== 'All') {query = query.ilike('name', `%${level}%`);}
     setLoading(true);
     // Promise.resolve wraps the builder (typed PromiseLike) so .finally is available
     Promise.resolve(query).then(({ data }) => {

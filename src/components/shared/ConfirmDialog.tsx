@@ -37,7 +37,10 @@ export function ConfirmDialog({
             exit={{ opacity: 0, scale: 0.9 }}
             className="relative card-glass p-6 w-full max-w-md z-10"
           >
-            <button onClick={onCancel} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+            <button
+              onClick={onCancel}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
               <X size={18} />
             </button>
             <div className="flex items-start gap-4">
@@ -50,11 +53,10 @@ export function ConfirmDialog({
               </div>
             </div>
             <div className="flex gap-3 justify-end mt-6">
-              <button onClick={onCancel} className="btn-outline text-sm">Cancel</button>
-              <button
-                onClick={onConfirm}
-                className={danger ? 'btn-danger' : 'btn-primary'}
-              >
+              <button onClick={onCancel} className="btn-outline text-sm">
+                Cancel
+              </button>
+              <button onClick={onConfirm} className={danger ? 'btn-danger' : 'btn-primary'}>
                 {confirmLabel}
               </button>
             </div>

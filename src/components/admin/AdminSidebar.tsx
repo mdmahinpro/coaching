@@ -1,10 +1,22 @@
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, Users, BookOpen, GraduationCap,
-  CreditCard, UserCheck, ClipboardList, Bell,
-  MessageSquare, BarChart3, Database, Settings,
-  ChevronLeft, ChevronRight, LogOut, X,
+  LayoutDashboard,
+  Users,
+  BookOpen,
+  GraduationCap,
+  CreditCard,
+  UserCheck,
+  ClipboardList,
+  Bell,
+  MessageSquare,
+  BarChart3,
+  Database,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -14,9 +26,7 @@ import { Avatar } from '@/components/shared/Avatar';
 const sections = [
   {
     label: 'OVERVIEW',
-    items: [
-      { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    ],
+    items: [{ to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' }],
   },
   {
     label: 'ACADEMICS',
@@ -28,9 +38,7 @@ const sections = [
   },
   {
     label: 'FINANCE',
-    items: [
-      { to: '/admin/fees', icon: CreditCard, label: 'Fee Management' },
-    ],
+    items: [{ to: '/admin/fees', icon: CreditCard, label: 'Fee Management' }],
   },
   {
     label: 'PEOPLE',
@@ -64,8 +72,14 @@ interface Props {
 }
 
 function SidebarContent({
-  collapsed, onToggle, onMobileClose,
-}: { collapsed: boolean; onToggle: () => void; onMobileClose?: () => void }) {
+  collapsed,
+  onToggle,
+  onMobileClose,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  onMobileClose?: () => void;
+}) {
   const location = useLocation();
   const { signOut, user } = useAuthStore();
   const { settings } = useSettingsStore();
@@ -87,7 +101,9 @@ function SidebarContent({
                 <GraduationCap size={16} className="text-white" />
               </div>
               <div className="min-w-0">
-                <p className="font-inter font-bold text-white text-sm truncate leading-tight">{settings.centerName}</p>
+                <p className="font-inter font-bold text-white text-sm truncate leading-tight">
+                  {settings.centerName}
+                </p>
                 <span className="badge-blue text-[10px] py-0 px-1.5 leading-4">Admin</span>
               </div>
             </motion.div>
@@ -106,7 +122,10 @@ function SidebarContent({
 
         {/* Desktop toggle / mobile close */}
         {onMobileClose ? (
-          <button onClick={onMobileClose} className="text-slate-400 hover:text-white p-1 rounded transition-colors">
+          <button
+            onClick={onMobileClose}
+            className="text-slate-400 hover:text-white p-1 rounded transition-colors"
+          >
             <X size={18} />
           </button>
         ) : (
@@ -121,7 +140,7 @@ function SidebarContent({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
-        {sections.map(section => (
+        {sections.map((section) => (
           <div key={section.label}>
             {!collapsed && (
               <p className="text-[10px] font-semibold text-slate-600 tracking-widest px-3 mb-1.5">
@@ -193,10 +212,12 @@ export function AdminSidebar({ collapsed, onToggle, mobileOpen = false, onMobile
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className={cn(
-        'fixed left-0 top-0 h-screen z-40 transition-all duration-300 hidden md:block',
-        collapsed ? 'w-16' : 'w-64'
-      )}>
+      <aside
+        className={cn(
+          'fixed left-0 top-0 h-screen z-40 transition-all duration-300 hidden md:block',
+          collapsed ? 'w-16' : 'w-64'
+        )}
+      >
         <SidebarContent collapsed={collapsed} onToggle={onToggle} />
       </aside>
 

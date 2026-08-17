@@ -3,6 +3,8 @@ import { useStudentStore } from '@/store/useStudentStore';
 
 export function StudentProtectedRoute() {
   const { student } = useStudentStore();
-  if (!student) return <Navigate to="/portal/login" replace />;
+  if (!student) {
+    return <Navigate to="/portal/login" replace />;
+  }
   return <Outlet />;
 }

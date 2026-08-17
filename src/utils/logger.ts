@@ -15,10 +15,10 @@ interface LogContext {
   meta?: Record<string, unknown>;
 }
 
-const CONSOLE_METHODS: Record<LogLevel, (...args: unknown[]) => void> = {
-  error: console.error,
-  warn: console.warn,
-  info: console.info,
+const CONSOLE_METHODS: Record<LogLevel, keyof Console> = {
+  error: 'error',
+  warn: 'warn',
+  info: 'info',
 };
 
 const PREFIXES: Record<LogLevel, string> = {
@@ -32,14 +32,13 @@ const PREFIXES: Record<LogLevel, string> = {
  */
 function log(level: LogLevel, message: string, context?: LogContext): void {
   const timestamp = new Date().toISOString();
-  const prefix = context?.source
-    ? `${PREFIXES[level]} [${context.source}]`
-    : PREFIXES[level];
+  const prefix = context?.source ? `${PREFIXES[level]} [${context.source}]` : PREFIXES[level];
 
-  const consoleFn = CONSOLE_METHODS[level];
+  // Use direct console access so test spies on console.error/warn/log work
+  const consoleFn = console[CONSOLE_METHODS[level]] as (...args: unknown[]) => void;
 
   // Build a structured payload — useful when we pipe to Sentry later
-  const payload: Record<string, unknown> = {
+  const _payload: Record<string, unknown> = {
     timestamp,
     message,
     ...(context?.source && { source: context.source }),

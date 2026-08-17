@@ -2,7 +2,18 @@ import { useEffect, useState, useCallback } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
-import { CheckCircle, XCircle, Eye, X, Search, Loader2, Users, Clock, Check, Ban } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  Eye,
+  X,
+  Search,
+  Loader2,
+  Users,
+  Clock,
+  Check,
+  Ban,
+} from 'lucide-react';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -28,20 +39,30 @@ interface Admission {
 }
 
 const FILTERS = ['all', 'pending', 'approved', 'rejected'] as const;
-type Filter = typeof FILTERS[number];
+type Filter = (typeof FILTERS)[number];
 
 const generateStudentId = async (): Promise<string> => {
   const year = new Date().getFullYear().toString().slice(-2);
   try {
-    const { data } = await supabase.from('students').select('student_id').ilike('student_id', `CF${year}%`)
-      .order('student_id', { ascending: false }).limit(1);
+    const { data } = await supabase
+      .from('students')
+      .select('student_id')
+      .ilike('student_id', `CF${year}%`)
+      .order('student_id', { ascending: false })
+      .limit(1);
     const last = data?.[0]?.student_id;
     let seq = last ? parseInt(last.slice(-4)) + 1 : 1;
     // Loop until a unique candidate is found (guards against concurrent approvals)
     for (let attempt = 0; attempt < 10; attempt++) {
       const candidate = `CF${year}${String(seq).padStart(4, '0')}`;
-      const { data: existing } = await supabase.from('students').select('id').eq('student_id', candidate).maybeSingle();
-      if (!existing) return candidate;
+      const { data: existing } = await supabase
+        .from('students')
+        .select('id')
+        .eq('student_id', candidate)
+        .maybeSingle();
+      if (!existing) {
+        return candidate;
+      }
       seq += 1;
     }
   } catch (err) {
@@ -65,17 +86,41 @@ export default function AdmissionsPage() {
     setLoading(true);
     let admissionsList: Admission[] = [];
     try {
-      let q = supabase.from('admission_requests').select('*, batch:batches(name)').order('created_at', { ascending: false });
-      if (filter !== 'all') q = q.eq('status', filter);
+      let q = supabase
+        .from('admission_requests')
+        .select('*, batch:batches(name)')
+        .order('created_at', { ascending: false });
+      if (filter !== 'all') {
+        q = q.eq('status', filter);
+      }
       const { data } = await q;
-      admissionsList = (data ?? []).map((a: any) => ({ ...a, name: sanitize(a.name ?? ''), phone: sanitize(a.phone ?? ''), email: a.email ?? '', guardian_name: sanitize(a.guardian_name ?? ''), guardian_phone: sanitize(a.guardian_phone ?? ''), address: a.address ?? '', message: a.message ?? '', batch: { name: sanitize(a.batch?.name ?? '') } })) as Admission[];
-      const filtered = search ? admissionsList.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || a.phone?.includes(search)) : admissionsList;
+      admissionsList = (data ?? []).map((a: any) => ({
+        ...a,
+        name: sanitize(a.name ?? ''),
+        phone: sanitize(a.phone ?? ''),
+        email: a.email ?? '',
+        guardian_name: sanitize(a.guardian_name ?? ''),
+        guardian_phone: sanitize(a.guardian_phone ?? ''),
+        address: a.address ?? '',
+        message: a.message ?? '',
+        batch: { name: sanitize(a.batch?.name ?? '') },
+      })) as Admission[];
+      const filtered = search
+        ? admissionsList.filter(
+            (a) => a.name.toLowerCase().includes(search.toLowerCase()) || a.phone?.includes(search)
+          )
+        : admissionsList;
       setAdmissions(filtered);
 
       // Load stats separately (all)
       const { data: all } = await supabase.from('admission_requests').select('status');
       const s = { total: 0, pending: 0, approved: 0, rejected: 0 };
-      (all ?? []).forEach((a: any) => { s.total++; if (a.status in s) (s as any)[a.status]++; });
+      (all ?? []).forEach((a: any) => {
+        s.total++;
+        if (a.status in s) {
+          (s as any)[a.status]++;
+        }
+      });
       setStats(s);
     } catch (err) {
       handleSupabaseError(err);
@@ -84,7 +129,9 @@ export default function AdmissionsPage() {
     }
   }, [filter, search]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleApprove = async (admission: Admission) => {
     setActing(admission.id);
@@ -112,7 +159,11 @@ export default function AdmissionsPage() {
         p_photo_url: admission.photo_url ?? null,
       });
 
-      if (sErr) { toast.error('Failed to create student: ' + sErr.message); setActing(null); return; }
+      if (sErr) {
+        toast.error('Failed to create student: ' + sErr.message);
+        setActing(null);
+        return;
+      }
 
       // Update batch enrolled count
       if (admission.batch_id) {
@@ -120,9 +171,14 @@ export default function AdmissionsPage() {
       }
 
       // Update admission status
-      const { error: statusErr } = await supabase.from('admission_requests').update({ status: 'approved' }).eq('id', admission.id);
+      const { error: statusErr } = await supabase
+        .from('admission_requests')
+        .update({ status: 'approved' })
+        .eq('id', admission.id);
       if (statusErr) {
-        toast.error('Student created but admission status update failed. Please refresh and check.');
+        toast.error(
+          'Student created but admission status update failed. Please refresh and check.'
+        );
         setActing(null);
         load();
         return;
@@ -147,7 +203,10 @@ export default function AdmissionsPage() {
   const handleReject = async (admission: Admission) => {
     setActing(admission.id);
     try {
-      await supabase.from('admission_requests').update({ status: 'rejected' }).eq('id', admission.id);
+      await supabase
+        .from('admission_requests')
+        .update({ status: 'rejected' })
+        .eq('id', admission.id);
       toast.success('Application rejected');
 
       // Send SMS
@@ -167,9 +226,27 @@ export default function AdmissionsPage() {
 
   const STAT_CARDS = [
     { label: 'Total', value: stats.total, icon: Users, color: 'text-sky-400', bg: 'bg-sky-400/10' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10' },
-    { label: 'Approved', value: stats.approved, icon: Check, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-    { label: 'Rejected', value: stats.rejected, icon: Ban, color: 'text-red-400', bg: 'bg-red-400/10' },
+    {
+      label: 'Pending',
+      value: stats.pending,
+      icon: Clock,
+      color: 'text-amber-400',
+      bg: 'bg-amber-400/10',
+    },
+    {
+      label: 'Approved',
+      value: stats.approved,
+      icon: Check,
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-400/10',
+    },
+    {
+      label: 'Rejected',
+      value: stats.rejected,
+      icon: Ban,
+      color: 'text-red-400',
+      bg: 'bg-red-400/10',
+    },
   ];
 
   return (
@@ -177,7 +254,7 @@ export default function AdmissionsPage() {
       <div className="space-y-5">
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {STAT_CARDS.map(s => (
+          {STAT_CARDS.map((s) => (
             <div key={s.label} className="card p-4 flex items-center gap-3">
               <div className={cn('p-2 rounded-lg', s.bg)}>
                 <s.icon size={18} className={s.color} />
@@ -193,66 +270,124 @@ export default function AdmissionsPage() {
         {/* Filters + search */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1 bg-navy-800 rounded-lg p-1">
-            {FILTERS.map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={cn('px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all',
-                  filter === f ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'text-slate-400 hover:text-white')}>
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all',
+                  filter === f
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                    : 'text-slate-400 hover:text-white'
+                )}
+              >
                 {f}
               </button>
             ))}
           </div>
           <div className="relative ml-auto">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-8 py-1.5 text-sm w-52"
-              placeholder="Name or phone…" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-field pl-8 py-1.5 text-sm w-52"
+              placeholder="Name or phone…"
+            />
           </div>
         </div>
 
         {/* Table */}
         <div className="card overflow-hidden">
           {loading ? (
-            <div className="divide-y divide-navy-700/30">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />)}</div>
+            <div className="divide-y divide-navy-700/30">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-12 mx-4 my-2 bg-navy-700 rounded animate-pulse" />
+              ))}
+            </div>
           ) : admissions.length === 0 ? (
-            <p className="text-center py-12 text-slate-500 text-sm">No applications for this filter</p>
+            <p className="text-center py-12 text-slate-500 text-sm">
+              No applications for this filter
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-navy-700/50">
-                    {['Name', 'Class', 'Batch', 'Phone', 'Date', 'Status', ''].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap">{h}</th>
+                    {['Name', 'Class', 'Batch', 'Phone', 'Date', 'Status', ''].map((h) => (
+                      <th
+                        key={h}
+                        className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {admissions.map(a => (
+                  {admissions.map((a) => (
                     <tr key={a.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
                       <td className="px-4 py-3">
                         <p className="text-white font-medium">{a.name}</p>
                         {a.email && <p className="text-slate-500 text-xs">{a.email}</p>}
                       </td>
                       <td className="px-4 py-3 text-slate-300 text-sm">{a.class_level ?? '—'}</td>
-                      <td className="px-4 py-3">{a.batch?.name ? <span className="badge-blue text-xs">{a.batch.name}</span> : <span className="text-slate-500">—</span>}</td>
-                      <td className="px-4 py-3 text-slate-300 text-sm">{a.phone ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{formatDate(a.created_at)}</td>
                       <td className="px-4 py-3">
-                        <span className={a.status === 'approved' ? 'badge-green text-xs' : a.status === 'rejected' ? 'badge-red text-xs' : 'badge-yellow text-xs'}>
+                        {a.batch?.name ? (
+                          <span className="badge-blue text-xs">{a.batch.name}</span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 text-sm">{a.phone ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                        {formatDate(a.created_at)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            a.status === 'approved'
+                              ? 'badge-green text-xs'
+                              : a.status === 'rejected'
+                                ? 'badge-red text-xs'
+                                : 'badge-yellow text-xs'
+                          }
+                        >
                           {a.status}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1">
-                          <button onClick={() => setViewing(a)} className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 transition-colors" title="View"><Eye size={13} /></button>
-                          {a.status === 'pending' && (<>
-                            <button onClick={() => handleApprove(a)} disabled={acting === a.id}
-                              className="p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-400 hover:text-emerald-400 transition-colors disabled:opacity-50" title="Approve">
-                              {acting === a.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                            </button>
-                            <button onClick={() => handleReject(a)} disabled={acting === a.id}
-                              className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-400 hover:text-red-400 transition-colors disabled:opacity-50" title="Reject">
-                              <XCircle size={13} />
-                            </button>
-                          </>)}
+                          <button
+                            onClick={() => setViewing(a)}
+                            className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 transition-colors"
+                            title="View"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          {a.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(a)}
+                                disabled={acting === a.id}
+                                className="p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-400 hover:text-emerald-400 transition-colors disabled:opacity-50"
+                                title="Approve"
+                              >
+                                {acting === a.id ? (
+                                  <Loader2 size={13} className="animate-spin" />
+                                ) : (
+                                  <CheckCircle size={13} />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleReject(a)}
+                                disabled={acting === a.id}
+                                className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-400 hover:text-red-400 transition-colors disabled:opacity-50"
+                                title="Reject"
+                              >
+                                <XCircle size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -268,12 +403,28 @@ export default function AdmissionsPage() {
       <AnimatePresence>
         {viewing && (
           <div className="fixed inset-0 z-50 flex">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setViewing(null)} />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="relative ml-auto w-full max-w-md h-full bg-navy-900 border-l border-navy-700/50 overflow-y-auto z-10 flex flex-col">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setViewing(null)}
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="relative ml-auto w-full max-w-md h-full bg-navy-900 border-l border-navy-700/50 overflow-y-auto z-10 flex flex-col"
+            >
               <div className="flex items-center justify-between p-5 border-b border-navy-700/50 shrink-0">
                 <h2 className="font-inter font-bold text-white">Application Details</h2>
-                <button onClick={() => setViewing(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+                <button
+                  onClick={() => setViewing(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
               </div>
               <div className="flex-1 p-5 space-y-4">
                 <div className="flex items-center gap-3 mb-2">
@@ -282,7 +433,15 @@ export default function AdmissionsPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-white">{viewing.name}</h3>
-                    <span className={viewing.status === 'approved' ? 'badge-green text-xs' : viewing.status === 'rejected' ? 'badge-red text-xs' : 'badge-yellow text-xs'}>
+                    <span
+                      className={
+                        viewing.status === 'approved'
+                          ? 'badge-green text-xs'
+                          : viewing.status === 'rejected'
+                            ? 'badge-red text-xs'
+                            : 'badge-yellow text-xs'
+                      }
+                    >
                       {viewing.status}
                     </span>
                   </div>
@@ -306,7 +465,9 @@ export default function AdmissionsPage() {
                   {viewing.message && (
                     <div className="pt-2 border-t border-navy-700/50">
                       <p className="text-slate-500 text-xs mb-1">Message</p>
-                      <p className="text-slate-300 text-sm font-hind leading-relaxed">{viewing.message}</p>
+                      <p className="text-slate-300 text-sm font-hind leading-relaxed">
+                        {viewing.message}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -314,13 +475,29 @@ export default function AdmissionsPage() {
 
               {viewing.status === 'pending' && (
                 <div className="p-5 border-t border-navy-700/50 flex gap-3 shrink-0">
-                  <button onClick={() => handleReject(viewing)} disabled={acting === viewing.id}
-                    className="btn-danger flex-1 justify-center text-sm">
-                    {acting === viewing.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Reject
+                  <button
+                    onClick={() => handleReject(viewing)}
+                    disabled={acting === viewing.id}
+                    className="btn-danger flex-1 justify-center text-sm"
+                  >
+                    {acting === viewing.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <XCircle size={14} />
+                    )}{' '}
+                    Reject
                   </button>
-                  <button onClick={() => handleApprove(viewing)} disabled={acting === viewing.id}
-                    className="btn-primary flex-1 justify-center text-sm">
-                    {acting === viewing.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Approve
+                  <button
+                    onClick={() => handleApprove(viewing)}
+                    disabled={acting === viewing.id}
+                    className="btn-primary flex-1 justify-center text-sm"
+                  >
+                    {acting === viewing.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <CheckCircle size={14} />
+                    )}{' '}
+                    Approve
                   </button>
                 </div>
               )}

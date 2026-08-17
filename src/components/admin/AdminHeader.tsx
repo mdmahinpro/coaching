@@ -39,8 +39,13 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
 
   const handleSearch = (q: string) => {
     setSearchQ(q);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (q.trim().length < 2) { setSearchResults([]); return; }
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
     setSearchLoading(true);
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase
@@ -61,7 +66,11 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
 
   // Clear pending debounce on unmount to prevent setState on unmounted component
   useEffect(() => {
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
   }, []);
 
   // Close on outside click
@@ -101,11 +110,14 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
               className="overflow-hidden"
             >
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 z-10" />
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 z-10"
+                />
                 <input
                   autoFocus
                   value={searchQ}
-                  onChange={e => handleSearch(e.target.value)}
+                  onChange={(e) => handleSearch(e.target.value)}
                   className="input-field pl-8 py-2 text-sm h-9 pr-3"
                   placeholder="ছাত্র খুঁজুন…"
                 />
@@ -115,7 +127,13 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
         </AnimatePresence>
 
         <button
-          onClick={() => { if (searchOpen) { closeSearch(); } else { setSearchOpen(true); } }}
+          onClick={() => {
+            if (searchOpen) {
+              closeSearch();
+            } else {
+              setSearchOpen(true);
+            }
+          }}
           className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors shrink-0"
         >
           {searchOpen ? <X size={16} /> : <Search size={16} />}
@@ -134,13 +152,17 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
               {searchLoading ? (
                 <div className="px-4 py-3 text-slate-500 text-xs text-center">খুঁজছে…</div>
               ) : searchResults.length === 0 ? (
-                <div className="px-4 py-3 text-slate-500 text-xs text-center">কোনো ফলাফল পাওয়া যায়নি</div>
+                <div className="px-4 py-3 text-slate-500 text-xs text-center">
+                  কোনো ফলাফল পাওয়া যায়নি
+                </div>
               ) : (
                 <>
                   <div className="px-3 py-2 border-b border-white/5">
-                    <p className="text-slate-500 text-[10px] font-semibold tracking-wider">STUDENTS</p>
+                    <p className="text-slate-500 text-[10px] font-semibold tracking-wider">
+                      STUDENTS
+                    </p>
                   </div>
-                  {searchResults.map(s => (
+                  {searchResults.map((s) => (
                     <Link
                       key={s.id}
                       to="/admin/students"
@@ -149,16 +171,24 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                     >
                       <div className="w-8 h-8 rounded-full bg-sky-400/15 flex items-center justify-center shrink-0">
                         {s.photo_url ? (
-                          <img src={s.photo_url} alt={s.name} className="w-8 h-8 rounded-full object-cover" />
+                          <img
+                            src={s.photo_url}
+                            alt={s.name}
+                            className="w-8 h-8 rounded-full object-cover"
+                          />
                         ) : (
                           <span className="text-sky-400 text-xs font-bold">{s.name[0]}</span>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate font-hind">{s.name}</p>
+                        <p className="text-white text-sm font-medium truncate font-hind">
+                          {s.name}
+                        </p>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sky-400 text-[10px]">{s.student_id}</span>
-                          {s.class_level && <span className="text-slate-500 text-[10px]">{s.class_level}</span>}
+                          {s.class_level && (
+                            <span className="text-slate-500 text-[10px]">{s.class_level}</span>
+                          )}
                         </div>
                       </div>
                       <Hash size={11} className="text-slate-600 shrink-0" />
@@ -180,11 +210,13 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
       {/* Avatar + dropdown */}
       <div className="relative">
         <button
-          onClick={() => setShowDropdown(s => !s)}
+          onClick={() => setShowDropdown((s) => !s)}
           className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
         >
           <Avatar name={name} size="sm" />
-          <span className="hidden sm:block text-sm font-medium text-white max-w-[100px] truncate">{name}</span>
+          <span className="hidden sm:block text-sm font-medium text-white max-w-[100px] truncate">
+            {name}
+          </span>
         </button>
 
         <AnimatePresence>
