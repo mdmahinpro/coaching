@@ -109,7 +109,7 @@ export default function ExamPage() {
   const [exam, setExam] = useState<ExamData | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   // Exam-scoped token minted by exam_join; drives getExamQuestions/submitExam.
-  const [examToken, setExamToken] = useState<string | null>(null);
+  // Held in a ref (not state) since it's only read imperatively, never rendered.
   const examTokenRef = useRef<string | null>(null);
 
   // Verify step
@@ -148,7 +148,6 @@ export default function ExamPage() {
         return;
       }
       const join = await joinExam(examId, opts.code);
-      setExamToken(join.exam_token);
       examTokenRef.current = join.exam_token;
       setStudent({ id: join.student_id, name: sanitize(join.student_name), student_id: join.student_code });
 

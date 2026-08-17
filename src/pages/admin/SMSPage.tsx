@@ -146,6 +146,9 @@ function SendSMSTab() {
   };
 
   const charCount = message.length;
+  // Non-GSM (Unicode) chars force 70-char SMS units. The \x00-\x7F range is
+  // intentional here — matching outside the ASCII range detects them.
+  // eslint-disable-next-line no-control-regex
   const hasNonGSM = /[^\x00-\x7F]/.test(message);
   const charsPerUnit = hasNonGSM ? 70 : 160;
   const smsUnits = Math.ceil(charCount / charsPerUnit) || 1;
