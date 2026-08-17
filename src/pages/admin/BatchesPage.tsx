@@ -25,7 +25,8 @@ interface Batch {
   subject?: string;
   class_level?: string;
   teacher_id?: string;
-  teacher?: { id: string; name: string };
+  // teacher is a text column (teacher name string), not a relation object
+  teacher?: string;
   schedule_days?: string[];
   schedule_time?: string;
   capacity: number;
@@ -64,7 +65,7 @@ export default function BatchesPage() {
       const [{ data }, { data: studentCounts }] = await Promise.all([
         supabase
           .from('batches')
-          .select('*, teacher:teachers(id,name)')
+          .select('*')
           .order('created_at', { ascending: false }),
         supabase
           .from('students')
@@ -83,7 +84,7 @@ export default function BatchesPage() {
         name: sanitize(b.name),
         subject: b.subject ? sanitize(b.subject) : b.subject,
         description: b.description ? sanitize(b.description) : b.description,
-        teacher: b.teacher ? { ...b.teacher, name: sanitize(b.teacher.name) } : b.teacher,
+        teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
       }));
       setBatches(cleaned.map((b: any) => ({ ...b, enrolled_count: countMap[b.id] ?? 0 })));
     } catch (err) {
@@ -309,10 +310,10 @@ export default function BatchesPage() {
                   </div>
 
                   <div className="space-y-2 text-xs text-slate-400 mb-3">
-                    {b.teacher?.name && (
+                    {b.teacher && (
                       <div className="flex items-center gap-1.5">
                         <BookOpen size={11} className="text-violet-400" />
-                        {b.teacher.name}
+                        {b.teacher}
                       </div>
                     )}
                     {(days.length > 0 || b.schedule_time) && (

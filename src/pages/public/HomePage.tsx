@@ -40,7 +40,8 @@ export default function HomePage() {
       .then(({ data }) => {
         const cleaned = (data ?? []).map((b: any) => ({
           ...b, name: sanitize(b.name),
-          teacher: b.teacher ? { ...b.teacher, name: sanitize(b.teacher.name) } : b.teacher,
+          // teacher is a text column (teacher name string), not a relation object
+          teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
         }));
         setBatches(cleaned);
       },(err: any) => { handleSupabaseError(err); });
