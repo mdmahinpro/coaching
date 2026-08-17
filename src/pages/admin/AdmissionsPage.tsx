@@ -188,7 +188,7 @@ export default function AdmissionsPage() {
       // Send SMS with correct password
       if (admission.phone) {
         const msg = `🎉 ${admission.name}, ভর্তি অনুমোদিত!\nStudent ID: ${studentId}\nPassword: ${password}\nপোর্টাল: /portal/login\n- ${settings.centerName}`;
-        await sendSMS(admission.phone, msg, 'APPROVED', settings.smsApiKey, settings.smsSenderId);
+        await sendSMS(admission.phone, msg, 'APPROVED');
       }
 
       setActing(null);
@@ -212,7 +212,7 @@ export default function AdmissionsPage() {
       // Send SMS
       if (admission.phone) {
         const msg = `দুঃখিত ${admission.name}, আপনার ভর্তির আবেদন গ্রহণ করা হয়নি। বিস্তারিত জানতে ${settings.centerPhone} এ যোগাযোগ করুন। - ${settings.centerName}`;
-        await sendSMS(admission.phone, msg, 'custom', settings.smsApiKey, settings.smsSenderId);
+        await sendSMS(admission.phone, msg, 'custom');
       }
 
       setActing(null);

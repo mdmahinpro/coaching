@@ -15,7 +15,6 @@ import {
   Printer,
   RefreshCw,
   CheckCircle2,
-  X,
   Loader2,
   History,
   Eye,
@@ -676,13 +675,7 @@ function RecordPaymentTab() {
     if (sendSMSFlag && selectedStudent.phone) {
       try {
         const msg = `প্রিয় ${selectedStudent.name}, ৳${finalAmount} ফি গ্রহণ করা হয়েছে। রশিদ: ${receiptNo}। ধন্যবাদ - ${settings.centerName}`;
-        await sendSMS(
-          selectedStudent.phone,
-          msg,
-          'FEE_PAID',
-          settings.smsApiKey,
-          settings.smsSenderId
-        );
+        await sendSMS(selectedStudent.phone, msg, 'FEE_PAID');
       } catch (err) {
         handleSupabaseError(err);
       }
@@ -1082,13 +1075,7 @@ function DueReportTab({ batches }: { batches: any[] }) {
     }
     setSending(fee.id);
     const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-    const res = await sendSMS(
-      fee.student.phone,
-      msg,
-      'FEE_REMINDER',
-      settings.smsApiKey,
-      settings.smsSenderId
-    );
+    const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
     toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${fee.student.name}`);
     setSending(null);
   };
@@ -1101,13 +1088,7 @@ function DueReportTab({ batches }: { batches: any[] }) {
     setBulkSending(true);
     for (const fee of targets) {
       const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-      await sendSMS(
-        fee.student.phone,
-        msg,
-        'FEE_REMINDER',
-        settings.smsApiKey,
-        settings.smsSenderId
-      );
+      await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
     }
     toast.success(`SMS sent to ${targets.length} students`);
     setBulkSending(false);

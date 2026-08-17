@@ -1,12 +1,18 @@
 [build]
-  base      = "artifacts/coaching-center"
-  command   = "pnpm install && pnpm run build"
+  command   = "pnpm install --frozen-lockfile && pnpm run build"
   publish   = "dist"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
   PORT         = "3000"
   BASE_PATH    = "/"
+
+# Route the SMS API path to the serverless function (must precede the SPA catch-all).
+[[redirects]]
+  from   = "/api/send-sms"
+  to     = "/.netlify/functions/send-sms"
+  status = 200
 
 [[redirects]]
   from   = "/*"

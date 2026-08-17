@@ -6,7 +6,6 @@ import { X, Save, Upload, User, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import toast from 'react-hot-toast';
 
 const schema = z.object({
   name: z.string().min(2, 'Name required'),

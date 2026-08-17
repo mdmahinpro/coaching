@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, Users, BookOpen, Award, TrendingUp } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntersection } from '@/hooks/useIntersection';
 
 function useCountUp(target: number, duration = 1800, active = false) {

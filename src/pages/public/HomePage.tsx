@@ -7,7 +7,7 @@ import { Avatar } from '@/components/shared/Avatar';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { cn, sanitize } from '@/lib/utils';
+import { sanitize } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {

@@ -6,9 +6,6 @@ import { cn, formatDate, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
-  MessageSquare,
-  Eye,
-  EyeOff,
   Save,
   Loader2,
   CheckCircle2,
@@ -55,7 +52,6 @@ const SAMPLE_VARS: Record<string, string> = {
 
 // ── Send SMS Tab ──────────────────────────────────────────────────────────────
 function SendSMSTab() {
-  const { settings } = useSettingsStore();
   const [batches, setBatches] = useState<any[]>([]);
   const [recipientType, setRecipientType] = useState<'all' | 'batch' | 'due' | 'custom'>('all');
   const [batchId, setBatchId] = useState('');
@@ -228,9 +224,7 @@ function SendSMSTab() {
       const res = await sendSMS(
         phones,
         message,
-        'custom',
-        settings.smsApiKey,
-        settings.smsSenderId
+        'custom'
       );
       setProgress(100);
       setResult(res);
@@ -483,7 +477,6 @@ function SendSMSTab() {
 
 // ── Templates Tab ─────────────────────────────────────────────────────────────
 function TemplatesTab() {
-  const { settings } = useSettingsStore();
   const [templates, setTemplates] = useState<Record<string, string>>(
     Object.fromEntries(Object.values(SMS_TEMPLATES).map((t) => [t.key, t.body]))
   );
@@ -680,34 +673,9 @@ function SMSLogTab() {
 
 // ── Settings Tab ──────────────────────────────────────────────────────────────
 function SMSSettingsTab() {
-  const { settings, updateSettings } = useSettingsStore();
-  const [apiKey, setApiKey] = useState(settings.smsApiKey);
-  const [senderId, setSenderId] = useState(settings.smsSenderId);
-  const [showKey, setShowKey] = useState(false);
+  const { settings } = useSettingsStore();
   const [testPhone, setTestPhone] = useState('');
   const [testing, setSending] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      updateSettings({ smsApiKey: apiKey, smsSenderId: senderId });
-      const upserts = [
-        { key: 'sms_api_key', value: apiKey },
-        { key: 'sms_sender_id', value: senderId },
-      ];
-      const { error } = await supabase.from('site_settings').upsert(upserts, { onConflict: 'key' });
-      if (error) {
-        toast.error('Failed to save: ' + error.message);
-        return;
-      }
-      toast.success('SMS settings saved');
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleTest = async () => {
     if (!testPhone) {
@@ -719,14 +687,12 @@ function SMSSettingsTab() {
       const res = await sendSMS(
         testPhone,
         `Test SMS from ${settings.centerName} — ${new Date().toLocaleTimeString()}`,
-        'test',
-        apiKey,
-        senderId
+        'test'
       );
       if (res.sent > 0) {
         toast.success('Test SMS sent!');
       } else {
-        toast.error('SMS failed. Check API key.');
+        toast.error('SMS failed or no server key configured.');
       }
     } catch (err) {
       handleSupabaseError(err);
@@ -737,48 +703,16 @@ function SMSSettingsTab() {
 
   return (
     <div className="max-w-lg space-y-5">
-      <div className="card p-5 space-y-4">
+      <div className="card p-5 space-y-3">
         <h3 className="font-semibold text-white">MIMSMS Configuration</h3>
-        <div>
-          <label className="text-xs text-slate-400 mb-1.5 block">API Key</label>
-          <div className="relative">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="input-field pr-10 font-mono"
-              placeholder="Your MIMSMS API key"
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-            >
-              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
+        <div className="card p-3 border border-sky-400/20">
+          <p className="text-slate-300 text-xs leading-relaxed">
+            The SMS API key is now stored securely on the server and is never exposed to the
+            browser. Set the <span className="font-mono text-sky-400">SMS_API_KEY</span> and{' '}
+            <span className="font-mono text-sky-400">SMS_SENDER_ID</span> environment variables in
+            your hosting platform (Netlify / Vercel) to enable delivery.
+          </p>
         </div>
-        <div>
-          <label className="text-xs text-slate-400 mb-1.5 block">Sender ID</label>
-          <input
-            value={senderId}
-            onChange={(e) => setSenderId(e.target.value)}
-            className="input-field"
-            placeholder="CoachMS"
-          />
-          <p className="text-slate-600 text-xs mt-1">Max 11 characters, letters only</p>
-        </div>
-        <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
-          {saving ? (
-            <>
-              <Loader2 size={14} className="animate-spin" /> Saving…
-            </>
-          ) : (
-            <>
-              <Save size={14} /> Save Settings
-            </>
-          )}
-        </button>
       </div>
 
       <div className="card p-5 space-y-4">
@@ -805,14 +739,6 @@ function SMSSettingsTab() {
             )}
           </button>
         </div>
-        {!apiKey && (
-          <div className="card p-3 border border-amber-400/20">
-            <p className="text-amber-400 text-xs">
-              ⚠ No API key configured. SMS will be logged as &quot;pending&quot; without actual
-              delivery.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

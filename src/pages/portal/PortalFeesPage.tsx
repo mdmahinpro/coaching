@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
+import { fetchFees } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -39,20 +39,16 @@ export default function PortalFeesPage() {
     if (!student) {
       return;
     }
-    supabase
-      .from('fees')
-      .select('*')
-      .eq('student_id', student.id)
-      .order('due_date', { ascending: false })
-      .then(
-        ({ data }) => {
-          setFees((data ?? []) as Fee[]);
-          setLoading(false);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
+    fetchFees().then(
+      (data) => {
+        setFees((data ?? []) as Fee[]);
+        setLoading(false);
+      },
+      (err: any) => {
+        handleSupabaseError(err);
+        setLoading(false);
+      }
+    );
   }, [student]);
 
   const parseNote = (note?: string) => {

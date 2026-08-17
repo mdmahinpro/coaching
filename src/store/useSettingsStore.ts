@@ -19,8 +19,6 @@ export interface Settings {
   bkashNumber: string;
   nagadNumber: string;
   admissionFee: number;
-  smsApiKey: string;
-  smsSenderId: string;
   statStudents: number;
   statTeachers: number;
   statBatches: number;
@@ -56,8 +54,6 @@ export const defaults: Settings = {
   bkashNumber: '01768836443',
   nagadNumber: '01768836443',
   admissionFee: 500,
-  smsApiKey: '',
-  smsSenderId: 'TechelyAcademy',
   statStudents: 0,
   statTeachers: 0,
   statBatches: 0,
@@ -86,8 +82,6 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   bkashNumber: 'bkash_number',
   nagadNumber: 'nagad_number',
   admissionFee: 'admission_fee',
-  smsApiKey: 'sms_api_key',
-  smsSenderId: 'sms_sender_id',
   statStudents: 'stat_students',
   statTeachers: 'stat_teachers',
   statBatches: 'stat_batches',

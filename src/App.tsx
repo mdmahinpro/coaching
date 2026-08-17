@@ -273,11 +273,12 @@ function AppRoutes() {
 }
 
 function App() {
-  const { initialize } = useAuthStore();
+  const { initialize, teardown } = useAuthStore();
   const { loadFromDB } = useSettingsStore();
   useEffect(() => {
     initialize();
     loadFromDB();
+    return () => teardown();
   }, []);
   const base = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
   return (

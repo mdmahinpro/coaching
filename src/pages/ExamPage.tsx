@@ -2,8 +2,17 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { useStudentStore } from '@/store/useStudentStore';
+import { getStudentToken } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import {
+  getExamMeta,
+  joinExam,
+  getExamQuestions,
+  submitExam,
+  getLeaderboard,
+  getMySubmission,
+  getExamReview,
+} from '@/lib/examApi';
 import toast from 'react-hot-toast';
 import { cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,17 +33,18 @@ interface ExamData {
   id: string;
   title: string;
   subject: string;
-  batch?: { name: string };
+  batch_name?: string | null;
   duration_minutes: number;
   total_marks: number;
   pass_marks: number;
   instructions?: string;
   status?: string;
-  start_time?: string;
-  end_time?: string;
+  start_time?: string | null;
+  end_time?: string | null;
   timer_enabled?: boolean;
 }
 
+/** Question as served during the exam — WITHOUT the answer key. */
 interface Question {
   id: string;
   question_text: string;
@@ -42,9 +52,13 @@ interface Question {
   option_b: string;
   option_c: string;
   option_d: string;
-  correct_option: 'A' | 'B' | 'C' | 'D';
   marks: number;
   order_num: number;
+}
+
+/** Question enriched with the answer key — only available AFTER submitting. */
+interface ReviewQuestion extends Question {
+  correct_option: 'A' | 'B' | 'C' | 'D';
 }
 
 interface Submission {
@@ -54,7 +68,7 @@ interface Submission {
   wrong_count: number;
   time_taken: number;
   rank?: number;
-  answers: string;
+  answers?: string | Record<string, string>;
 }
 
 type Step =
@@ -94,6 +108,9 @@ export default function ExamPage() {
   const [step, setStep] = useState<Step>('loading');
   const [exam, setExam] = useState<ExamData | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  // Exam-scoped token minted by exam_join; drives getExamQuestions/submitExam.
+  const [examToken, setExamToken] = useState<string | null>(null);
+  const examTokenRef = useRef<string | null>(null);
 
   // Verify step
   const [studentIdInput, setStudentIdInput] = useState('');
@@ -119,104 +136,117 @@ export default function ExamPage() {
   // Result step
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
-  const [showBreakdown, setShowBreakdown] = useState(false);
+  // Answer key + questions, fetched only AFTER submitting (for the review breakdown).
+  const [reviewQuestions, setReviewQuestions] = useState<ReviewQuestion[]>([]);
+
+  // ── Enter the exam once identity is established (mints exam token) ─────────
+  // Resolves questions (without answer key) or routes to the result view if the
+  // student has already submitted. `code` is the manual-verify Student ID.
+  const enterExam = useCallback(
+    async (opts: { code?: string; examStatus?: string }) => {
+      if (!examId) {
+        return;
+      }
+      const join = await joinExam(examId, opts.code);
+      setExamToken(join.exam_token);
+      examTokenRef.current = join.exam_token;
+      setStudent({ id: join.student_id, name: sanitize(join.student_name), student_id: join.student_code });
+
+      if (join.already_submitted) {
+        const sub = await getMySubmission(join.exam_token);
+        if (sub) {
+          setSubmission(sub as unknown as Submission);
+        }
+        await loadReview(join.exam_token);
+        await loadLeaderboard();
+        setStep('already-submitted');
+        return;
+      }
+
+      if ((opts.examStatus ?? join.exam_status) === 'ended') {
+        setStep('ended');
+        return;
+      }
+
+      const qs = await getExamQuestions(join.exam_token);
+      const normalised = (qs ?? []).map((qq: any) => ({
+        ...qq,
+        question_text: sanitize(qq.question_text),
+        option_a: sanitize(qq.option_a),
+        option_b: sanitize(qq.option_b),
+        option_c: sanitize(qq.option_c),
+        option_d: sanitize(qq.option_d),
+      }));
+      setQuestions(normalised as Question[]);
+
+      // Resume in-progress answers from localStorage.
+      const saved = localStorage.getItem(`exam-answers-${examId}-${join.student_id}`);
+      if (saved) {
+        try {
+          setAnswers(JSON.parse(saved));
+          let secs = (exam?.duration_minutes ?? 30) * 60;
+          if (exam?.timer_enabled !== false && exam?.end_time) {
+            secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
+          }
+          setRemainingSecs(secs);
+          setStep('exam');
+          return;
+        } catch {
+          /* fall through to instructions */
+        }
+      }
+      setStep('instructions');
+    },
+    // exam is read for duration/timer; examId is stable per route
+    [examId, exam]
+  );
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!examId) {
       return;
     }
-    const { student: sessionStudent } = useStudentStore.getState();
+    const loggedIn = !!getStudentToken();
 
-    Promise.all([
-      supabase.from('exams').select('*, batch:batches(name)').eq('id', examId).single(),
-      supabase.from('mcq_questions').select('*').eq('exam_id', examId).order('order_num'),
-    ]).then(
-      ([examRes, qRes]) => {
-        const e = examRes.data;
-        const q = qRes.data;
-        if (!e) {
+    (async () => {
+      try {
+        const meta = await getExamMeta(examId);
+        if (!meta) {
           setStep('ended');
           return;
         }
         const cleanExam: ExamData = {
-          ...e,
-          title: sanitize(e.title),
-          subject: e.subject ? sanitize(e.subject) : e.subject,
-          instructions: e.instructions ? sanitize(e.instructions) : e.instructions,
+          ...meta,
+          title: sanitize(meta.title),
+          subject: meta.subject ? sanitize(meta.subject) : meta.subject,
+          instructions: meta.instructions ? sanitize(meta.instructions) : undefined,
         };
         setExam(cleanExam);
-        const normalised = (q ?? []).map((qq: any) => ({
-          ...qq,
-          correct_option: (qq.correct_option as string).toUpperCase() as 'A' | 'B' | 'C' | 'D',
-          question_text: sanitize(qq.question_text),
-          option_a: sanitize(qq.option_a),
-          option_b: sanitize(qq.option_b),
-          option_c: sanitize(qq.option_c),
-          option_d: sanitize(qq.option_d),
-        }));
-        setQuestions(normalised as Question[]);
 
-        if (e.status === 'ended' && !sessionStudent) {
+        // Anonymous visitor to an ended exam → nothing to join.
+        if (meta.status === 'ended' && !loggedIn) {
           setStep('ended');
           return;
         }
 
-        if (sessionStudent) {
-          (async () => {
-            try {
-              const { data: existing } = await supabase
-                .from('mcq_submissions')
-                .select('*')
-                .eq('exam_id', examId)
-                .eq('student_id', sessionStudent.id)
-                .single();
-              if (existing) {
-                setSubmission(existing as Submission);
-                loadLeaderboard();
-                setStep('already-submitted');
-                return;
-              }
-              if (e.status === 'ended') {
-                setStep('ended');
-                return;
-              }
-              const saved = localStorage.getItem(`exam-answers-${examId}-${sessionStudent.id}`);
-              if (saved) {
-                try {
-                  setAnswers(JSON.parse(saved));
-                  let secs = (e.duration_minutes ?? 30) * 60;
-                  if (e.timer_enabled !== false && e.end_time) {
-                    secs = Math.max(
-                      0,
-                      Math.floor((new Date(e.end_time).getTime() - Date.now()) / 1000)
-                    );
-                  }
-                  setRemainingSecs(secs);
-                  setStep('exam');
-                  return;
-                } catch {
-                  /* ignore */
-                }
-              }
-              setStep('instructions');
-            } catch (err) {
-              handleSupabaseError(err);
-            }
-          })();
+        if (loggedIn) {
+          // Portal session establishes identity automatically.
+          await enterExam({ examStatus: meta.status });
           return;
         }
 
-        if (e.status === 'ended') {
+        // No session → ask for a Student ID (manual verify).
+        if (meta.status === 'ended') {
           setStep('ended');
           return;
         }
         setStep('verify');
-      },
-      (err: any) => {
+      } catch (err) {
         handleSupabaseError(err);
+        setStep('ended');
       }
-    );
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId]);
 
   // ── Realtime: watch for exam ended ────────────────────────────────────────
@@ -243,86 +273,31 @@ export default function ExamPage() {
   }, [examId, step]);
 
   // ── Verify Student ────────────────────────────────────────────────────────
+  // Manual-verify path: identity resolves server-side from the Student ID via
+  // exam_join, which validates approval/suspension and mints an exam token.
   const handleVerify = async () => {
-    if (!studentIdInput.trim()) {
+    const code = studentIdInput.trim();
+    if (!code) {
       return;
     }
     setVerifying(true);
     setVerifyError('');
 
     try {
-      // Check student
-      const { data: s } = await supabase
-        .from('students')
-        .select('*')
-        .ilike('student_id', studentIdInput.trim())
-        .single();
-
-      if (!s) {
+      await enterExam({ code });
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      if (msg.includes('STUDENT_NOT_FOUND')) {
         setVerifyError('এই Student ID দিয়ে কোনো শিক্ষার্থী পাওয়া যায়নি।');
-        return;
-      }
-      if (!s.is_approved) {
+      } else if (msg.includes('NOT_APPROVED')) {
         setVerifyError('আপনি এখনো অনুমোদিত হননি। Admin এর সাথে যোগাযোগ করুন।');
-        return;
-      }
-      if (s.status === 'suspended') {
+      } else if (msg.includes('SUSPENDED')) {
         setVerifyError('আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে। Admin এর সাথে যোগাযোগ করুন।');
-        return;
-      }
-
-      // Sanitize student name before storing in state
-      const cleanStudent = { ...s, name: sanitize(s.name) };
-
-      // Re-fetch current exam status to avoid using a stale locally-cached value
-      const { data: freshExam } = await supabase
-        .from('exams')
-        .select('status')
-        .eq('id', examId)
-        .single();
-      if (freshExam?.status === 'ended' || freshExam?.status === 'cancelled') {
+      } else if (msg.includes('EXAM_NOT_FOUND')) {
         setStep('ended');
-        return;
+      } else {
+        setVerifyError('যাচাই করা যায়নি। আবার চেষ্টা করুন।');
       }
-
-      // Check already submitted
-      const { data: existing } = await supabase
-        .from('mcq_submissions')
-        .select('*')
-        .eq('exam_id', examId)
-        .eq('student_id', s.id)
-        .single();
-
-      if (existing) {
-        setStudent(cleanStudent);
-        setSubmission(existing as Submission);
-        loadLeaderboard();
-        setStep('already-submitted');
-        return;
-      }
-
-      // Try to resume in-progress exam from localStorage
-      const saved = localStorage.getItem(`exam-answers-${examId}-${s.id}`);
-      if (saved) {
-        try {
-          setAnswers(JSON.parse(saved));
-          let secs = (exam?.duration_minutes ?? 30) * 60;
-          if (exam?.timer_enabled !== false && exam?.end_time) {
-            secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
-          }
-          setRemainingSecs(secs);
-          setStudent(cleanStudent);
-          setStep('exam');
-          return;
-        } catch {
-          /* ignore, fall through to instructions */
-        }
-      }
-
-      setStudent(cleanStudent);
-      setStep('instructions');
-    } catch (err) {
-      handleSupabaseError(err);
     } finally {
       setVerifying(false);
     }
@@ -426,8 +401,13 @@ export default function ExamPage() {
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
-    async (auto = false) => {
+    async (_auto = false) => {
       if (submittingRef.current) {
+        return;
+      }
+      const token = examTokenRef.current;
+      if (!token) {
+        toast.error('পরীক্ষার সেশন শেষ হয়েছে। আবার যোগ দিন।');
         return;
       }
       submittingRef.current = true;
@@ -440,85 +420,10 @@ export default function ExamPage() {
       setSubmitting(true);
       setSubmitOpen(false);
 
-      // Grade
-      let correct = 0,
-        wrong = 0,
-        score = 0;
-      for (const q of questions) {
-        const ans = answers[q.id];
-        if (!ans) {
-          continue;
-        }
-        if (ans === q.correct_option) {
-          correct++;
-          score += q.marks;
-        } else {
-          wrong++;
-        }
-      }
-
       const totalSecs = (exam?.duration_minutes ?? 30) * 60;
       const timeTaken = exam?.timer_enabled === false ? 0 : totalSecs - remainingSecs;
 
-      try {
-        // Get existing submission count for rank
-        const { count: higherCount } = await supabase
-          .from('mcq_submissions')
-          .select('*', { count: 'exact', head: true })
-          .eq('exam_id', examId!)
-          .or(`score.gt.${score},and(score.eq.${score},time_taken.lt.${timeTaken})`);
-
-        const rank = (higherCount ?? 0) + 1;
-
-        const { data: sub, error: insertErr } = await supabase
-          .from('mcq_submissions')
-          .insert([
-            {
-              exam_id: examId,
-              student_id: student?.id,
-              answers: JSON.stringify(answers),
-              score,
-              correct_count: correct,
-              wrong_count: wrong,
-              time_taken: timeTaken,
-              rank,
-              submitted_at: new Date().toISOString(),
-            },
-          ])
-          .select()
-          .single();
-
-        if (insertErr) {
-          toast.error('জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
-          submittingRef.current = false;
-          setSubmitting(false);
-          // Restart timers so student can retry
-          if (exam?.timer_enabled !== false && remainingSecs > 0) {
-            timerRef.current = setInterval(() => {
-              setRemainingSecs((prev) => {
-                if (prev <= 1) {
-                  clearInterval(timerRef.current!);
-                  handleSubmitRef.current(true);
-                  return 0;
-                }
-                return prev - 1;
-              });
-            }, 1000);
-          }
-          return;
-        }
-
-        // Clear localStorage
-        localStorage.removeItem(`exam-answers-${examId}-${student?.id}`);
-
-        setSubmission(sub as Submission);
-        setSubmitting(false);
-        await loadLeaderboard();
-        setStep('result');
-      } catch (err) {
-        handleSupabaseError(err);
-        submittingRef.current = false;
-        setSubmitting(false);
+      const restartTimer = () => {
         if (exam?.timer_enabled !== false && remainingSecs > 0) {
           timerRef.current = setInterval(() => {
             setRemainingSecs((prev) => {
@@ -531,9 +436,54 @@ export default function ExamPage() {
             });
           }, 1000);
         }
+      };
+
+      try {
+        // Server grades against the authoritative key and computes rank.
+        const result = await submitExam(token, answers, timeTaken);
+
+        // Clear localStorage
+        localStorage.removeItem(`exam-answers-${examId}-${student?.id}`);
+
+        setSubmission({
+          id: result.id,
+          score: result.score,
+          correct_count: result.correct_count,
+          wrong_count: result.wrong_count,
+          time_taken: result.time_taken,
+          rank: result.rank,
+          answers,
+        });
+        setSubmitting(false);
+        await loadReview(token);
+        await loadLeaderboard();
+        setStep('result');
+      } catch (err: any) {
+        const msg = String(err?.message ?? '');
+        submittingRef.current = false;
+        setSubmitting(false);
+        if (msg.includes('ALREADY_SUBMITTED')) {
+          // Someone/something already submitted — show the existing result.
+          const sub = await getMySubmission(token);
+          if (sub) {
+            setSubmission(sub as unknown as Submission);
+          }
+          await loadReview(token);
+          await loadLeaderboard();
+          setStep('already-submitted');
+          return;
+        }
+        if (msg.includes('EXAM_NOT_OPEN')) {
+          toast.error('পরীক্ষাটি এখন খোলা নেই।');
+          setStep('ended');
+          return;
+        }
+        toast.error('জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+        restartTimer();
       }
     },
-    [questions, answers, exam, examId, student, remainingSecs, submitting]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [answers, exam, examId, student, remainingSecs]
   );
 
   // Keep ref in sync so timer/realtime callbacks always call the freshest version
@@ -541,18 +491,44 @@ export default function ExamPage() {
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
 
-  const loadLeaderboard = async () => {
+  // Fetch the answer key + questions for the review breakdown (only valid after submit).
+  const loadReview = async (token: string) => {
+    if (!examId) {
+      return;
+    }
     try {
-      const { data } = await supabase
-        .from('mcq_submissions')
-        .select('*, student:students(name, student_id)')
-        .eq('exam_id', examId!)
-        .order('score', { ascending: false })
-        .order('time_taken', { ascending: true })
-        .limit(5);
-      const cleaned = (data ?? []).map((row: any) => ({
-        ...row,
-        student: row.student ? { ...row.student, name: sanitize(row.student.name) } : null,
+      const rows = await getExamReview(examId, token);
+      const cleaned = (rows ?? []).map((r: any) => ({
+        id: r.question_id,
+        question_text: sanitize(r.question_text),
+        option_a: sanitize(r.option_a),
+        option_b: sanitize(r.option_b),
+        option_c: sanitize(r.option_c),
+        option_d: sanitize(r.option_d),
+        correct_option: (r.correct_option as string).toUpperCase() as 'A' | 'B' | 'C' | 'D',
+        marks: r.marks,
+        order_num: r.order_num,
+      }));
+      setReviewQuestions(cleaned as ReviewQuestion[]);
+    } catch (err) {
+      // Review is best-effort; the score card still renders without it.
+      handleSupabaseError(err);
+    }
+  };
+
+  const loadLeaderboard = async () => {
+    if (!examId) {
+      return;
+    }
+    try {
+      const rows = await getLeaderboard(examId);
+      const cleaned = (rows ?? []).map((row: any) => ({
+        id: row.id,
+        score: row.score,
+        time_taken: row.time_taken,
+        rank: row.rank,
+        student_id: row.student_code,
+        student: { name: sanitize(row.student_name ?? '—'), student_id: row.student_code },
       }));
       setLeaderboard(cleaned);
     } catch (err) {
@@ -632,7 +608,7 @@ export default function ExamPage() {
               <BookOpen size={24} className="text-sky-400" />
             </div>
             <h1 className="font-inter font-black text-xl text-white mb-1">{exam?.title}</h1>
-            {exam?.batch?.name && <p className="text-slate-400 text-sm">{exam.batch.name}</p>}
+            {exam?.batch_name && <p className="text-slate-400 text-sm">{exam.batch_name}</p>}
             <p className="text-slate-500 text-xs mt-1">
               {exam?.duration_minutes} মিনিট · {exam?.total_marks} নম্বর
             </p>
@@ -957,10 +933,10 @@ export default function ExamPage() {
       <ResultView
         exam={exam!}
         submission={submission}
-        questions={questions}
+        reviewQuestions={reviewQuestions}
         answers={parseAnswers(submission.answers)}
         leaderboard={leaderboard}
-        studentId={student?.id}
+        studentId={student?.student_id}
       />
     );
   }
@@ -971,10 +947,10 @@ export default function ExamPage() {
       <ResultView
         exam={exam!}
         submission={submission}
-        questions={questions}
+        reviewQuestions={reviewQuestions}
         answers={parseAnswers(submission.answers)}
         leaderboard={leaderboard}
-        studentId={student?.id}
+        studentId={student?.student_id}
       />
     );
   }
@@ -986,14 +962,14 @@ export default function ExamPage() {
 function ResultView({
   exam,
   submission,
-  questions,
+  reviewQuestions,
   answers,
   leaderboard,
   studentId,
 }: {
   exam: ExamData;
   submission: Submission;
-  questions: Question[];
+  reviewQuestions: ReviewQuestion[];
   answers: Record<string, string>;
   leaderboard: any[];
   studentId?: string;
@@ -1009,7 +985,7 @@ function ResultView({
   const timeSecs = (submission.time_taken ?? 0) % 60;
 
   const unanswered =
-    questions.length - (submission.correct_count ?? 0) - (submission.wrong_count ?? 0);
+    reviewQuestions.length - (submission.correct_count ?? 0) - (submission.wrong_count ?? 0);
 
   const RANK_ICONS: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -1159,7 +1135,8 @@ function ResultView({
           </motion.div>
         )}
 
-        {/* Answer breakdown toggle */}
+        {/* Answer breakdown toggle — only when the answer key is available */}
+        {reviewQuestions.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1180,7 +1157,7 @@ function ResultView({
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-3 mt-4 overflow-hidden"
               >
-                {questions.map((q, i) => {
+                {reviewQuestions.map((q, i) => {
                   const studentAns = answers[q.id] ?? null;
                   const correct = q.correct_option;
                   const isRight = studentAns === correct;
@@ -1249,6 +1226,7 @@ function ResultView({
             )}
           </AnimatePresence>
         </motion.div>
+        )}
       </div>
     </div>
   );

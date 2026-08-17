@@ -13,7 +13,6 @@ import {
   Database,
   Loader2,
   Sparkles,
-  Activity,
 } from 'lucide-react';
 import { formatCurrency, formatDate, sanitize } from '@/lib/utils';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';

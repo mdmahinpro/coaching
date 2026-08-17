@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
+import { fetchNotices } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { formatDate, cn, sanitize } from '@/lib/utils';
@@ -35,23 +35,7 @@ export default function PortalNoticePage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      let q = supabase
-        .from('notices')
-        .select('*')
-        .eq('is_published', true)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false });
-
-      if (student?.batch_id) {
-        q = q.or(`target.eq.all,and(target.eq.batch,batch_id.eq.${student.batch_id})`);
-      } else {
-        q = q.eq('target', 'all');
-      }
-
-      if (filter !== 'all') {
-        q = q.eq('type', filter);
-      }
-      const { data } = await q;
+      const data = await fetchNotices(filter !== 'all' ? filter : undefined);
       const cleaned = (data ?? []).map((n: any) => ({
         ...n,
         title: sanitize(n.title),

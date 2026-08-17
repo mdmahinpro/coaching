@@ -134,9 +134,7 @@ export default function SettingsPage() {
       await sendSMS(
         testPhone,
         `📱 Test SMS from ${form.centerName}. MIMSMS API is working!`,
-        'custom',
-        form.smsApiKey,
-        form.smsSenderId
+        'custom'
       );
     } catch (err) {
       handleSupabaseError(err);
@@ -419,23 +417,12 @@ export default function SettingsPage() {
               <h3 className="font-semibold text-white text-sm flex items-center gap-2">
                 <Smartphone size={15} className="text-violet-400" /> MIMSMS Configuration
               </h3>
-              <Field label="API Key">
-                <input
-                  value={form.smsApiKey}
-                  onChange={(e) => set('smsApiKey', e.target.value)}
-                  type="password"
-                  className="input-field"
-                  placeholder="Your MIMSMS API key"
-                />
-              </Field>
-              <Field label="Sender ID">
-                <input
-                  value={form.smsSenderId}
-                  onChange={(e) => set('smsSenderId', e.target.value)}
-                  className="input-field"
-                  placeholder="e.g. COACHING (8 chars max)"
-                />
-              </Field>
+              <div className="card-glass p-3 text-xs text-slate-300 leading-relaxed">
+                The SMS API key is stored securely on the server and never exposed to the browser.
+                Configure the <code className="text-sky-400">SMS_API_KEY</code> and{' '}
+                <code className="text-sky-400">SMS_SENDER_ID</code> environment variables in your
+                hosting platform (Netlify / Vercel) to enable delivery.
+              </div>
               <div className="border-t border-white/5 pt-4">
                 <p className="text-xs text-slate-400 mb-2">
                   Send a test SMS to verify configuration:
@@ -450,7 +437,7 @@ export default function SettingsPage() {
                   />
                   <button
                     onClick={handleTestSMS}
-                    disabled={sendingTest || !form.smsApiKey}
+                    disabled={sendingTest}
                     className="btn-outline text-sm px-4 shrink-0"
                   >
                     {sendingTest ? (
@@ -467,7 +454,8 @@ export default function SettingsPage() {
                   API: <code className="text-sky-400 text-xs">https://api.mimsms.com/smsapi</code>
                 </p>
                 <p className="mt-1">
-                  Without API key, SMS will be logged as &apos;pending&apos; in sms_logs table.
+                  Without a server API key, SMS will be logged as &apos;pending&apos; in the
+                  sms_logs table.
                 </p>
               </div>
             </div>

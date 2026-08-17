@@ -12,7 +12,6 @@ import {
   Camera,
   Phone,
   Mail,
-  BookOpen,
   Loader2,
   GraduationCap,
 } from 'lucide-react';

@@ -16,6 +16,13 @@ export interface StudentSession {
   photo_url?: string;
   status: string;
   is_approved: boolean;
+  /** Opaque server-side session token; every portal RPC resolves identity from it. */
+  token?: string;
+}
+
+/** Read the current student's session token (used by portal/exam RPCs). */
+export function getStudentToken(): string | null {
+  return useStudentStore.getState().student?.token ?? null;
 }
 
 interface StudentState {
@@ -46,7 +53,17 @@ export const useStudentStore = create<StudentState>()(
     (set) => ({
       student: null,
       setStudent: (student) => set({ student }),
-      logout: () => set({ student: null }),
+      logout: () => {
+        const token = useStudentStore.getState().student?.token;
+        if (token) {
+          // Revoke server-side session; ignore failures (best-effort).
+          supabase.rpc('logout_student_session', { p_token: token }).then(
+            () => {},
+            () => {}
+          );
+        }
+        set({ student: null });
+      },
 
       login: async (phone: string, password: string) => {
         try {
@@ -83,6 +100,7 @@ export const useStudentStore = create<StudentState>()(
             photo_url: row.photo_url ?? undefined,
             status: row.status,
             is_approved: row.is_approved,
+            token: row.session_token ?? undefined,
           };
           set({ student: session });
           return session;

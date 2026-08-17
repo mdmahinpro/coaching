@@ -5,7 +5,6 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { cn } from '@/lib/utils';
 
 interface Props {
   title: string;

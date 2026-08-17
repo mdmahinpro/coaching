@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency, cn, sanitize } from '@/lib/utils';
@@ -18,7 +18,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { Download, Trophy, BarChart2, Users, DollarSign, BookOpen, Award } from 'lucide-react';
+import { Download, Trophy, BarChart2, Users, DollarSign } from 'lucide-react';
 
 const CHART_TOOLTIP_STYLE = {
   background: '#0f172a',

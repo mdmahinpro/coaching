@@ -1,14 +1,13 @@
 /**
  * XSS Prevention Utility
  *
- * Uses DOMPurify when available (npm package), with a fallback
- * browser-native sanitizer for environments where the package
- * hasn't been installed yet.
- *
- * Run `pnpm add dompurify @types/dompurify` to install the full library.
+ * Uses DOMPurify (ESM import) whenever a DOM is present (browser + jsdom tests).
+ * A browser-native fallback sanitizer covers non-DOM environments.
  */
 
-// ── Fallback sanitizer (used when DOMPurify npm package is unavailable) ──
+import DOMPurify from 'dompurify';
+
+// ── Fallback sanitizer (used when no DOM/DOMPurify is available) ──
 // This provides basic XSS protection by stripping dangerous tags/attributes.
 // The real DOMPurify (npm) is more thorough — install it when possible.
 
@@ -161,27 +160,32 @@ function fallbackSanitize(dirty: string): string {
   }
 }
 
-// ── Try to use DOMPurify npm package if available ──
+// ── Use DOMPurify (ESM static import) when a DOM is available ──
+// DOMPurify requires a `window`. In the browser and in jsdom (tests) it is
+// present; in a non-DOM SSR context it is not, so we keep the fallback.
 let sanitizeFn: (dirty: string) => string = fallbackSanitize;
 
-try {
-  // Dynamic import — works when dompurify is installed
-  const dompurifyModule = require('dompurify');
-  if (dompurifyModule && dompurifyModule.default) {
-    // Configure DOMPurify
-    const purify = dompurifyModule.default;
-    purify.setConfig({
-      ALLOWED_TAGS: FALLBACK_ALLOWED_TAGS,
-      ALLOWED_ATTR: FALLBACK_ALLOWED_ATTRS,
-      ALLOW_DATA_ATTR: false,
-      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
-      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'formaction'],
-    });
-    sanitizeFn = (dirty: string) =>
-      purify.sanitize(dirty, { RETURN_DOM: false, RETURN_DOM_FRAGMENT: false });
-  }
-} catch {
-  // DOMPurify not installed — fallback is already set
+if (typeof window !== 'undefined' && window.document) {
+  DOMPurify.setConfig({
+    ALLOWED_TAGS: FALLBACK_ALLOWED_TAGS,
+    ALLOWED_ATTR: FALLBACK_ALLOWED_ATTRS,
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'formaction'],
+  });
+
+  // Force external links to open safely (DOMPurify strips target/rel by default).
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node instanceof Element && node.tagName === 'A' && node.getAttribute('href')) {
+      const href = node.getAttribute('href') ?? '';
+      if (/^https?:\/\//i.test(href)) {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    }
+  });
+
+  sanitizeFn = (dirty: string) => DOMPurify.sanitize(dirty) as string;
 }
 
 /**

@@ -7,7 +7,7 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { cn, sanitize } from '@/lib/utils';
+import { sanitize } from '@/lib/utils';
 import { Search, BookOpen } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 

@@ -13,8 +13,13 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
+  teardown: () => void;
   setRole: (role: Role) => void;
 }
+
+// Module-scoped handle to the single active auth subscription. Kept outside
+// the store state so it never triggers re-renders and can be torn down cleanly.
+let authSubscription: Subscription | null = null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
@@ -39,10 +44,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user: null, session: null, role: null, loading: false, initialized: true });
     }
 
-    // Unsubscribe any previous listener before creating a new one
-    const prev = (get() as any)._authUnsubscribe as (() => void) | undefined;
-    if (prev) {
-      prev();
+    // Tear down any previous listener before creating a new one (idempotent).
+    if (authSubscription) {
+      authSubscription.unsubscribe();
+      authSubscription = null;
     }
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -54,18 +59,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     });
 
-    // Store the unsubscribe function on the store itself
-    (get() as any)._authUnsubscribe = () => {
-      (data.subscription as Subscription).unsubscribe();
-    };
+    authSubscription = data.subscription;
+  },
 
-    // Clean up on page unload to prevent memory leaks
-    const handler = () => {
-      (data.subscription as Subscription).unsubscribe();
-    };
-    window.addEventListener('beforeunload', handler);
-    // One-shot cleanup after a short delay (listener stays alive via beforeunload above)
-    setTimeout(() => window.removeEventListener('beforeunload', handler), 0);
+  // Call from a root-level effect cleanup if you ever unmount the app tree.
+  teardown: () => {
+    if (authSubscription) {
+      authSubscription.unsubscribe();
+      authSubscription = null;
+    }
+    set({ initialized: false });
   },
 
   signIn: async (email: string, password: string) => {

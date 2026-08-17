@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { supabase } from '@/lib/supabase';
+import { updatePhoto, changePassword } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { Camera, Save, Lock, Loader2, User, Phone, Mail, BookOpen, Hash } from 'lucide-react';
@@ -72,11 +73,9 @@ export default function PortalProfilePage() {
       }
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       const cacheBustedUrl = `${data.publicUrl}?t=${Date.now()}`;
-      const { error: dbErr } = await supabase
-        .from('students')
-        .update({ photo_url: data.publicUrl })
-        .eq('id', student.id);
-      if (dbErr) {
+      try {
+        await updatePhoto(data.publicUrl);
+      } catch {
         toast.error('আপডেট ব্যর্থ হয়েছে');
         return;
       }
@@ -105,21 +104,13 @@ export default function PortalProfilePage() {
     }
     setSavingPw(true);
     try {
-      const { error } = await supabase.rpc('change_student_password', {
-        p_student_id: student.id,
-        p_old_password: currentPw,
-        p_new_password: newPw,
-      });
-      if (error) {
-        toast.error(error.message || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ');
-        return;
-      }
+      await changePassword(currentPw, newPw);
       toast.success('পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে');
       setCurrentPw('');
       setNewPw('');
       setConfirmPw('');
-    } catch (err) {
-      handleSupabaseError(err);
+    } catch (err: any) {
+      toast.error(err?.message || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ');
     } finally {
       setSavingPw(false);
     }

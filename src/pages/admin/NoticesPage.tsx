@@ -3,11 +3,11 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { Pin, Bell, Pencil, Trash2, Save, Plus, Send, X, Loader2 } from 'lucide-react';
+import { Pin, Bell, Pencil, Trash2, Save, Send, X, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { sendSMS, fillTemplate } from '@/lib/sms';
+import { sendSMS } from '@/lib/sms';
 
 interface Notice {
   id: string;
@@ -164,7 +164,7 @@ export default function NoticesPage() {
           phones = (students ?? []).map((s) => s.phone).filter(Boolean);
         }
         if (phones.length) {
-          await sendSMS(phones, msg, 'NOTICE', settings.smsApiKey, settings.smsSenderId);
+          await sendSMS(phones, msg, 'NOTICE');
         }
       } catch (err) {
         handleSupabaseError(err);

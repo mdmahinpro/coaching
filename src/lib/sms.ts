@@ -7,12 +7,17 @@ export interface SMSResult {
   raw?: unknown;
 }
 
+/**
+ * Send SMS via the server-side function (`/api/send-sms`).
+ *
+ * The MIM SMS API key is NEVER in the client bundle — it lives only in the
+ * serverless function's `SMS_API_KEY` env var. This call forwards the admin's
+ * Supabase access token so the function can authorize the request.
+ */
 export async function sendSMS(
   phones: string | string[],
   message: string,
-  type = 'custom',
-  apiKey: string,
-  senderId = 'CoachMS'
+  type = 'custom'
 ): Promise<SMSResult> {
   const phoneArr = Array.isArray(phones) ? phones : [phones];
   if (!phoneArr.length) {
@@ -22,46 +27,49 @@ export async function sendSMS(
   let sentCount = 0;
   let failedCount = 0;
   let raw: unknown = null;
+  let status: 'sent' | 'failed' | 'pending' = 'failed';
 
-  if (apiKey) {
-    try {
-      const res = await fetch('https://api.mimsms.com/smsapi', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: apiKey,
-          senderid: senderId || 'CoachMS',
-          type: 'text',
-          scheduleat: '',
-          route: 'T',
-          contacts: phoneArr.join(','),
-          msg: message,
-        }),
-      });
-      raw = await res.json();
-      const data = raw as { status?: string };
-      if (data.status === 'success') {
-        sentCount = phoneArr.length;
-      } else {
-        failedCount = phoneArr.length;
-      }
-    } catch (err) {
-      console.error('[SMS API Error]', err);
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+
+    const res = await fetch('/api/send-sms', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ phones: phoneArr, message }),
+    });
+    raw = await res.json().catch(() => null);
+    const data = raw as { status?: string; sent?: number } | null;
+    if (res.ok && data?.status === 'sent') {
+      sentCount = data.sent ?? phoneArr.length;
+      status = 'sent';
+    } else if (res.ok && data?.status === 'pending') {
+      // No server key configured — treat as queued for demo/dev.
+      sentCount = phoneArr.length;
+      status = 'pending';
+    } else {
       failedCount = phoneArr.length;
+      status = 'failed';
     }
-  } else {
-    // No API key — log as "pending" for demo
-    sentCount = phoneArr.length;
+  } catch (err) {
+    console.error('[SMS API Error]', err);
+    failedCount = phoneArr.length;
+    status = 'failed';
   }
 
-  // Log to DB
+  // Log to DB (admin is authenticated → RLS permits the insert).
   try {
     await supabase.from('sms_logs').insert(
       phoneArr.map((p) => ({
         phone: p,
         message,
         type,
-        status: apiKey ? (sentCount > 0 ? 'sent' : 'failed') : 'pending',
+        status,
         response: raw,
       }))
     );

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { Avatar } from '@/components/shared/Avatar';
-import { formatDate, cn, sanitize } from '@/lib/utils';
+import { cn, sanitize } from '@/lib/utils';
 import { Trophy, Download, BarChart2, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';

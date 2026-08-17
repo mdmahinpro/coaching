@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { GraduationCap, Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -10,7 +10,6 @@ import { sanitize } from '@/lib/utils';
 
 export default function PortalSignupPage() {
   const { settings } = useSettingsStore();
-  const navigate = useNavigate();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
+import { fetchSubmissions, fetchReview } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -78,32 +78,36 @@ export default function PortalResultsPage() {
     if (!student) {
       return;
     }
-    supabase
-      .from('mcq_submissions')
-      .select('*, exam:exams(title,subject,total_marks,pass_marks)')
-      .eq('student_id', student.id)
-      .order('submitted_at', { ascending: false })
-      .then(
-        ({ data }) => {
-          setSubmissions((data ?? []) as Submission[]);
-          setLoading(false);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
+    fetchSubmissions().then(
+      (data) => {
+        const mapped = (data ?? []).map((r: any) => ({
+          ...r,
+          exam: {
+            title: r.exam_title,
+            subject: r.exam_subject,
+            total_marks: r.total_marks,
+            pass_marks: r.pass_marks,
+          },
+        }));
+        setSubmissions(mapped as Submission[]);
+        setLoading(false);
+      },
+      (err: any) => {
+        handleSupabaseError(err);
+        setLoading(false);
+      }
+    );
   }, [student]);
 
   const openBreakdown = async (sub: Submission) => {
     try {
       setBreakdownLoading(true);
-      const { data: qs } = await supabase
-        .from('mcq_questions')
-        .select('*')
-        .eq('exam_id', sub.exam_id)
-        .order('order_num');
+      const qs = await fetchReview(sub.exam_id);
       const cleaned = (qs ?? []).map((q: any) => ({
-        ...q,
+        id: q.question_id,
+        correct_option: q.correct_option,
+        marks: q.marks,
+        order_num: q.order_num,
         question_text: sanitize(q.question_text),
         option_a: sanitize(q.option_a),
         option_b: sanitize(q.option_b),

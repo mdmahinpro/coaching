@@ -1,5 +1,18 @@
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+// html2canvas (~200KB) and jsPDF (~400KB) are heavy. Load them on demand the
+// first time a PDF is actually generated, so they stay out of the main bundle
+// and page chunks.
+let pdfLibs: {
+  html2canvas: typeof import('html2canvas').default;
+  jsPDF: typeof import('jspdf').jsPDF;
+} | null = null;
+
+async function loadPdfLibs() {
+  if (!pdfLibs) {
+    const [h2c, jspdf] = await Promise.all([import('html2canvas'), import('jspdf')]);
+    pdfLibs = { html2canvas: h2c.default, jsPDF: jspdf.jsPDF };
+  }
+  return pdfLibs;
+}
 
 export interface ReceiptData {
   receiptNo: string;
@@ -432,6 +445,8 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       throw new Error('Failed to create receipt container');
     }
 
+    const { html2canvas, jsPDF } = await loadPdfLibs();
+
     // Wait for fonts and assets
     await document.fonts.ready;
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -702,6 +717,8 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     if (!el) {
       throw new Error('Failed to create result card container');
     }
+
+    const { html2canvas, jsPDF } = await loadPdfLibs();
 
     // Wait for fonts and assets
     await document.fonts.ready;

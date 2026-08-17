@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -17,7 +17,6 @@ import {
   Share2,
   Trophy,
   Download,
-  ChevronDown,
   GripVertical,
   Upload,
   Eye,
@@ -604,7 +603,6 @@ function AllExamsTab({ onTabChange }: { onTabChange: (t: Tab) => void }) {
           {exams.map((exam) => {
             const st = exam.status ?? 'draft';
             const cfg = STATUS_CONFIG[st] ?? STATUS_CONFIG.draft;
-            const qCount = (exam as any).question_count ?? 0;
             const examLink = `${window.location.origin}/exam/${exam.id}`;
             return (
               <div key={exam.id} className="card p-4 flex flex-wrap items-center gap-4">

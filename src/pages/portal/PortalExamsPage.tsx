@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
+import { fetchExams, fetchSubmissions } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { formatDate, cn, sanitize } from '@/lib/utils';
@@ -165,13 +165,7 @@ export default function PortalExamsPage() {
     }
     const load = async () => {
       try {
-        let q = supabase.from('exams').select('*').order('exam_date', { ascending: false });
-        if (student.batch_id) {
-          q = q.or(`batch_id.eq.${student.batch_id},batch_id.is.null`);
-        } else {
-          q = q.is('batch_id', null);
-        }
-        const { data: examData } = await q;
+        const examData = await fetchExams();
         setExams(
           (examData ?? []).map((e: any) => ({
             ...e,
@@ -180,12 +174,9 @@ export default function PortalExamsPage() {
           })) as Exam[]
         );
 
-        const { data: subs } = await supabase
-          .from('mcq_submissions')
-          .select('exam_id,score,rank')
-          .eq('student_id', student.id);
+        const subs = await fetchSubmissions();
         const map: Record<string, any> = {};
-        (subs ?? []).forEach((s) => {
+        (subs ?? []).forEach((s: any) => {
           map[s.exam_id] = s;
         });
         setMyResults(map);

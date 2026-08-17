@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
+import { fetchFees, fetchExams, fetchSubmissions, fetchNotices } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { formatDate, formatCurrency, cn, sanitize } from '@/lib/utils';
@@ -31,75 +31,49 @@ export default function PortalDashboardPage() {
     }
     const load = async () => {
       try {
-        const [feesRes, examsRes, subsRes, allScoresRes, noticesRes] = await Promise.all([
-          supabase.from('fees').select('amount,status').eq('student_id', student.id),
-          student.batch_id
-            ? supabase
-                .from('exams')
-                .select('id,title,subject,status,batch_id')
-                .or(`batch_id.eq.${student.batch_id},batch_id.is.null`)
-            : supabase
-                .from('exams')
-                .select('id,title,subject,status,batch_id')
-                .is('batch_id', null),
-          supabase
-            .from('mcq_submissions')
-            .select('score,rank,exam:exams(title,total_marks,subject)')
-            .eq('student_id', student.id)
-            .order('submitted_at', { ascending: false })
-            .limit(3),
-          supabase
-            .from('mcq_submissions')
-            .select('score,exam:exams(total_marks)')
-            .eq('student_id', student.id),
-          supabase
-            .from('notices')
-            .select('*')
-            .eq('is_published', true)
-            .or(
-              `target.eq.all${student.batch_id ? `,and(target.eq.batch,batch_id.eq.${student.batch_id})` : ''}`
-            )
-            .order('is_pinned', { ascending: false })
-            .order('created_at', { ascending: false })
-            .limit(3),
+        const [fees, exams, subs, notices] = await Promise.all([
+          fetchFees(),
+          fetchExams(),
+          fetchSubmissions(),
+          fetchNotices(),
         ]);
 
-        const fees = feesRes.data ?? [];
-        const pending = fees
-          .filter((f) => f.status === 'pending' || f.status === 'overdue')
-          .reduce((s, f) => s + (f.amount ?? 0), 0);
-        setFeeStatus({ pending, total: fees.length });
+        const pending = (fees ?? [])
+          .filter((f: any) => f.status === 'pending' || f.status === 'overdue')
+          .reduce((s: number, f: any) => s + (f.amount ?? 0), 0);
+        setFeeStatus({ pending, total: (fees ?? []).length });
 
-        const exams = (examsRes.data ?? []).map((e: any) => ({
+        const examList = (exams ?? []).map((e: any) => ({
           ...e,
           title: sanitize(e.title ?? ''),
           subject: e.subject ?? '',
         }));
-        setExamCount(exams.length);
-        setActiveExams(exams.filter((e) => e.status === 'active'));
+        setExamCount(examList.length);
+        setActiveExams(examList.filter((e: any) => e.status === 'active'));
 
-        const recentSubs = (subsRes.data ?? []).map((s: any) => ({
-          ...s,
+        const allSubs = subs ?? [];
+        const recentSubs = allSubs.slice(0, 3).map((s: any) => ({
+          score: s.score,
+          rank: s.rank,
           exam: {
-            title: sanitize(s.exam?.title ?? ''),
-            total_marks: s.exam?.total_marks ?? 100,
-            subject: s.exam?.subject ?? '',
+            title: sanitize(s.exam_title ?? ''),
+            total_marks: s.total_marks ?? 100,
+            subject: s.exam_subject ?? '',
           },
         }));
         setRecentResults(recentSubs);
 
-        const allScores = allScoresRes.data ?? [];
-        if (allScores.length > 0) {
+        if (allSubs.length > 0) {
           const best = Math.max(
-            ...allScores.map((s) => {
-              const total = (s as any).exam?.total_marks ?? 100;
+            ...allSubs.map((s: any) => {
+              const total = s.total_marks ?? 100;
               return Math.round((s.score / total) * 100);
             })
           );
           setBestScore(best);
         }
 
-        const noticeList = (noticesRes.data ?? []).map((n: any) => ({
+        const noticeList = (notices ?? []).slice(0, 3).map((n: any) => ({
           ...n,
           title: sanitize(n.title ?? ''),
           content: n.content ?? '',
@@ -107,7 +81,7 @@ export default function PortalDashboardPage() {
         setNotices(noticeList);
         const freshRead: string[] = JSON.parse(localStorage.getItem('portal-read-notices') ?? '[]');
         setReadNotices(freshRead);
-        setUnreadNotices(noticeList.filter((n) => !freshRead.includes(n.id)).length);
+        setUnreadNotices(noticeList.filter((n: any) => !freshRead.includes(n.id)).length);
       } catch (err) {
         handleSupabaseError(err);
       }

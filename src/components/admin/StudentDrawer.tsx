@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -13,6 +13,8 @@ import {
   KeyRound,
   Save,
   Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -366,13 +368,24 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         <div className="border-t border-white/5 pt-3">
                           <p className="text-slate-600 text-[10px] mb-2">Reset portal password</p>
                           <div className="flex gap-2">
-                            <input
-                              value={newPw}
-                              onChange={(e) => setNewPw(e.target.value)}
-                              className="input-field flex-1 py-1.5 text-xs font-mono"
-                              placeholder="New password…"
-                              onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
-                            />
+                            <div className="relative flex-1">
+                              <input
+                                type={showPw ? 'text' : 'password'}
+                                value={newPw}
+                                onChange={(e) => setNewPw(e.target.value)}
+                                className="input-field w-full py-1.5 pr-8 text-xs font-mono"
+                                placeholder="New password…"
+                                onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPw((v) => !v)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                aria-label={showPw ? 'Hide password' : 'Show password'}
+                              >
+                                {showPw ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            </div>
                             <button
                               onClick={handleResetPassword}
                               disabled={savingPw || !newPw.trim()}
@@ -505,7 +518,7 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                                 {r.exam?.title || 'Exam'}
                               </p>
                               <div className="flex items-center gap-2 shrink-0">
-                                {r.score != null && (
+                                {r.score !== null && r.score !== undefined && (
                                   <span className="font-mono text-sky-400 text-xs">
                                     {r.score}/{r.total_marks ?? '—'}
                                   </span>
