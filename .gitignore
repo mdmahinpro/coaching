@@ -36,3 +36,7 @@ eslint-output.txt
 # Misc
 .replit-artifact/
 cc_home*.png
+
+# Local Netlify emulator artifacts
+.netlify/
+deno.lock

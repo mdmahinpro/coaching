@@ -1,12 +1,19 @@
 [build]
-  command   = "pnpm install --frozen-lockfile && pnpm run build"
+  command   = "pnpm run build"
   publish   = "dist"
   functions = "netlify/functions"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "24.15.0"
+  PNPM_VERSION = "11.10.0"
   PORT         = "3000"
   BASE_PATH    = "/"
+
+[dev]
+  command    = "pnpm run dev:netlify"
+  targetPort = 5173
+  port       = 8888
+  autoLaunch = false
 
 # Route the SMS API path to the serverless function (must precede the SPA catch-all).
 [[redirects]]

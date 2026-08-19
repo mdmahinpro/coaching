@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "pnpm": "11.10.0"
+  },
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
+    "dev:netlify": "vite --config vite.config.ts --host 0.0.0.0 --port 5173",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",

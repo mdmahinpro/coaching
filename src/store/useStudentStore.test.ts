@@ -20,6 +20,7 @@ vi.mock('@/utils/sanitize', () => ({
 
 describe('useStudentStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Reset store to initial state before each test
     useStudentStore.setState({
       student: null,
@@ -62,7 +63,7 @@ describe('useStudentStore', () => {
     expect(useStudentStore.getState().student).toBeNull();
   });
 
-  it('login calls supabase.rpc with correct params', async () => {
+  it('login calls the RPC with SQL argument names and stores the session token', async () => {
     const { supabase } = await import('@/lib/supabase');
     const mockRow = {
       id: '123',
@@ -76,6 +77,7 @@ describe('useStudentStore', () => {
       status: 'active',
       is_approved: true,
       created_at: null,
+      session_token: 'session-token-123',
     };
 
     vi.mocked(supabase.rpc).mockResolvedValue({
@@ -83,7 +85,12 @@ describe('useStudentStore', () => {
       error: null,
     } as any);
 
-    const session = await useStudentStore.getState().login('01700000000', 'password123');
+    const session = await useStudentStore.getState().login(' 01700000000 ', 'password123');
+
+    expect(supabase.rpc).toHaveBeenCalledWith('verify_student_login', {
+      p_phone: '01700000000',
+      p_password: 'password123',
+    });
     expect(session).toEqual({
       id: '123',
       name: 'Test Student',
@@ -95,6 +102,7 @@ describe('useStudentStore', () => {
       photo_url: undefined,
       status: 'active',
       is_approved: true,
+      token: 'session-token-123',
     });
     expect(useStudentStore.getState().student).toEqual(session);
   });

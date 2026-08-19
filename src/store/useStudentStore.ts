@@ -68,8 +68,8 @@ export const useStudentStore = create<StudentState>()(
       login: async (phone: string, password: string) => {
         try {
           const { data, error } = await supabase.rpc('verify_student_login', {
-            phone: phone.trim(),
-            password,
+            p_phone: phone.trim(),
+            p_password: password,
           });
           if (error) {
             const msg = error.message || 'Login failed';
