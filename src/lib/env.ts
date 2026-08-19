@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assertPublicSupabaseClientKey } from './supabaseKey';
 
 const envSchema = z.object({
   VITE_SUPABASE_URL: z.string().url('VITE_SUPABASE_URL must be a valid URL'),
@@ -14,5 +15,7 @@ if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
   throw new Error(`Invalid environment variables:\n${issues}\nPlease check your .env file.`);
 }
+
+assertPublicSupabaseClientKey(parsed.data.VITE_SUPABASE_ANON_KEY);
 
 export const env = parsed.data;

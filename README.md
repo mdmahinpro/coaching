@@ -45,16 +45,23 @@ Copy `.env.example` to `.env.local`. At minimum, set:
 
 ```dotenv
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_ANON_KEY=sb_publishable_your-public-key
 ```
 
-`.env.local` is git-ignored. Never commit it.
+`.env.local` is git-ignored. Never commit it. `VITE_SUPABASE_ANON_KEY` is embedded in browser JavaScript, so it must be the **public anon JWT** or an `sb_publishable_` key. Never use a `service_role` JWT or `sb_secret_` key in any `VITE_` variable—the app now refuses to start or build if one is detected.
+
+If a privileged key was exposed client-side:
+
+1. Rotate/revoke it in **Supabase Dashboard → Project Settings → API Keys**.
+2. Replace local and deployment `VITE_SUPABASE_ANON_KEY` values with the public anon/publishable key.
+3. Clear old deployment artifacts, local `dist/` and `.netlify/`, and browser caches.
+4. Redeploy only after the build-time key guard passes.
 
 The SMS function also needs these **server-side** variables in Netlify/Vercel:
 
 ```dotenv
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_ANON_KEY=sb_publishable_your-public-key
 SMS_API_KEY=
 SMS_SENDER_ID=CoachMS
 ```
