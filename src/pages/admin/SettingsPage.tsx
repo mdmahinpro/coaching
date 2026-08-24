@@ -1,7 +1,7 @@
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { supabase } from '@/lib/supabase';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Save,
@@ -16,6 +16,9 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  RefreshCw,
+  ShieldCheck,
+  ShieldOff,
   Lock as LockIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -54,8 +57,10 @@ export default function SettingsPage() {
   const [savingPw, setSavingPw] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
-  const [newAdminPw, setNewAdminPw] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
+  const [admins, setAdmins] = useState<{ email: string; created_at: string }[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -79,6 +84,17 @@ export default function SettingsPage() {
   useEffect(() => {
     document.documentElement.style.setProperty('--primary', form.primaryColor);
   }, [form.primaryColor]);
+
+  // Fetch the admin roster the first time the Admins tab is opened. A ref (not
+  // `admins.length`) guards the one-shot so re-renders during the fetch cannot
+  // queue a second request, and so an empty roster is not re-fetched forever.
+  const rosterRequested = useRef(false);
+  useEffect(() => {
+    if (tab === 'admins' && !rosterRequested.current) {
+      rosterRequested.current = true;
+      loadAdmins();
+    }
+  }, [tab]);
 
   const loadStatsFromDb = async () => {
     setLoadingStats(true);
@@ -183,29 +199,69 @@ export default function SettingsPage() {
     }
   };
 
+  /**
+   * Load the admin roster from the server.
+   *
+   * Admin status lives in the `admin_users` table, not in `user_metadata`
+   * (which the browser can rewrite via auth.updateUser). `admin_list` is a
+   * SECURITY DEFINER RPC gated on is_admin(), so a non-admin gets an error
+   * rather than the roster.
+   */
+  const loadAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_list');
+      if (error) {
+        throw error;
+      }
+      setAdmins(data ?? []);
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAdminEmail || !newAdminPw) {
+    if (!newAdminEmail) {
       return;
     }
     setAddingAdmin(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: newAdminEmail,
-        password: newAdminPw,
-        options: { data: { role: 'admin', name: 'Admin' } },
-      });
+      // Grant only — account creation is deliberately NOT done here. Issuing
+      // credentials from the browser required a client-side signUp with a
+      // self-declared role, which any visitor could replicate. The person
+      // signs themselves up first; an existing admin then promotes them.
+      const { error } = await supabase.rpc('admin_grant', { p_email: newAdminEmail });
       if (error) {
         toast.error(error.message);
-      } else {
-        toast.success('Admin account created! They need to verify email.');
-        setNewAdminEmail('');
-        setNewAdminPw('');
+        return;
       }
+      toast.success(`${newAdminEmail} is now an admin`);
+      setNewAdminEmail('');
+      await loadAdmins();
     } catch (err) {
       handleSupabaseError(err);
     } finally {
       setAddingAdmin(false);
+    }
+  };
+
+  const handleRevokeAdmin = async (email: string) => {
+    setRevoking(email);
+    try {
+      const { error } = await supabase.rpc('admin_revoke', { p_email: email });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success(`Admin access revoked for ${email}`);
+      await loadAdmins();
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setRevoking(null);
     }
   };
 
@@ -688,9 +744,9 @@ export default function SettingsPage() {
               </div>
 
               <div className="card p-5 space-y-4">
-                <h3 className="font-semibold text-white text-sm">Add New Admin</h3>
+                <h3 className="font-semibold text-white text-sm">Grant Admin Access</h3>
                 <form onSubmit={handleAddAdmin} className="space-y-3">
-                  <Field label="Email">
+                  <Field label="Existing Account Email">
                     <input
                       type="email"
                       value={newAdminEmail}
@@ -700,30 +756,83 @@ export default function SettingsPage() {
                       required
                     />
                   </Field>
-                  <Field label="Temporary Password">
-                    <input
-                      type="password"
-                      value={newAdminPw}
-                      onChange={(e) => setNewAdminPw(e.target.value)}
-                      className="input-field"
-                      placeholder="Min 8 characters"
-                      minLength={8}
-                      required
-                    />
-                  </Field>
-                  <button type="submit" disabled={addingAdmin} className="btn-outline text-sm py-2">
+                  <button
+                    type="submit"
+                    disabled={addingAdmin || !newAdminEmail}
+                    className="btn-outline text-sm py-2"
+                  >
                     {addingAdmin ? (
                       <Loader2 size={13} className="animate-spin" />
                     ) : (
-                      <Users size={13} />
+                      <ShieldCheck size={13} />
                     )}{' '}
-                    Create Admin Account
+                    Grant Admin
                   </button>
                 </form>
                 <div className="card-glass p-3 text-xs text-slate-500 font-hind">
-                  ℹ️ New admin will receive a verification email. After verifying, they can login
-                  via /admin/login.
+                  ℹ️ This promotes an <strong>existing</strong> account. The person signs up at
+                  /admin/login first, then an admin grants them access here. Accounts are never
+                  created from the browser — that would let anyone self-declare admin.
                 </div>
+              </div>
+
+              <div className="card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-white text-sm">Admin Roster</h3>
+                  <button
+                    type="button"
+                    onClick={loadAdmins}
+                    disabled={loadingAdmins}
+                    className="btn-outline text-xs py-1.5 px-3"
+                  >
+                    {loadingAdmins ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
+                    )}{' '}
+                    Refresh
+                  </button>
+                </div>
+
+                {loadingAdmins && admins.length === 0 ? (
+                  <p className="text-xs text-slate-500">Loading roster…</p>
+                ) : admins.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    No admins on the roster. Run the security hardening migration if this looks
+                    wrong.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-white/5">
+                    {admins.map((a) => (
+                      <li key={a.email} className="flex items-center justify-between py-2.5 gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{a.email}</p>
+                          <p className="text-[11px] text-slate-500">
+                            Added {new Date(a.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeAdmin(a.email)}
+                          disabled={revoking === a.email || admins.length === 1}
+                          title={
+                            admins.length === 1
+                              ? 'Cannot revoke the last admin'
+                              : `Revoke admin access for ${a.email}`
+                          }
+                          className="btn-outline text-xs py-1.5 px-3 shrink-0 disabled:opacity-40"
+                        >
+                          {revoking === a.email ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <ShieldOff size={12} />
+                          )}{' '}
+                          Revoke
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           )}

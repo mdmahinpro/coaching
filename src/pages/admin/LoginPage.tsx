@@ -18,7 +18,7 @@ type F = z.infer<typeof schema>;
 export default function AdminLoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [shake, setShake] = useState(false);
-  const { signIn } = useAuthStore();
+  const { signIn, signOut } = useAuthStore();
   const { settings } = useSettingsStore();
   const navigate = useNavigate();
   const {
@@ -37,6 +37,18 @@ export default function AdminLoginPage() {
       toast.error('ইমেইল বা পাসওয়ার্ড সঠিক নয়।');
       return;
     }
+
+    // Credentials are valid, but admin authority comes from the server-side
+    // `admin_users` roster (resolved by signIn), not from the login form. A
+    // non-admin account is signed straight back out so no session lingers.
+    if (useAuthStore.getState().role !== 'admin') {
+      await signOut();
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
+      toast.error('এই অ্যাকাউন্টের অ্যাডমিন অনুমতি নেই।');
+      return;
+    }
+
     toast.success('স্বাগতম!');
     navigate('/admin/dashboard');
   };

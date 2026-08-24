@@ -320,3 +320,31 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION portal_change_password(TEXT, TEXT, TEXT) TO anon, authenticated;
+
+-- ── Verify the complete portal RPC surface before reporting success ────────
+DO $$
+DECLARE
+  missing_functions TEXT[];
+BEGIN
+  SELECT ARRAY_AGG(signature)
+  INTO missing_functions
+  FROM UNNEST(ARRAY[
+    'verify_student_login(text,text)',
+    'portal_get_profile(text)',
+    'portal_get_fees(text)',
+    'portal_get_exams(text)',
+    'portal_get_submissions(text)',
+    'portal_get_notices(text,text)',
+    'portal_update_photo(text,text)',
+    'portal_change_password(text,text,text)'
+  ]) AS required(signature)
+  WHERE TO_REGPROCEDURE('public.' || signature) IS NULL;
+
+  IF missing_functions IS NOT NULL THEN
+    RAISE EXCEPTION 'Portal RPC migration incomplete. Missing functions: %', missing_functions;
+  END IF;
+END;
+$$;
+
+-- Ask Supabase PostgREST to expose the newly created functions immediately.
+NOTIFY pgrst, 'reload schema';

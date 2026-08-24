@@ -6,8 +6,9 @@
  * server env var. It is never shipped to the browser bundle.
  *
  * Every request must carry a valid Supabase admin JWT
- * (Authorization: Bearer <access_token>). The token is verified against
- * Supabase, and the caller must have user_metadata.role === 'admin'.
+ * (Authorization: Bearer <access_token>). Authorization is decided by the
+ * server-side `is_admin()` RPC, which reads the `admin_users` roster — not by
+ * `user_metadata`, which the browser can rewrite via `auth.updateUser()`.
  */
 
 export interface SmsRequestBody {
@@ -23,7 +24,16 @@ export interface SmsCoreResult {
 
 const SMS_ENDPOINT = 'https://api.mimsms.com/smsapi';
 
-/** Verify the bearer token belongs to an authenticated admin. */
+/**
+ * Verify the bearer token belongs to an authenticated admin.
+ *
+ * `is_admin()` is a SECURITY DEFINER function that resolves `auth.uid()` from
+ * the presented JWT and looks it up in the server-only `admin_users` table.
+ * Calling it with the caller's own token (not a privileged key) means an
+ * invalid or expired token yields a non-2xx response, and a valid non-admin
+ * token yields `false`. The roster is not writable from the browser, so a
+ * self-declared `user_metadata.role` grants nothing here.
+ */
 async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
   const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
   if (!token) {
@@ -35,14 +45,20 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
     return false;
   }
   try {
-    const res = await fetch(`${url}/auth/v1/user`, {
-      headers: { apikey: anon, Authorization: `Bearer ${token}` },
+    const res = await fetch(`${url}/rest/v1/rpc/is_admin`, {
+      method: 'POST',
+      headers: {
+        apikey: anon,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
     });
     if (!res.ok) {
       return false;
     }
-    const user = (await res.json()) as { user_metadata?: { role?: string } };
-    return user?.user_metadata?.role === 'admin';
+    // The RPC returns a bare JSON boolean.
+    return (await res.json()) === true;
   } catch {
     return false;
   }
