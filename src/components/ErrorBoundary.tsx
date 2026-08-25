@@ -36,8 +36,14 @@ export class ErrorBoundary extends Component<Props, State> {
               <AlertTriangle size={28} className="text-red-400" />
             </div>
             <h1 className="font-inter font-black text-xl text-white mb-2">কিছু একটা ভুল হয়েছে</h1>
-            <p className="text-slate-400 text-sm mb-2">An unexpected error occurred.</p>
-            {this.state.error && (
+            <p className="text-slate-400 text-sm mb-5">An unexpected error occurred.</p>
+            {/*
+              The raw message is a development aid only. In production it can
+              carry table names, RPC parameters, or fragments of a failed query
+              back to whoever triggered the crash, so it is compiled out — the
+              full detail still reaches `logError` in componentDidCatch.
+            */}
+            {import.meta.env.DEV && this.state.error && (
               <pre className="text-xs text-red-400 bg-red-400/10 rounded-lg p-3 mb-5 text-left overflow-x-auto">
                 {this.state.error.message}
               </pre>

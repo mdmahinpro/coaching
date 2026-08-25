@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { generateStudentReceipt } from '@/lib/pdf';
+import { logError } from '@/utils/logger';
 
 interface Fee {
   id: string;
@@ -89,7 +90,10 @@ export default function PortalFeesPage() {
         instituteName: settings.centerName,
       });
     } catch (err) {
-      console.error('[PDF Error]', err);
+      logError('Student receipt PDF generation failed', {
+        source: 'PortalFeesPage',
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
       toast.error('Failed to generate PDF. Please try again.');
     }
   };

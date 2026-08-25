@@ -18,6 +18,7 @@ import {
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateResultCard } from '@/lib/pdf';
+import { logError } from '@/utils/logger';
 
 interface Submission {
   id: string;
@@ -140,7 +141,10 @@ export default function PortalResultsPage() {
         instituteName: settings.centerName,
       });
     } catch (err) {
-      console.error('[PDF Error]', err);
+      logError('Result card PDF generation failed', {
+        source: 'PortalResultsPage',
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
       toast.error('Failed to generate PDF. Please try again.');
     }
   };

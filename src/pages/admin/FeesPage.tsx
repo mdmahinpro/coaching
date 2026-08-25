@@ -27,6 +27,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
 import { generateReceipt } from '@/lib/pdf';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { logError } from '@/utils/logger';
 import { calculateFinalAmount, daysOverdue } from '@/utils/money';
 
 const MONTHS = [
@@ -274,7 +275,12 @@ function OverviewTab() {
                                   instituteName: settings.centerName,
                                 });
                               } catch (err) {
-                                console.error('[PDF Error]', err);
+                                logError('Receipt PDF generation failed', {
+                                  source: 'FeesPage',
+                                  meta: {
+                                    error: err instanceof Error ? err.message : String(err),
+                                  },
+                                });
                                 toast.error('Failed to generate PDF. Please try again.');
                               } finally {
                                 setGenReceiptLoading(false);
@@ -724,7 +730,10 @@ function RecordPaymentTab() {
         institutePhone: settings.centerPhone,
       });
     } catch (err) {
-      console.error('[PDF Error]', err);
+      logError('Receipt PDF generation failed', {
+        source: 'FeesPage',
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
       toast.error('Failed to generate PDF. Please try again.');
     }
   };

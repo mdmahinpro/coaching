@@ -40,3 +40,10 @@ cc_home*.png
 # Local Netlify emulator artifacts
 .netlify/
 deno.lock
+
+# Working notes and superseded scratch SQL — kept on disk, not versioned.
+# migration.sql predates supabase/migrations/ and would re-open public reads
+# on mcq_* if run; the numbered migrations are the source of truth.
+PROJECT_ANALYSIS.md
+grillingResult.md
+migration.sql

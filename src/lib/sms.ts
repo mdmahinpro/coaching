@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { logError } from '@/utils/logger';
 
 export interface SMSResult {
   sent: number;
@@ -57,7 +58,10 @@ export async function sendSMS(
       status = 'failed';
     }
   } catch (err) {
-    console.error('[SMS API Error]', err);
+    logError('SMS send request failed', {
+      source: 'sms',
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
     failedCount = phoneArr.length;
     status = 'failed';
   }
