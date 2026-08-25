@@ -100,8 +100,18 @@ export async function submitExam(
   return row as ExamSubmitResult;
 }
 
-export async function getLeaderboard(examId: string) {
-  const { data, error } = await supabase.rpc('exam_get_leaderboard', { p_exam_id: examId });
+/**
+ * Top-5 board for an exam. Token-gated server-side: only a student who has
+ * already submitted this exam can read it, and `student_code` comes back
+ * populated for the caller's own row only. Mirrors `getExamReview`'s token
+ * handling — an exam token when one was minted, otherwise the portal session.
+ */
+export async function getLeaderboard(examId: string, examToken?: string) {
+  const { data, error } = await supabase.rpc('exam_get_leaderboard', {
+    p_exam_id: examId,
+    p_exam_token: examToken ?? null,
+    p_portal_token: examToken ? null : getStudentToken(),
+  });
   return unwrap(data, error) ?? [];
 }
 

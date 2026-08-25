@@ -157,7 +157,7 @@ export default function ExamPage() {
           setSubmission(sub as unknown as Submission);
         }
         await loadReview(join.exam_token);
-        await loadLeaderboard();
+        await loadLeaderboard(join.exam_token);
         setStep('already-submitted');
         return;
       }
@@ -455,7 +455,7 @@ export default function ExamPage() {
         });
         setSubmitting(false);
         await loadReview(token);
-        await loadLeaderboard();
+        await loadLeaderboard(token);
         setStep('result');
       } catch (err: any) {
         const msg = String(err?.message ?? '');
@@ -468,7 +468,7 @@ export default function ExamPage() {
             setSubmission(sub as unknown as Submission);
           }
           await loadReview(token);
-          await loadLeaderboard();
+          await loadLeaderboard(token);
           setStep('already-submitted');
           return;
         }
@@ -515,12 +515,16 @@ export default function ExamPage() {
     }
   };
 
-  const loadLeaderboard = async () => {
+  // The board is token-gated server-side, so the exam token minted by
+  // exam_join has to travel with the request. Only the caller's own row
+  // carries a student_code back; other rows return null there, which the
+  // `isMe` comparison below already treats as "not me".
+  const loadLeaderboard = async (examToken?: string) => {
     if (!examId) {
       return;
     }
     try {
-      const rows = await getLeaderboard(examId);
+      const rows = await getLeaderboard(examId, examToken);
       const cleaned = (rows ?? []).map((row: any) => ({
         id: row.id,
         score: row.score,
