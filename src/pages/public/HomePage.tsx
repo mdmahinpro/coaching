@@ -45,7 +45,11 @@ export default function HomePage() {
         }));
         setBatches(cleaned);
       },(err: any) => { handleSupabaseError(err); });
-    supabase.from('teachers').select('*').limit(4)
+    // Explicit column list, not `*`: anon holds column-level SELECT on the
+    // public teacher card fields only. salary, phone and email are revoked,
+    // and `*` would fail the whole query with 42501.
+    supabase.from('teachers').select('id,name,subject,qualification,bio,photo_url,is_active')
+      .eq('is_active', true).limit(4)
       .then(({ data }) => {
         const cleaned = (data ?? []).map((t: any) => ({
           ...t, name: sanitize(t.name), subject: t.subject ? sanitize(t.subject) : t.subject,
