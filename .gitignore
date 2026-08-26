@@ -47,3 +47,8 @@ deno.lock
 PROJECT_ANALYSIS.md
 grillingResult.md
 migration.sql
+
+# Database dumps — pg_dump output from scripts/backup-db.bat and anywhere
+# else. These contain student PII and must never enter the repository;
+# they live on disk (ideally off-machine) and get rebuilt on demand.
+backup_*.sql
