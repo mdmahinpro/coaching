@@ -71,6 +71,7 @@ export default function BatchesPage() {
           .from('students')
           .select('batch_id')
           .eq('status', 'active')
+          .eq('is_approved', true)
           .not('batch_id', 'is', null),
       ]);
       const countMap: Record<string, number> = {};
@@ -171,14 +172,22 @@ export default function BatchesPage() {
     }
     setSaving(true);
     try {
+      // NOTE: batch column is `start_time`, NOT `schedule_time`. Sending a
+      // phantom `schedule_time` key made PostgREST fail the whole update with
+      // `Could not find the 'schedule time' column of 'batches'`.
+      const selectedTeacher = teachers.find((t) => t.id === editing.teacher_id);
       const payload = {
         name: editing.name,
         subject: editing.subject ?? null,
         class_level: editing.class_level ?? null,
         teacher_id: editing.teacher_id ?? null,
+        // teacher is a text column (name string) that the public card and
+        // admin list render; keep it in sync with the selected teacher.
+        teacher: selectedTeacher?.name ?? null,
         schedule_days: editing.schedule_days ?? [],
-        schedule_time: editing.schedule_time ?? null,
+        start_time: editing.schedule_time ?? null,
         capacity: editing.capacity ?? 30,
+        max_seats: editing.capacity ?? 30,
         monthly_fee: editing.monthly_fee ?? 1500,
         fee: editing.monthly_fee ?? 1500,
         description: editing.description ?? null,
@@ -216,15 +225,18 @@ export default function BatchesPage() {
     }
     setDeleting(true);
     try {
-      // Null out batch_id on students and exams in this batch first to avoid orphaned references
-      await supabase.from('students').update({ batch_id: null }).eq('batch_id', deleteTarget.id);
-      await supabase.from('exams').update({ batch_id: null }).eq('batch_id', deleteTarget.id);
-      const { error } = await supabase.from('batches').delete().eq('id', deleteTarget.id);
+      // Soft-disable: batches is referenced by students, fees and exams, so a
+      // hard delete trips fees_batch_id_fkey. Setting is_active=false hides it
+      // from public/student views while preserving fee and enrolment history.
+      const { error } = await supabase
+        .from('batches')
+        .update({ is_active: false })
+        .eq('id', deleteTarget.id);
       if (error) {
         toast.error(error.message);
         return;
       }
-      toast.success('Batch deleted');
+      toast.success('Batch disabled');
       setDeleteTarget(null);
       load();
     } catch (err) {
@@ -660,9 +672,12 @@ export default function BatchesPage() {
             >
               <Trash2 size={28} className="text-red-400 mx-auto mb-3" />
               <p className="font-semibold text-white mb-1">
-                Delete &quot;{deleteTarget.name}&quot;?
+                Disable &quot;{deleteTarget.name}&quot;?
               </p>
-              <p className="text-slate-400 text-sm mb-5">This may affect enrolled students.</p>
+              <p className="text-slate-400 text-sm mb-5">
+                The batch will be hidden from public and student views. Its students, fees and
+                history are kept and can be re-enabled from the edit modal.
+              </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteTarget(null)}
@@ -676,7 +691,7 @@ export default function BatchesPage() {
                   className="btn-danger flex-1 justify-center text-sm"
                 >
                   {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}{' '}
-                  Delete
+                  Disable
                 </button>
               </div>
             </motion.div>
