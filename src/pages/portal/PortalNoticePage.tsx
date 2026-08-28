@@ -1,13 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { fetchNotices } from '@/lib/portalApi';
+import { fetchNotices, fetchNoticeReads, markNoticeRead } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { Bell, Pin, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const READ_KEY = 'portal-read-notices';
 const TYPE_COLORS: Record<string, string> = {
   exam: 'badge-violet',
   holiday: 'badge-green',
@@ -23,13 +22,11 @@ export default function PortalNoticePage() {
   const [notices, setNotices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [readIds, setReadIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(READ_KEY) ?? '[]');
-    } catch {
-      return [];
-    }
-  });
+  // readIds is the server-persisted set of (this student's) read notices —
+  // loaded from portal_get_notice_reads, updated optimistically on expand and
+  // written back through portal_mark_notice_read so it survives reloads and
+  // follows the student across devices.
+  const [readIds, setReadIds] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -53,13 +50,28 @@ export default function PortalNoticePage() {
     load();
   }, [load]);
 
+  // Load the server-side read receipts once per session/student.
+  useEffect(() => {
+    if (!student) {
+      return;
+    }
+    fetchNoticeReads().then(
+      (rows: any[]) => setReadIds((rows ?? []).map((r) => r.notice_id)),
+      (err: any) => {
+        handleSupabaseError(err);
+      }
+    );
+  }, [student]);
+
   const markRead = (id: string) => {
     if (readIds.includes(id)) {
       return;
     }
-    const next = [...readIds, id];
-    setReadIds(next);
-    localStorage.setItem(READ_KEY, JSON.stringify(next));
+    // Optimistic local update; persist server-side (best-effort).
+    setReadIds((prev) => [...prev, id]);
+    markNoticeRead(id).catch((err: any) => {
+      handleSupabaseError(err);
+    });
   };
 
   const toggleExpand = (id: string) => {

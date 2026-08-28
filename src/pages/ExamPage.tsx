@@ -27,6 +27,7 @@ import {
   BookOpen,
   AlertTriangle,
   Trophy,
+  LayoutDashboard,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,6 +44,8 @@ interface ExamData {
   start_time?: string | null;
   end_time?: string | null;
   timer_enabled?: boolean;
+  // Strict Mode: when ON, red-card (tab-minimize) penalties apply.
+  strict_mode?: boolean;
 }
 
 /** Question as served during the exam — WITHOUT the answer key. */
@@ -65,11 +68,16 @@ interface ReviewQuestion extends Question {
 interface Submission {
   id: string;
   score: number;
+  // Marks earned from correct answers (before any penalty).
+  raw_score?: number;
+  // Marks deducted by red-card penalty (0 unless strict mode + cards).
+  penalty_marks?: number;
   correct_count: number;
   wrong_count: number;
   time_taken: number;
   rank?: number;
   answers?: string | Record<string, string>;
+  red_cards?: number;
 }
 
 type Step =
@@ -450,6 +458,10 @@ export default function ExamPage() {
     if (step !== 'exam') {
       return;
     }
+    // Strict Mode only: no penalty tracking when the exam doesn't opt in.
+    if (exam?.strict_mode !== true) {
+      return;
+    }
     const onVisibility = () => {
       if (document.hidden) {
         hiddenAtRef.current = Date.now();
@@ -540,6 +552,9 @@ export default function ExamPage() {
         setSubmission({
           id: result.id,
           score: result.score,
+          raw_score: result.raw_score,
+          penalty_marks: result.penalty_marks,
+          red_cards: result.red_cards,
           correct_count: result.correct_count,
           wrong_count: result.wrong_count,
           time_taken: result.time_taken,
@@ -1186,6 +1201,29 @@ function ResultView({
             </div>
           </div>
 
+          {/* Score transparency: show why marks were deducted. When strict mode
+              deducted a penalty, explain `raw − penalty = final`. */}
+          {(submission.penalty_marks ?? 0) > 0 && (
+            <div className="card p-3 mb-4 text-left text-xs bg-red-400/5 border border-red-400/20 space-y-1.5">
+              <p className="text-red-400 font-semibold flex items-center gap-1">
+                <XCircle size={13} /> {submission.red_cards ?? 0} Red Card{' '}
+                {(submission.red_cards ?? 0) > 1 ? 's' : ''} — কাটা হয়েছে
+              </p>
+              <div className="flex justify-between text-slate-300">
+                <span>সঠিক উত্তরের প্রাপ্ত নম্বর</span>
+                <span className="text-emerald-400 font-semibold">+{submission.raw_score}</span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span>ট্যাব মিনিমাইজ/পরীক্ষা ছেড়ে যাওয়া (১০% প্রতি লাল কার্ড)</span>
+                <span className="text-red-400 font-semibold">−{submission.penalty_marks}</span>
+              </div>
+              <div className="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5">
+                <span>চূড়ান্ত স্কোর</span>
+                <span>{submission.score}</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="card p-3">
               <p className="text-emerald-400 font-bold text-xl">{submission.correct_count}</p>
@@ -1279,6 +1317,16 @@ function ResultView({
             </div>
           </motion.div>
         )}
+
+        {/* Back to student panel / home (issue #8) */}
+        <div className="flex gap-3 pt-1">
+          <a href="/portal/dashboard" className="btn-primary flex-1 justify-center text-sm py-2.5">
+            <LayoutDashboard size={15} /> ড্যাশবোর্ডে যান
+          </a>
+          <a href="/" className="btn-outline flex-1 justify-center text-sm py-2.5">
+            হোমে যান
+          </a>
+        </div>
 
         {/* Answer breakdown toggle — only when the answer key is available */}
         {reviewQuestions.length > 0 && (

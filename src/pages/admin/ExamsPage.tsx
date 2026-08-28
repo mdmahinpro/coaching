@@ -870,6 +870,8 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
     exam_time: '09:00',
     duration_minutes: 30,
     timer_enabled: true,
+    // Strict Mode: enables red-card (tab-minimize) penalties. Default OFF.
+    strict_mode: false,
     pass_marks: 10,
     instructions: '',
   });
@@ -911,7 +913,21 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
     }
     setSaving(true);
     const now = new Date();
-    const examStatus = publish ? 'active' : 'draft';
+    // #10a auto-start: an exam becomes joinable when its wall-clock start_time
+    // arrives (enforced server-side in _exam_gate). Publish = start now;
+    // "Save as Draft" with a real date/time = schedule for that datetime
+    // (status 'upcoming'); active/paused/ended existing exams keep working.
+    const durationMs = info.duration_minutes * 60000;
+    const examineeStart = new Date(`${info.exam_date}T${info.exam_time}:00`);
+    const examStatus = publish
+      ? 'active'
+      : examineeStart > now
+        ? 'upcoming'
+        : 'draft';
+    const startTime = publish ? now.toISOString() : examineeStart.toISOString();
+    const endTime = publish
+      ? new Date(now.getTime() + durationMs).toISOString()
+      : new Date(examineeStart.getTime() + durationMs).toISOString();
     const { data: exam, error: eErr } = await supabase
       .from('exams')
       .insert([
@@ -925,14 +941,14 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
           exam_date: `${info.exam_date}T${info.exam_time}:00`,
           duration_minutes: info.duration_minutes,
           timer_enabled: info.timer_enabled,
+          // Strict Mode gates the red-card penalty; default OFF.
+          strict_mode: info.strict_mode,
           pass_marks: info.pass_marks,
           total_marks: totalMarks,
           instructions: info.instructions,
           status: examStatus,
-          start_time: publish ? now.toISOString() : null,
-          end_time: publish
-            ? new Date(now.getTime() + info.duration_minutes * 60000).toISOString()
-            : null,
+          start_time: startTime,
+          end_time: endTime,
           type: 'mcq',
         },
       ])
@@ -1016,6 +1032,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
               exam_time: '09:00',
               duration_minutes: 30,
               timer_enabled: true,
+              strict_mode: false,
               pass_marks: 10,
               instructions: '',
             });
@@ -1194,6 +1211,20 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
               </label>
               <span className="text-sm text-slate-300">
                 Timer Enabled (countdown visible to students)
+              </span>
+            </div>
+            <div className="col-span-2 flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={info.strict_mode}
+                  onChange={(e) => setInfo((p) => ({ ...p, strict_mode: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-navy-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500" />
+              </label>
+              <span className="text-sm text-slate-300">
+                Strict Mode (deduct 10% of total marks per tab-minimize red card)
               </span>
             </div>
             <div className="col-span-2">

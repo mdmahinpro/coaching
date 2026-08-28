@@ -28,6 +28,8 @@ export interface ExamMeta {
   start_time: string | null;
   end_time: string | null;
   timer_enabled: boolean;
+  // Strict Mode: when ON, red-card (tab-minimize) penalties apply.
+  strict_mode: boolean;
 }
 
 export interface ExamJoinResult {
@@ -77,6 +79,10 @@ export async function getExamQuestions(examToken: string) {
 export interface ExamSubmitResult {
   id: string;
   score: number;
+  // Marks earned from correct answers (before penalty).
+  raw_score: number;
+  // Marks deducted by red-card penalty (0 when strict mode off / no cards).
+  penalty_marks: number;
   correct_count: number;
   wrong_count: number;
   time_taken: number;

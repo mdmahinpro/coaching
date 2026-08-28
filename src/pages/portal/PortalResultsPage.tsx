@@ -24,12 +24,17 @@ interface Submission {
   id: string;
   exam_id: string;
   score: number;
+  // Marks earned from correct answers (before any penalty).
+  raw_score?: number;
+  // Marks deducted by red-card penalty (0 unless strict mode).
+  penalty_marks?: number;
   correct_count: number;
   wrong_count: number;
   time_taken?: number;
   rank?: number;
   submitted_at: string;
   answers?: Record<string, string>;
+  red_cards?: number;
   exam?: { title: string; subject: string; total_marks: number; pass_marks: number };
 }
 
@@ -256,6 +261,15 @@ export default function PortalResultsPage() {
                       </span>
                       <span className="text-red-400 text-xs">{s.wrong_count ?? '?'} wrong</span>
                     </div>
+                    {/* Score transparency — show why marks were deducted */}
+                    {(s.penalty_marks ?? 0) > 0 && (
+                      <div className="mt-2 text-[11px] text-slate-400 space-y-0.5">
+                        <p className="text-red-400/90">
+                          ↳ সঠিক উত্তর হতে +{s.raw_score}, লাল কার্ড ({s.red_cards ?? 0}) কারণে −
+                          {s.penalty_marks} = {s.score}
+                        </p>
+                      </div>
+                    )}
                     {/* Score bar */}
                     <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden mt-2">
                       <div

@@ -68,6 +68,23 @@ export async function fetchNotices(type?: string) {
   return unwrap(data, error) ?? [];
 }
 
+/** Which notices this student has already read (server-persisted per user). */
+export async function fetchNoticeReads() {
+  const { data, error } = await supabase.rpc('portal_get_notice_reads', {
+    p_token: requireToken(),
+  });
+  return unwrap(data, error) ?? [];
+}
+
+/** Persist a read receipt for a notice (idempotent per student). */
+export async function markNoticeRead(noticeId: string) {
+  const { error } = await supabase.rpc('portal_mark_notice_read', {
+    p_token: requireToken(),
+    p_notice_id: noticeId,
+  });
+  unwrap(null, error);
+}
+
 export async function updatePhoto(photoUrl: string) {
   const { error } = await supabase.rpc('portal_update_photo', {
     p_token: requireToken(),
