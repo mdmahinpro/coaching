@@ -1,11 +1,14 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
+const path = require('path');
 const BASE = 'http://127.0.0.1:5173';
 const EXE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 
 // Admin credentials are read from a LOCAL file ONLY (never committed/printed).
+// Resolve relative to THIS script (e2e/admin-creds.json) so it works from any cwd.
+const credsFile = path.join(__dirname, 'admin-creds.json');
 let creds = null;
-try { creds = JSON.parse(fs.readFileSync('admin-creds.json', 'utf8')); } catch {}
+try { creds = JSON.parse(fs.readFileSync(credsFile, 'utf8')); } catch {}
 if (!creds || !creds.email || !creds.password) {
   console.error('admin-creds.json missing or incomplete. Create it with {"email":"...","password":"..."}');
   process.exit(1);

@@ -6,7 +6,7 @@ const BASE = 'http://127.0.0.1:5173';
 const EXE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const PHONE = '01900000000';
 const PASSWORD = 'E2ePass!2026';
-const DL_DIR = 'C:/Users/mdmah/e2e-harness/downloads';
+const DL_DIR = path.join(__dirname, 'downloads');
 fs.mkdirSync(DL_DIR, { recursive: true });
 
 const results = [];
