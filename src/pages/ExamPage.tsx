@@ -13,6 +13,7 @@ import {
   getMySubmission,
   getExamReview,
 } from '@/lib/examApi';
+import type { ExamJoinResult } from '@/lib/examApi';
 import toast from 'react-hot-toast';
 import { cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -72,7 +73,14 @@ interface Submission {
 }
 
 type Step =
-  'loading' | 'verify' | 'instructions' | 'exam' | 'result' | 'already-submitted' | 'ended';
+  | 'loading'
+  | 'not-started'
+  | 'verify'
+  | 'instructions'
+  | 'exam'
+  | 'result'
+  | 'already-submitted'
+  | 'ended';
 
 const OPTS = ['A', 'B', 'C', 'D'] as const;
 
@@ -147,7 +155,21 @@ export default function ExamPage() {
       if (!examId) {
         return;
       }
-      const join = await joinExam(examId, opts.code);
+      let join: ExamJoinResult;
+      try {
+        join = await joinExam(examId, opts.code);
+      } catch (err) {
+        // A draft/upcoming exam may have started since meta was loaded — stop
+        // the join cleanly instead of surfacing the raw EXAM_NOT_STARTED error.
+        if (
+          err instanceof Error &&
+          (err.message.includes('EXAM_NOT_STARTED') || err.message.includes('not started'))
+        ) {
+          setStep('not-started');
+          return;
+        }
+        throw err;
+      }
       examTokenRef.current = join.exam_token;
       setStudent({ id: join.student_id, name: sanitize(join.student_name), student_id: join.student_code });
 
@@ -221,6 +243,13 @@ export default function ExamPage() {
           instructions: meta.instructions ? sanitize(meta.instructions) : undefined,
         };
         setExam(cleanExam);
+
+        // Not-started exams (draft / upcoming) are not joinable through the
+        // link — same screen for anonymous and logged-in students.
+        if (meta.status === 'draft' || meta.status === 'upcoming') {
+          setStep('not-started');
+          return;
+        }
 
         // Anonymous visitor to an ended exam → nothing to join.
         if (meta.status === 'ended' && !loggedIn) {
@@ -584,6 +613,37 @@ export default function ExamPage() {
             </>
           )}
 
+          <div className="flex gap-3 pt-2 justify-center">
+            <a href="/portal/exams" className="btn-outline text-sm py-2 px-4">
+              পোর্টালে যান
+            </a>
+            <a href="/" className="btn-primary text-sm py-2 px-4">
+              হোমে যান
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render: Not started (draft / upcoming) ───────────────────────────────
+  if (step === 'not-started') {
+    return (
+      <div className="min-h-screen bg-navy-900 flex items-center justify-center p-4">
+        <div className="card p-10 max-w-sm w-full text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-sky-400/10 flex items-center justify-center mx-auto">
+            <Clock size={32} className="text-sky-400" />
+          </div>
+          <h2 className="font-inter font-bold text-xl text-white">পরীক্ষা শুরু হয়নি</h2>
+          {exam && (
+            <div className="space-y-1">
+              <p className="text-white font-semibold font-hind">{exam.title}</p>
+              {exam.subject && <p className="text-slate-400 text-sm">{exam.subject}</p>}
+            </div>
+          )}
+          <p className="text-slate-500 text-sm">
+            এই পরীক্ষাটি এখনও চালু হয়নি। যখন প্রশাসক পরীক্ষাটি শুরু করবেন তখন এই লিঙ্কটি কাজ করবে।
+          </p>
           <div className="flex gap-3 pt-2 justify-center">
             <a href="/portal/exams" className="btn-outline text-sm py-2 px-4">
               পোর্টালে যান

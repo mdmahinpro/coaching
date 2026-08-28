@@ -39,7 +39,7 @@ interface Exam {
   pass_marks: number;
   type: string;
   instructions?: string;
-  status?: 'draft' | 'active' | 'paused' | 'ended';
+  status?: 'draft' | 'upcoming' | 'active' | 'paused' | 'ended';
   start_time?: string;
   end_time?: string;
   timer_enabled?: boolean;
@@ -580,6 +580,27 @@ function AllExamsTab({ onTabChange }: { onTabChange: (t: Tab) => void }) {
     }
   };
 
+  // Start a not-started exam directly from the list: flip to 'active' and open
+  // the timer window from now. Mirrors TimerModal's own Start button so drafts
+  // are findable and startable at a glance.
+  const handleStart = async (exam: Exam) => {
+    const duration = (exam.duration_minutes ?? 30) * 60000;
+    const { error } = await supabase
+      .from('exams')
+      .update({
+        status: 'active',
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + duration).toISOString(),
+      })
+      .eq('id', exam.id);
+    if (error) {
+      toast.error('Failed to start exam: ' + error.message);
+      return;
+    }
+    toast.success(`"${exam.title}" started`);
+    load();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -628,6 +649,15 @@ function AllExamsTab({ onTabChange }: { onTabChange: (t: Tab) => void }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {(st === 'draft' || st === 'upcoming') && (
+                    <button
+                      onClick={() => handleStart(exam)}
+                      title="Start Exam"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors text-xs font-medium flex items-center gap-1"
+                    >
+                      <Play size={12} /> Start
+                    </button>
+                  )}
                   <button
                     onClick={() => setTimerExam(exam)}
                     title="Manage Timer"
@@ -834,7 +864,8 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
   const [info, setInfo] = useState({
     title: '',
     subject: '',
-    batch_id: '',
+    // Multi-batch targeting: array of batch ids; empty = All Batches.
+    batch_ids: [] as string[],
     exam_date: '',
     exam_time: '09:00',
     duration_minutes: 30,
@@ -887,7 +918,10 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
         {
           title: info.title,
           subject: info.subject,
-          batch_id: info.batch_id || null,
+          // batch_ids holds the full assignment ([] -> NULL = all batches);
+          // batch_id keeps the first selection for back-compat joins.
+          batch_ids: info.batch_ids.length > 0 ? info.batch_ids : null,
+          batch_id: info.batch_ids[0] ?? null,
           exam_date: `${info.exam_date}T${info.exam_time}:00`,
           duration_minutes: info.duration_minutes,
           timer_enabled: info.timer_enabled,
@@ -977,7 +1011,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
             setInfo({
               title: '',
               subject: '',
-              batch_id: '',
+              batch_ids: [],
               exam_date: '',
               exam_time: '09:00',
               duration_minutes: 30,
@@ -1059,19 +1093,54 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 mb-1.5 block">Batch</label>
-              <select
-                value={info.batch_id}
-                onChange={(e) => setInfo((p) => ({ ...p, batch_id: e.target.value }))}
-                className="input-field"
-              >
-                <option value="">All Batches</option>
-                {batches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              <label className="text-xs text-slate-400 mb-2 block">
+                Batches <span className="text-slate-600">(pick one or more)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInfo((p) => ({ ...p, batch_ids: [] }))}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                    info.batch_ids.length === 0
+                      ? 'bg-sky-500/20 border-sky-400/40 text-sky-400'
+                      : 'border-white/10 text-slate-400 hover:border-white/20'
+                  )}
+                >
+                  All Batches
+                </button>
+                {batches.map((b) => {
+                  const on = info.batch_ids.includes(b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() =>
+                        setInfo((p) => ({
+                          ...p,
+                          batch_ids: on
+                            ? p.batch_ids.filter((id) => id !== b.id)
+                            : [...p.batch_ids, b.id],
+                        }))
+                      }
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                        on
+                          ? 'bg-violet-500/20 border-violet-400/40 text-violet-300'
+                          : 'border-white/10 text-slate-400 hover:border-white/20'
+                      )}
+                    >
+                      {on && <span className="mr-1">✓</span>}
+                      {b.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-slate-600 text-xs mt-1.5">
+                {info.batch_ids.length === 0
+                  ? 'Visible to every batch'
+                  : `${info.batch_ids.length} batch(es) selected`}
+              </p>
             </div>
             <div>
               <label className="text-xs text-slate-400 mb-1.5 block">Exam Date *</label>
@@ -1216,10 +1285,14 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
             <h2 className="font-inter font-bold text-white text-xl mb-1">{info.title}</h2>
             <div className="flex flex-wrap gap-2 mb-3">
               <span className="badge-blue">{info.subject}</span>
-              {info.batch_id && (
-                <span className="badge-violet">
-                  {batches.find((b) => b.id === info.batch_id)?.name}
-                </span>
+              {info.batch_ids.length > 0 ? (
+                info.batch_ids.map((bid) => (
+                  <span key={bid} className="badge-violet">
+                    {batches.find((b) => b.id === bid)?.name}
+                  </span>
+                ))
+              ) : (
+                <span className="badge-violet">All Batches</span>
               )}
               <span className="badge-yellow">{info.duration_minutes} min</span>
               <span className="text-slate-500 text-xs">
