@@ -72,7 +72,8 @@ export default function PortalResultsPage() {
     null
   );
   const [breakdownLoading, setBreakdownLoading] = useState(false);
-  const [downloadResultCardLoading, setDownloadResultCardLoading] = useState(false);
+  // Which submission's PDF is currently being generated (one card at a time).
+  const [downloadId, setDownloadId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,7 +166,7 @@ export default function PortalResultsPage() {
         <Trophy size={20} className="text-violet-400" /> আমার ফলাফল
       </h1>
 
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         {[
           {
             label: 'মোট পরীক্ষা',
@@ -269,15 +270,18 @@ export default function PortalResultsPage() {
                   <div className="flex flex-col gap-1.5 shrink-0">
                     <button
                       onClick={async () => {
-                        setDownloadResultCardLoading(true);
-                        await downloadResultCard(s);
-                        setDownloadResultCardLoading(false);
+                        setDownloadId(s.id);
+                        try {
+                          await downloadResultCard(s);
+                        } finally {
+                          setDownloadId(null);
+                        }
                       }}
-                      disabled={downloadResultCardLoading}
+                      disabled={downloadId !== null}
                       className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 transition-colors disabled:opacity-50"
                       title="Download"
                     >
-                      {downloadResultCardLoading ? (
+                      {downloadId === s.id ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <Download size={14} />

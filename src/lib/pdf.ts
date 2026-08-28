@@ -530,6 +530,7 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
   const fmtTime = (s?: number) => (!s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`);
 
+  const accent = passed ? '#10b981' : '#ef4444';
   const html = /* html */ `<!DOCTYPE html>
 <html lang="bn">
 <head>
@@ -537,93 +538,51 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Result Card</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
-      background: #f0f4f8;
+      background: #ffffff;
       display: flex; justify-content: center; align-items: flex-start;
-      min-height: 100vh; padding: 32px 16px;
+      min-height: 100vh; padding: 24px 16px;
     }
-    .wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
-    .card {
-      width: 420px; background: #fff; border-radius: 20px;
-      overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-    }
-    .header {
-      background: linear-gradient(135deg, #0b1120 0%, #0f1f3d 60%, ${passed ? '#065f46' : '#7f1d1d'} 100%);
-      padding: 28px 28px 36px; position: relative; overflow: hidden;
-    }
-    .header::before {
-      content: ''; position: absolute; top: -40px; right: -40px;
-      width: 160px; height: 160px; border-radius: 50%;
-      background: rgba(${passed ? '52,211,153' : '248,113,113'},0.1);
-    }
-    .inst-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; position: relative; z-index: 1; }
-    .inst-logo {
-      width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-      background: linear-gradient(135deg, ${passed ? '#34d399,#10b981' : '#f87171,#ef4444'});
-      display: flex; align-items: center; justify-content: center; font-size: 20px;
-    }
-    .inst-name { font-size: 16px; font-weight: 800; color: #fff; }
-    .result-badge {
-      position: relative; z-index: 1;
-      display: inline-flex; align-items: center; gap: 8px;
-      background: rgba(${passed ? '52,211,153' : '248,113,113'},0.15);
-      border: 1px solid rgba(${passed ? '52,211,153' : '248,113,113'},0.3);
-      border-radius: 100px; padding: 5px 14px; margin-bottom: 14px;
-    }
-    .result-badge span { font-size: 11px; font-weight: 700; color: ${passed ? '#34d399' : '#f87171'}; letter-spacing: 0.8px; text-transform: uppercase; }
-    .score-row { display: flex; align-items: flex-end; justify-content: space-between; position: relative; z-index: 1; }
-    .score-big { font-size: 52px; font-weight: 900; line-height: 1; color: ${passed ? '#34d399' : '#f87171'}; }
-    .score-sub { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
-    .grade-pill {
-      background: rgba(167,139,250,0.2); border: 1px solid rgba(167,139,250,0.35);
-      border-radius: 100px; padding: 6px 18px; color: #a78bfa;
-      font-size: 20px; font-weight: 900; letter-spacing: 1px;
-    }
-    .curve { height: 28px; background: linear-gradient(135deg, #0b1120 0%, #0f1f3d 60%, ${passed ? '#065f46' : '#7f1d1d'} 100%); position: relative; }
-    .curve::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 28px; background: #fff; border-radius: 28px 28px 0 0; }
-    .body { padding: 20px 28px 28px; }
-    .student-card {
-      background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-      border: 1px solid #bae6fd; border-radius: 14px;
-      padding: 14px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
-    }
-    .avatar {
-      width: 44px; height: 44px; border-radius: 12px;
-      background: linear-gradient(135deg, #0ea5e9, #38bdf8);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
-    }
-    .student-name { font-size: 15px; font-weight: 700; color: #0c1a2e; font-family: 'Noto Sans Bengali', sans-serif; }
-    .student-id { font-size: 12px; color: #0369a1; margin-top: 2px; font-weight: 500; }
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
-    .stat-box { background: #f8fafc; border-radius: 12px; padding: 12px 8px; text-align: center; border: 1px solid #e2e8f0; }
-    .stat-val { font-size: 20px; font-weight: 800; margin-bottom: 2px; }
+    .wrap { display: flex; flex-direction: column; align-items: center; }
+    .card { width: 420px; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; }
+    /* Solid app-palette header (navy #0b1120), no gradients — html2canvas-safe. */
+    .header { background: #0b1120; padding: 24px 24px 28px; }
+    .inst-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .inst-logo { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .inst-name { font-size: 15px; font-weight: 800; color: #fff; }
+    .result-badge { display: inline-flex; align-items: center; gap: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 5px 12px; margin-bottom: 14px; }
+    .result-badge span { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.8px; text-transform: uppercase; }
+    .score-row { display: flex; align-items: flex-end; justify-content: space-between; }
+    .score-sub { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+    .score-big { font-size: 48px; font-weight: 800; line-height: 1; color: ${accent}; }
+    .grade-pill { background: #a78bfa; border-radius: 100px; padding: 6px 16px; color: #0b1120; font-size: 18px; font-weight: 800; letter-spacing: 1px; }
+    .body { padding: 18px 24px 24px; }
+    .student-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .avatar { width: 40px; height: 40px; border-radius: 10px; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .student-name { font-size: 14px; font-weight: 700; color: #0b1120; font-family: 'Noto Sans Bengali', sans-serif; }
+    .student-id { font-size: 11px; color: #0369a1; margin-top: 2px; font-weight: 600; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .stat-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 6px; text-align: center; }
+    .stat-val { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
     .stat-correct { color: #10b981; }
     .stat-wrong { color: #ef4444; }
-    .stat-skip { color: #94a3b8; }
+    .stat-skip { color: #64748b; }
     .stat-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Noto Sans Bengali', sans-serif; }
-    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
     .info-row:last-child { border-bottom: none; }
-    .info-label { font-size: 12px; color: #94a3b8; }
-    .info-val { font-size: 13px; color: #1e293b; font-weight: 600; font-family: 'Noto Sans Bengali', sans-serif; }
-    .pass-stamp {
-      margin-top: 18px;
-      background: ${passed ? 'linear-gradient(135deg,#d1fae5,#a7f3d0)' : 'linear-gradient(135deg,#fee2e2,#fecaca)'};
-      border: 2px solid ${passed ? '#34d399' : '#f87171'};
-      border-radius: 14px; padding: 14px;
-      text-align: center;
-      color: ${passed ? '#065f46' : '#7f1d1d'};
-    }
-    .pass-stamp-icon { font-size: 28px; margin-bottom: 4px; }
-    .pass-stamp-text { font-size: 18px; font-weight: 900; letter-spacing: 1px; }
-    .pass-stamp-sub { font-size: 11px; margin-top: 4px; opacity: 0.7; font-family: 'Noto Sans Bengali', sans-serif; }
-    .footer { background: #f8fafc; border-top: 1px dashed #e2e8f0; padding: 16px 28px; text-align: center; }
+    .info-label { font-size: 11px; color: #94a3b8; }
+    .info-val { font-size: 12px; color: #0f172a; font-weight: 600; font-family: 'Noto Sans Bengali', sans-serif; }
+    .pass-stamp { margin-top: 14px; background: #f8fafc; border: 2px solid ${accent}; border-radius: 12px; padding: 12px; text-align: center; }
+    .pass-stamp-icon { font-size: 24px; margin-bottom: 2px; }
+    .pass-stamp-text { font-size: 16px; font-weight: 800; letter-spacing: 1px; color: ${accent}; }
+    .pass-stamp-sub { font-size: 10px; margin-top: 4px; color: #475569; font-family: 'Noto Sans Bengali', sans-serif; }
+    .footer { background: #f8fafc; border-top: 1px dashed #e2e8f0; padding: 12px 24px; text-align: center; }
     .footer-sub { font-size: 10px; color: #94a3b8; }
-    .watermark { font-size: 9px; color: #cbd5e1; text-align: center; margin-top: 10px; }
+    .watermark { font-size: 9px; color: #cbd5e1; text-align: center; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -635,18 +594,17 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
           <div class="inst-name">${escapeHtml(r.instituteName)}</div>
         </div>
         <div class="result-badge">
-          <span>Result Card &nbsp;·&nbsp; ফলাফল কার্ড</span>
+          <span>Result Card · ফলাফল কার্ড</span>
         </div>
         <div class="score-row">
           <div>
             <div class="score-sub">Score</div>
-            <div class="score-big">${pct}<span style="font-size:24px;font-weight:600">%</span></div>
-            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px">${r.score} / ${r.totalMarks}</div>
+            <div class="score-big">${pct}%</div>
+            <div style="color:#64748b;font-size:11px;margin-top:2px">${r.score} / ${r.totalMarks}</div>
           </div>
           <div class="grade-pill">${grade}</div>
         </div>
       </div>
-      <div class="curve"></div>
       <div class="body">
         <div class="student-card">
           <div class="avatar">${escapeHtml(r.studentName.charAt(0).toUpperCase())}</div>
@@ -666,12 +624,12 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
             <div class="stat-label">ভুল</div>
           </div>
           <div class="stat-box">
-            <div class="stat-val stat-skip">${r.timeTaken ? fmtTime(r.timeTaken) : '—'}</div>
+            <div class="stat-val stat-skip">${r.timeTaken != null ? fmtTime(r.timeTaken) : '—'}</div>
             <div class="stat-label">সময়</div>
           </div>
         </div>
 
-        <div style="margin-bottom:18px">
+        <div>
           <div class="info-row">
             <span class="info-label">Exam</span>
             <span class="info-val">${escapeHtml(r.examTitle)}</span>
@@ -684,7 +642,7 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
             <span class="info-label">Pass Marks</span>
             <span class="info-val">${r.passMarks} / ${r.totalMarks}</span>
           </div>
-          ${r.rank ? `<div class="info-row"><span class="info-label">Rank</span><span class="info-val" style="color:#a78bfa">#${r.rank}</span></div>` : ''}
+          ${r.rank ? `<div class="info-row"><span class="info-label">Rank</span><span class="info-val" style="color:#7c3aed">#${r.rank}</span></div>` : ''}
           <div class="info-row">
             <span class="info-label">Date</span>
             <span class="info-val">${escapeHtml(r.submittedAt)}</span>
@@ -698,8 +656,8 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
         </div>
       </div>
       <div class="footer">
-        <div class="footer-sub">Computer-generated result card &nbsp;·&nbsp; ${escapeHtml(r.instituteName)}</div>
-        <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)} · All rights reserved</div>
+        <div class="footer-sub">Computer-generated result card · ${escapeHtml(r.instituteName)}</div>
+        <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)}</div>
       </div>
     </div>
   </div>
@@ -708,21 +666,34 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
 
   const container = document.createElement('div');
   container.innerHTML = html;
-  container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;z-index:-1;visibility:hidden;';
-  container.style.width = '420px';
-  document.body.appendChild(container);
-
+  // Offscreen but RENDERED: `visibility:hidden` or `display:none` elements can
+  // rasterize blank in html2canvas. Left-parked, opacity untouched, the card is
+  // laid out and measurable even though nothing is on screen.
+  container.style.cssText =
+    'position:fixed;top:0;left:-10000px;width:420px;z-index:-9999;pointer-events:none;';
+  let appended = false;
   try {
+    document.body.appendChild(container);
+    appended = true;
+
     const el = container.firstElementChild as HTMLElement | null;
     if (!el) {
       throw new Error('Failed to create result card container');
     }
 
-    const { html2canvas, jsPDF } = await loadPdfLibs();
+    // Lazy libraries are dynamic-imported; a first failure can be a transient
+    // chunk-load hiccup, so retry once before surfacing.
+    let pdfLibs: { html2canvas: typeof import('html2canvas').default; jsPDF: typeof import('jspdf').jsPDF };
+    try {
+      pdfLibs = await loadPdfLibs();
+    } catch (importErr) {
+      pdfLibs = await loadPdfLibs();
+    }
+    const { html2canvas, jsPDF } = pdfLibs;
 
-    // Wait for fonts and assets
+    // Wait for fonts (and a beat for layout) so the Bengali text is full-shaped.
     await document.fonts.ready;
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 350));
 
     const canvas = await html2canvas(el, {
       scale: 2,
@@ -736,15 +707,22 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     const pageHeight = (canvas.height / canvas.width) * pageWidth;
 
     const pdf = new jsPDF({
-      orientation: pageHeight > pageWidth ? 'portrait' : 'portrait',
+      orientation: 'portrait',
       unit: 'px',
       format: [pageWidth, pageHeight],
     });
 
     pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
-    pdf.save(`result-card-${r.studentName.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+    const safeName = (r.studentName || 'student').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+    pdf.save(`result-card-${safeName}.pdf`);
   } finally {
-    document.body.removeChild(container);
+    if (appended && container.parentNode) {
+      try {
+        document.body.removeChild(container);
+      } catch {
+        /* already detached */
+      }
+    }
   }
 }
 
