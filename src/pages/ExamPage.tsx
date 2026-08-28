@@ -84,6 +84,10 @@ type Step =
 
 const OPTS = ['A', 'B', 'C', 'D'] as const;
 
+// Tab-minimize penalty: every RED_CARD_SECONDS of hidden time = one red card;
+// each card cuts 10% of the submitted score (enforced server-side).
+const RED_CARD_SECONDS = 30;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 /** Safely parse answers whether the JSONB column returns an object or a string */
 const parseAnswers = (raw: unknown): Record<string, string> => {
@@ -130,10 +134,15 @@ export default function ExamPage() {
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [remainingSecs, setRemainingSecs] = useState(0);
+  const [redCards, setRedCards] = useState(0);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Wall-clock timestamp when the tab went hidden during the exam (null when visible).
+  const hiddenAtRef = useRef<number | null>(null);
+  // Red cards are counted in refs too so async submit always sees the latest.
+  const redCardsRef = useRef(0);
   // Ref always pointing at the latest handleSubmit to avoid stale closures in timer/realtime
   const handleSubmitRef = useRef<(auto?: boolean) => Promise<void>>(async () => {});
   // Synchronous guard against double-submission (timer + realtime may fire before React re-renders)
@@ -364,13 +373,20 @@ export default function ExamPage() {
 
     timerRef.current = setInterval(() => {
       setRemainingSecs((prev) => {
-        if (prev <= 1) {
+        // Prefer the wall clock (end_time) so background-tab throttling of
+        // setInterval can't stretch the exam; fall back to decrementing for
+        // tracker-duration exams with no end_time.
+        const wall =
+          exam?.timer_enabled !== false && exam?.end_time
+            ? Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000))
+            : prev - 1;
+        if (wall <= 1) {
           clearInterval(timerRef.current!);
           toast.error('সময় শেষ! স্বয়ংক্রিয়ভাবে জমা হয়েছে।', { duration: 5000 });
           handleSubmitRef.current(true);
           return 0;
         }
-        return prev - 1;
+        return wall;
       });
     }, 1000);
 
@@ -379,7 +395,9 @@ export default function ExamPage() {
         clearInterval(timerRef.current);
       }
     };
-  }, [step]);
+    // exam/end_time are stable for a sitting; step gates the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, examId, exam?.timer_enabled, exam?.end_time]);
 
   // ── Auto-save every 10 seconds ────────────────────────────────────────────
   // Use answersRef (always current) so the interval doesn't restart on every keystroke
@@ -422,6 +440,51 @@ export default function ExamPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [step, examId, student?.id]);
+
+  // ── Tab-minimize penalty: count red cards while hidden ───────────────────
+  // Each full 30s block of hidden time adds one red card (shown as a warning).
+  // The server deducts 10% of the score per card at submit. We also resync the
+  // countdown from the wall-clock end_time on return so background-tab
+  // throttling can't stretch the timer.
+  useEffect(() => {
+    if (step !== 'exam') {
+      return;
+    }
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      // Back to visible: charge any cards, then resync the countdown.
+      const hiddenStart = hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      if (hiddenStart != null) {
+        const hiddenSecs = Math.floor((Date.now() - hiddenStart) / 1000);
+        const cards = Math.floor(hiddenSecs / RED_CARD_SECONDS);
+        if (cards > 0) {
+          setRedCards((prev) => {
+            const next = Math.min(prev + cards, 10);
+            redCardsRef.current = next;
+            return next;
+          });
+          toast.error(
+            `আপনি পরীক্ষার ট্যাব ছেড়ে ছিলেন। লাল কার্ড: ${cards} টি (প্রতিটি স্কোরের ১০% কাটা হবে)।`,
+            { duration: 4000 }
+          );
+        }
+      }
+      // Wall-clock resync: the interval may have been throttled while hidden.
+      const endTime = exam?.timer_enabled !== false ? exam?.end_time : undefined;
+      if (endTime) {
+        const wall = Math.max(0, Math.floor((new Date(endTime).getTime() - Date.now()) / 1000));
+        setRemainingSecs((prev) => Math.min(prev, wall));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+    // Timer/end_time are stable for the duration of a sitting; step gates it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, examId]);
 
   const selectAnswer = (questionId: string, opt: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: opt }));
@@ -467,8 +530,9 @@ export default function ExamPage() {
       };
 
       try {
-        // Server grades against the authoritative key and computes rank.
-        const result = await submitExam(token, answers, timeTaken);
+        // Server grades against the authoritative key, deducts 10% per red
+        // card, and computes rank.
+        const result = await submitExam(token, answers, timeTaken, redCardsRef.current);
 
         // Clear localStorage
         localStorage.removeItem(`exam-answers-${examId}-${student?.id}`);
@@ -815,6 +879,24 @@ export default function ExamPage() {
                 Q {currentQ + 1} / {questions.length}
               </span>
             </div>
+
+            {/* Red-card penalty badge */}
+            {redCards > 0 && (
+              <div
+                className="flex flex-col items-center shrink-0"
+                title="Each red card cuts 10% of your score"
+              >
+                <span
+                  className={cn(
+                    'font-inter font-bold text-sm tabular-nums flex items-center gap-1',
+                    redCards > 0 ? 'text-red-400' : 'text-slate-500'
+                  )}
+                >
+                  <XCircle size={13} /> {redCards}
+                </span>
+                <span className="text-red-500/80 text-[9px]">red cards</span>
+              </div>
+            )}
 
             <button
               onClick={() => setSubmitOpen(true)}

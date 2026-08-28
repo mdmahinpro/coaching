@@ -81,17 +81,20 @@ export interface ExamSubmitResult {
   wrong_count: number;
   time_taken: number;
   rank: number;
+  red_cards?: number;
 }
 
 export async function submitExam(
   examToken: string,
   answers: Record<string, string>,
-  timeTaken: number
+  timeTaken: number,
+  redCards = 0
 ): Promise<ExamSubmitResult> {
   const { data, error } = await supabase.rpc('exam_submit', {
     p_exam_token: examToken,
     p_answers: answers,
     p_time_taken: timeTaken,
+    p_red_cards: redCards,
   });
   const row = unwrap(data, error)?.[0];
   if (!row) {
