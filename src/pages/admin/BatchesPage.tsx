@@ -31,6 +31,9 @@ interface Batch {
   code?: string;
   schedule_days?: string[];
   schedule_time?: string;
+  // DB column is `start_time` (TEXT, e.g. "07:00"); schedule_time was a
+  // legacy form alias that never existed on the table.
+  start_time?: string;
   capacity: number;
   enrolled_count?: number;
   monthly_fee?: number;
@@ -167,6 +170,10 @@ export default function BatchesPage() {
           : b.schedule_days
             ? (b.schedule_days as unknown as string).split(',')
             : [],
+        // The DB column is `start_time`; the form field is `schedule_time`.
+        // Bridge them so the saved value round-trips into the edit form
+        // instead of wiping to null on every edit.
+        schedule_time: b.start_time ?? b.schedule_time,
       });
     } else {
       setSelectedTeacherIds([]);
@@ -360,11 +367,11 @@ export default function BatchesPage() {
                         ))}
                       </div>
                     )}
-                    {(days.length > 0 || b.schedule_time) && (
+                    {(days.length > 0 || b.start_time || b.schedule_time) && (
                       <div className="flex items-center gap-1.5">
                         <Clock size={11} className="text-sky-400" />
                         {days.length > 0 ? days.join('/') : ''}
-                        {b.schedule_time ? ` · ${b.schedule_time}` : ''}
+                        {(b.start_time ?? b.schedule_time) ? ` · ${b.start_time ?? b.schedule_time}` : ''}
                       </div>
                     )}
                     <div className="flex items-center gap-1.5">

@@ -29,6 +29,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
   const name = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'Admin';
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleLogout = async () => {
@@ -83,8 +84,31 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Avatar dropdown: close on outside click and on Escape. Listeners attach
+  // only while open; always returns the same cleanup shape.
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener('mousedown', onMouseDown);
+      document.addEventListener('keydown', onKey);
+    }
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showDropdown]);
+
   return (
-    <header className="h-14 bg-navy-800/80 backdrop-blur-md border-b border-navy-700/50 flex items-center px-4 md:px-6 gap-2 sticky top-0 z-30">
+    <header className="h-14 bg-navy-800/80 backdrop-blur-md border-b border-navy-700/50 flex items-center px-4 md:px-6 gap-2 sticky top-0 z-50">
       {/* Hamburger */}
       <button
         onClick={onMenuToggle}
@@ -207,9 +231,11 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
       </button>
 
       {/* Avatar + dropdown */}
-      <div className="relative">
+      <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setShowDropdown((s) => !s)}
+          aria-haspopup="menu"
+          aria-expanded={showDropdown}
           className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
         >
           <Avatar name={name} size="sm" />
@@ -221,13 +247,13 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
         <AnimatePresence>
           {showDropdown && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+              <div className="fixed inset-0 z-[55]" onClick={() => setShowDropdown(false)} />
               <motion.div
                 initial={{ opacity: 0, y: 8, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-52 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-50 shadow-2xl"
+                className="absolute right-0 top-full mt-2 w-52 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-[60] shadow-2xl"
               >
                 <div className="px-4 py-3 border-b border-white/5">
                   <p className="text-white text-sm font-medium truncate">{name}</p>

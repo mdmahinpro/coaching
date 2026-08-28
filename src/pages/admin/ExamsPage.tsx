@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { cn, formatDate, sanitize } from '@/lib/utils';
+import { parseBulkQuestions } from '@/lib/bulkQuestionParser';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   Plus,
@@ -395,32 +396,12 @@ function BulkImportModal({
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<Question[]>([]);
 
+  // #6: shared pure parser — blank lines AND `---` separate questions, with
+  // keyed-field association so a trailing MARKS after a blank line stays with
+  // its question. Unit-tested in src/lib/bulkQuestionParser.test.ts.
   const parse = () => {
-    const blocks = text
-      .split(/\n---\n|\n---$/)
-      .map((b) => b.trim())
-      .filter(Boolean);
-    const out: Question[] = [];
-    for (const block of blocks) {
-      const get = (prefix: string) => {
-        const m = block.match(new RegExp(`^${prefix}:\\s*(.+)$`, 'm'));
-        return m?.[1]?.trim() ?? '';
-      };
-      const q: Question = {
-        id: mkId(),
-        question_text: get('Q'),
-        option_a: get('A'),
-        option_b: get('B'),
-        option_c: get('C'),
-        option_d: get('D'),
-        correct_option: (get('ANS').toUpperCase() as 'A' | 'B' | 'C' | 'D') || 'A',
-        marks: Number(get('MARKS')) || 1,
-      };
-      if (q.question_text) {
-        out.push(q);
-      }
-    }
-    setPreview(out);
+    const parsed = parseBulkQuestions(text, { nextId: mkId });
+    setPreview(parsed as Question[]);
   };
 
   return (
