@@ -8,10 +8,8 @@ what a manual walkthrough would.
 ## Prerequisites
 
 - Dev server running: `pnpm dev` (binds `127.0.0.1:5173`).
-- `puppeteer-core` installed (this harness does not download a browser):
-  ```bash
-  pnpm add -D puppeteer-core   # or: npm i -D puppeteer-core
-  ```
+- `puppeteer-core` is already a devDependency in the repo — just run
+  `pnpm install` once. The harness does not download a browser.
 - Edge or Chrome present. The scripts point at
   `C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe`; change
   `EXE` at the top of each file if needed.
