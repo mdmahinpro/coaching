@@ -144,7 +144,11 @@ export default function AdmissionsPage() {
       });
 
       if (sErr) {
-        toast.error('Failed to create student: ' + sErr.message);
+        toast.error(
+          String(sErr.message).includes('BATCH_FULL')
+            ? 'এই ব্যাচটি পূর্ণ। আবেদনটি অনুমোদিত হল না — অন্য ব্যাচে বসান।'
+            : 'Failed to create student: ' + sErr.message
+        );
         setActing(null);
         return;
       }

@@ -142,7 +142,11 @@ export default function StudentsPage() {
         const { password, ...updateFields } = data;
         const { error } = await supabase.from('students').update(updateFields).eq('id', editing.id);
         if (error) {
-          toast.error('Update failed');
+          toast.error(
+            String(error.message).includes('BATCH_FULL')
+              ? 'এই ব্যাচটি পূর্ণ। অন্য ব্যাচ নির্বাচন করুন।'
+              : 'Update failed'
+          );
           return;
         }
         // If password was provided, hash it via RPC
@@ -181,7 +185,11 @@ export default function StudentsPage() {
           p_photo_url: data.photo_url ?? null,
         });
         if (error) {
-          toast.error('Failed to add student: ' + error.message);
+          toast.error(
+            String(error.message).includes('BATCH_FULL')
+              ? 'এই ব্যাচটি পূর্ণ। অন্য ব্যাচ নির্বাচন করুন।'
+              : 'Failed to add student: ' + error.message
+          );
           return;
         }
         // Update batch enrolled count
