@@ -24,6 +24,9 @@ export function BatchCard({ batch, index = 0 }: Props) {
   const available = batch.capacity - batch.enrolled;
   const isFull = available <= 0;
   const isAlmostFull = available > 0 && available <= 5;
+  // subject/teacher hold comma-separated lists; render each as its own chip.
+  const subjects = (batch.subject ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const teachers = (batch.teacher ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
   return (
     <motion.div
@@ -37,7 +40,11 @@ export function BatchCard({ batch, index = 0 }: Props) {
         <div className="flex-1 min-w-0 pr-2">
           <h3 className="font-inter font-semibold text-white text-base leading-snug">{batch.name}</h3>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            <span className="badge-blue text-xs">{batch.subject}</span>
+            {subjects.map((s) => (
+              <span key={s} className="badge-blue text-xs">
+                {s}
+              </span>
+            ))}
           </div>
         </div>
         <span className={isFull ? 'badge-red' : isAlmostFull ? 'badge-yellow' : 'badge-green'}>
@@ -55,10 +62,14 @@ export function BatchCard({ batch, index = 0 }: Props) {
           <Users size={13} className="text-slate-500 shrink-0" />
           <span>{batch.enrolled}/{batch.capacity} enrolled</span>
         </div>
-        {batch.teacher && (
-          <div className="flex items-center gap-2">
+        {teachers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
             <BookOpen size={13} className="text-slate-500 shrink-0" />
-            <span className="truncate">{batch.teacher}</span>
+            {teachers.map((t) => (
+              <span key={t} className="badge-violet text-xs">
+                {t}
+              </span>
+            ))}
           </div>
         )}
       </div>

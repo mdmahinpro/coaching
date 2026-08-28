@@ -117,7 +117,7 @@ export default function StudentsPage() {
   useEffect(() => {
     supabase
       .from('batches')
-      .select('id,name')
+      .select('id,name,code')
       .eq('is_active', true)
       .then(
         ({ data }) => {

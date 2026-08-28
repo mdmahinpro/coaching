@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
+import { generateStudentId } from '@/lib/studentId';
 import toast from 'react-hot-toast';
 import {
   CheckCircle,
@@ -40,37 +41,6 @@ interface Admission {
 
 const FILTERS = ['all', 'pending', 'approved', 'rejected'] as const;
 type Filter = (typeof FILTERS)[number];
-
-const generateStudentId = async (): Promise<string> => {
-  const year = new Date().getFullYear().toString().slice(-2);
-  try {
-    const { data } = await supabase
-      .from('students')
-      .select('student_id')
-      .ilike('student_id', `CF${year}%`)
-      .order('student_id', { ascending: false })
-      .limit(1);
-    const last = data?.[0]?.student_id;
-    let seq = last ? parseInt(last.slice(-4)) + 1 : 1;
-    // Loop until a unique candidate is found (guards against concurrent approvals)
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = `CF${year}${String(seq).padStart(4, '0')}`;
-      const { data: existing } = await supabase
-        .from('students')
-        .select('id')
-        .eq('student_id', candidate)
-        .maybeSingle();
-      if (!existing) {
-        return candidate;
-      }
-      seq += 1;
-    }
-  } catch (err) {
-    handleSupabaseError(err);
-  }
-  // Fallback: timestamp-based unique suffix
-  return `CF${year}${Date.now().toString().slice(-4)}`;
-};
 
 export default function AdmissionsPage() {
   const { settings } = useSettingsStore();
@@ -136,7 +106,21 @@ export default function AdmissionsPage() {
   const handleApprove = async (admission: Admission) => {
     setActing(admission.id);
     try {
-      const studentId = await generateStudentId();
+      // Batch code feeds the ID scheme (ShortName+Code+Year+Seq); fall back
+      // to no code when the admission references no batch or the code is unset.
+      let batchCode = '';
+      if (admission.batch_id) {
+        const { data: batch } = await supabase
+          .from('batches')
+          .select('code')
+          .eq('id', admission.batch_id)
+          .maybeSingle();
+        batchCode = (batch?.code as string | undefined) ?? '';
+      }
+      const studentId = await generateStudentId({
+        shortName: settings.shortName,
+        batchCode,
+      });
       // Password = last 6 digits of phone, or random 6-char fallback
       const phone = (admission.phone ?? '').replace(/\D/g, '');
       const password = phone.length >= 6 ? phone.slice(-6) : Math.random().toString(36).slice(-6);

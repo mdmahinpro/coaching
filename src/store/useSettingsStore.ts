@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
 export interface Settings {
+  // Coaching short name used to build student IDs (e.g. 'TLY').
+  shortName: string;
   centerName: string;
   centerTagline: string;
   centerAddress: string;
@@ -39,6 +41,7 @@ interface SettingsState {
 }
 
 export const defaults: Settings = {
+  shortName: 'TLY',
   centerName: 'Techely Learning Academy',
   centerTagline: 'Excellence in Education',
   centerAddress: '389 5th Ave, New York, 10016, USA',
@@ -67,6 +70,7 @@ export const defaults: Settings = {
 
 /* ── key mapping: Settings field ↔ site_settings.key ── */
 export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
+  shortName: 'coaching_short_name',
   centerName: 'institute_name',
   centerTagline: 'tagline',
   centerAddress: 'address',

@@ -27,6 +27,8 @@ interface Batch {
   teacher_id?: string;
   // teacher is a text column (teacher name string), not a relation object
   teacher?: string;
+  // code is the short ID token used in student IDs (e.g. 'Q' -> TLYQ26001)
+  code?: string;
   schedule_days?: string[];
   schedule_time?: string;
   capacity: number;
@@ -52,6 +54,9 @@ export default function BatchesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<Batch>>(EMPTY);
   const [saving, setSaving] = useState(false);
+  // Multi-select draft state for subjects/teachers (submit joins into text cols).
+  const [subjectInput, setSubjectInput] = useState('');
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Batch | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [detailBatch, setDetailBatch] = useState<Batch | null>(null);
@@ -139,19 +144,34 @@ export default function BatchesPage() {
     }
   };
 
+  const subjectTokens = (s?: string) =>
+    (s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+
   const openModal = (b?: Batch) => {
-    setEditing(
-      b
-        ? {
-            ...b,
-            schedule_days: Array.isArray(b.schedule_days)
-              ? b.schedule_days
-              : b.schedule_days
-                ? (b.schedule_days as unknown as string).split(',')
-                : [],
-          }
-        : EMPTY
-    );
+    setSubjectInput('');
+    if (b) {
+      // Rehydrate the multi-teacher selection: prefer the comma `teacher`
+      // text (source of truth for multi-select), fall back to teacher_id.
+      const names = subjectTokens(b.teacher);
+      const ids = names
+        .map((n) => teachers.find((t) => t.name === n)?.id)
+        .filter((x): x is string => !!x);
+      if (ids.length === 0 && b.teacher_id) {
+        ids.push(b.teacher_id);
+      }
+      setSelectedTeacherIds(ids);
+      setEditing({
+        ...b,
+        schedule_days: Array.isArray(b.schedule_days)
+          ? b.schedule_days
+          : b.schedule_days
+            ? (b.schedule_days as unknown as string).split(',')
+            : [],
+      });
+    } else {
+      setSelectedTeacherIds([]);
+      setEditing(EMPTY);
+    }
     setModalOpen(true);
   };
 
@@ -175,15 +195,18 @@ export default function BatchesPage() {
       // NOTE: batch column is `start_time`, NOT `schedule_time`. Sending a
       // phantom `schedule_time` key made PostgREST fail the whole update with
       // `Could not find the 'schedule time' column of 'batches'`.
-      const selectedTeacher = teachers.find((t) => t.id === editing.teacher_id);
+      const selectedTeachers = selectedTeacherIds
+        .map((id) => teachers.find((t) => t.id === id))
+        .filter((t): t is (typeof teachers)[number] => !!t);
       const payload = {
         name: editing.name,
-        subject: editing.subject ?? null,
+        subject: subjectTokens(editing.subject).join(', ') || null,
         class_level: editing.class_level ?? null,
-        teacher_id: editing.teacher_id ?? null,
-        // teacher is a text column (name string) that the public card and
-        // admin list render; keep it in sync with the selected teacher.
-        teacher: selectedTeacher?.name ?? null,
+        // teacher_id keeps the FIRST selected teacher for the FK/join; the
+        // comma-separated `teacher` text holds all names for display.
+        teacher_id: selectedTeachers[0]?.id ?? null,
+        teacher: selectedTeachers.map((t) => t.name).join(', ') || null,
+        code: editing.code ? editing.code.trim().toUpperCase().slice(0, 6) : null,
         schedule_days: editing.schedule_days ?? [],
         start_time: editing.schedule_time ?? null,
         capacity: editing.capacity ?? 30,
@@ -291,10 +314,15 @@ export default function BatchesPage() {
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-white truncate">{b.name}</h3>
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {b.subject && <span className="badge-blue text-xs">{b.subject}</span>}
+                        {subjectTokens(b.subject).map((s) => (
+                          <span key={s} className="badge-blue text-xs">
+                            {s}
+                          </span>
+                        ))}
                         {b.class_level && (
                           <span className="badge-violet text-xs">{b.class_level}</span>
                         )}
+                        {b.code && <span className="badge-yellow text-xs">Code: {b.code}</span>}
                         <span
                           className={cn(
                             'text-xs',
@@ -323,9 +351,13 @@ export default function BatchesPage() {
 
                   <div className="space-y-2 text-xs text-slate-400 mb-3">
                     {b.teacher && (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <BookOpen size={11} className="text-violet-400" />
-                        {b.teacher}
+                        {subjectTokens(b.teacher).map((t) => (
+                          <span key={t} className="badge-violet text-xs">
+                            {t}
+                          </span>
+                        ))}
                       </div>
                     )}
                     {(days.length > 0 || b.schedule_time) && (
@@ -410,14 +442,69 @@ export default function BatchesPage() {
                       placeholder="e.g. SSC English Morning"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-400 mb-1.5 block">Subject</label>
-                    <input
-                      value={editing.subject ?? ''}
-                      onChange={(e) => setEditing((p) => ({ ...p, subject: e.target.value }))}
-                      className="input-field"
-                      placeholder="e.g. English"
-                    />
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-400 mb-1.5 block">Subjects</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {subjectTokens(editing.subject).map((s) => (
+                        <span
+                          key={s}
+                          className="badge-blue text-xs flex items-center gap-1 px-2 py-1"
+                        >
+                          {s}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditing((p) => ({
+                                ...p,
+                                subject: subjectTokens(p.subject)
+                                  .filter((x) => x !== s)
+                                  .join(', '),
+                              }))
+                            }
+                            className="hover:text-white opacity-70"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={subjectInput}
+                        onChange={(e) => setSubjectInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const t = subjectInput.trim();
+                            if (t && !subjectTokens(editing.subject).includes(t)) {
+                              setEditing((p) => ({
+                                ...p,
+                                subject: [...subjectTokens(p.subject), t].join(', '),
+                              }));
+                            }
+                            setSubjectInput('');
+                          }
+                        }}
+                        className="input-field flex-1"
+                        placeholder="Type a subject and press Enter"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const t = subjectInput.trim();
+                          if (t && !subjectTokens(editing.subject).includes(t)) {
+                            setEditing((p) => ({
+                              ...p,
+                              subject: [...subjectTokens(p.subject), t].join(', '),
+                            }));
+                          }
+                          setSubjectInput('');
+                        }}
+                        className="btn-outline text-xs px-3"
+                      >
+                        <Plus size={12} /> Add
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs text-slate-400 mb-1.5 block">Class Level</label>
@@ -428,22 +515,57 @@ export default function BatchesPage() {
                       placeholder="e.g. SSC / Class 10"
                     />
                   </div>
-                  <div className="col-span-2">
-                    <label className="text-xs text-slate-400 mb-1.5 block">Teacher</label>
-                    <select
-                      value={editing.teacher_id ?? ''}
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">Batch Code</label>
+                    <input
+                      value={editing.code ?? ''}
                       onChange={(e) =>
-                        setEditing((p) => ({ ...p, teacher_id: e.target.value || undefined }))
+                        setEditing((p) => ({
+                          ...p,
+                          code: e.target.value.trim().toUpperCase().slice(0, 6),
+                        }))
                       }
-                      className="input-field"
-                    >
-                      <option value="">No teacher assigned</option>
-                      {teachers.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                      className="input-field font-mono"
+                      placeholder="Q"
+                    />
+                    <p className="text-slate-600 text-[10px] mt-1">
+                      Used in student IDs (e.g. TLYQ26001)
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-400 mb-2 block">
+                      Teachers <span className="text-slate-600">(pick one or more)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {teachers.map((t) => {
+                        const on = selectedTeacherIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedTeacherIds((prev) =>
+                                on ? prev.filter((id) => id !== t.id) : [...prev, t.id]
+                              )
+                            }
+                            className={cn(
+                              'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                              on
+                                ? 'bg-violet-500/20 border-violet-400/40 text-violet-300'
+                                : 'border-white/10 text-slate-400 hover:border-white/20'
+                            )}
+                          >
+                            {on && <span className="mr-1">✓</span>}
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-slate-600 text-xs mt-1.5">
+                      {selectedTeacherIds.length === 0
+                        ? 'No teacher assigned'
+                        : `${selectedTeacherIds.length} selected`}
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <label className="text-xs text-slate-400 mb-2 block">Schedule Days</label>

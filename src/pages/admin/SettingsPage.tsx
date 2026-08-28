@@ -310,6 +310,17 @@ export default function SettingsPage() {
                     placeholder="My Coaching Center"
                   />
                 </Field>
+                <Field label="Short Name (student IDs)">
+                  <input
+                    value={form.shortName}
+                    onChange={(e) => set('shortName', e.target.value.toUpperCase().slice(0, 6))}
+                    className="input-field font-mono"
+                    placeholder="TLY"
+                  />
+                  <p className="text-slate-600 text-xs mt-1">
+                    ID prefix, e.g. TLY → student ID like TLYQ26001
+                  </p>
+                </Field>
                 <Field label="Tagline">
                   <input
                     value={form.centerTagline}

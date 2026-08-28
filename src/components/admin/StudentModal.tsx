@@ -6,6 +6,8 @@ import { X, Save, Upload, User, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { generateStudentId } from '@/lib/studentId';
 
 const schema = z.object({
   name: z.string().min(2, 'Name required'),
@@ -26,7 +28,7 @@ type FormData = z.infer<typeof schema>;
 interface Props {
   open: boolean;
   student?: Partial<FormData> & { id?: string; student_id?: string; photo_url?: string };
-  batches?: { id: string; name: string }[];
+  batches?: { id: string; name: string; code?: string }[];
   onSave: (data: FormData & { photo_url?: string; student_id?: string }) => Promise<void>;
   onClose: () => void;
 }
@@ -81,34 +83,6 @@ async function compressImage(file: File): Promise<Blob> {
   });
 }
 
-async function generateStudentId(): Promise<string> {
-  const year = new Date().getFullYear().toString().slice(2);
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      const { data } = await supabase
-        .from('students')
-        .select('student_id')
-        .like('student_id', `CF${year}%`)
-        .order('student_id', { ascending: false })
-        .limit(1);
-      const last = data?.[0]?.student_id;
-      const lastSeq = last ? parseInt(last.slice(4)) : 0;
-      const candidate = `CF${year}${String(lastSeq + 1).padStart(4, '0')}`;
-      const { data: existing } = await supabase
-        .from('students')
-        .select('id')
-        .eq('student_id', candidate)
-        .maybeSingle();
-      if (!existing) {
-        return candidate;
-      }
-    } catch (err) {
-      handleSupabaseError(err);
-    }
-  }
-  return `CF${year}${Date.now().toString().slice(-4)}`;
-}
-
 function Field({
   label,
   error,
@@ -137,6 +111,7 @@ function Field({
 }
 
 export function StudentModal({ open, student, batches = [], onSave, onClose }: Props) {
+  const { settings } = useSettingsStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -219,13 +194,17 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
           return;
         }
         const id = student?.id ?? crypto.randomUUID();
-        const path = `student-photos/${id}.jpg`;
+        const path = `students/${id}-photo.jpg`;
         const { error: storErr } = await supabase.storage
           .from('avatars')
           .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
         if (!storErr) {
+          // Persist the plain public URL, exactly like portal_update_photo
+          // does on the student portal. The old admin path appended
+          // `?t=<ts>` to the stored value, which breaks the stored URL's
+          // usability in the UI (the portal path is the proven-working one).
           const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-          photo_url = `${urlData.publicUrl}?t=${Date.now()}`;
+          photo_url = urlData.publicUrl;
         }
       } catch (err) {
         handleSupabaseError(err);
@@ -233,10 +212,15 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
       }
     }
 
-    // Auto-generate student ID for new students
+    // Auto-generate student ID for new students: ShortName + BatchCode + Year + Seq.
+    // Batch code comes from the selected batch (e.g. 'Q'), short name from settings.
     let student_id = student?.student_id;
     if (!student_id) {
-      student_id = await generateStudentId();
+      const batch = batches.find((b) => b.id === data.batch_id);
+      student_id = await generateStudentId({
+        shortName: settings.shortName,
+        batchCode: batch?.code ?? '',
+      });
     }
 
     setUploading(false);
