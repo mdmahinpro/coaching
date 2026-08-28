@@ -55,3 +55,6 @@ backup_*.sql
 # Browser E2E — local credential file, never commit
 e2e/admin-creds.json
 e2e/downloads/
+
+# Supabase CLI working state (project link + version probe) — machine-local
+supabase/.temp/
