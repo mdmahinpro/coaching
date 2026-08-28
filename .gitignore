@@ -54,3 +54,4 @@ migration.sql
 backup_*.sql
 # Browser E2E — local credential file, never commit
 e2e/admin-creds.json
+e2e/downloads/
