@@ -52,3 +52,5 @@ migration.sql
 # else. These contain student PII and must never enter the repository;
 # they live on disk (ideally off-machine) and get rebuilt on demand.
 backup_*.sql
+# Browser E2E — local credential file, never commit
+e2e/admin-creds.json
