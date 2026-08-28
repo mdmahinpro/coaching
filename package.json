@@ -19,7 +19,9 @@
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "lint:fix": "eslint --ext .js,.jsx,.ts,.tsx . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "e2e:admin": "node e2e/admin.browser.cjs",
+    "e2e:student": "node e2e/student.browser.cjs"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

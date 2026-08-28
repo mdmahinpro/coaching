@@ -36,6 +36,10 @@ EXAM_ID=<uuid-from-seed> node e2e/student.browser.cjs
 
 `seed.exams.sql` prints the new exam id via a final `SELECT`.
 
+```bash
+EXAM_ID=<uuid-from-seed> pnpm e2e:student
+```
+
 ## Admin flow — `admin.browser.cjs`
 
 Covers (with disposable `ADM-E2E …` records, cleaned up by the caller):
@@ -51,8 +55,10 @@ Credentials are read from a LOCAL file that is git-ignored:
 committed, never printed. Keep it temporary and rotate the password after.
 
 ```bash
-node e2e/admin.browser.cjs
+pnpm e2e:admin
 ```
+
+Cleans up the disposable `ADM-E2E …` records when done (`e2e/cleanup.admin.sql`).
 
 ## Notes & safety
 
