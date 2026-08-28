@@ -433,14 +433,19 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
 </body>
 </html>`;
 
+  // The HTML string is a FULL document; assigning a document into div.innerHTML
+  // flattens its nodes, so the first child is the <style> element — NOT the
+  // receipt. Query by selector instead of firstElementChild, and keep the
+  // container rendered in-viewport (offscreen/`visibility:hidden` make
+  // html2canvas measure 0x0 → jsPDF "wrong PNG signature").
   const container = document.createElement('div');
   container.innerHTML = html;
-  container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;z-index:-1;visibility:hidden;';
-  container.style.width = '420px';
+  container.style.cssText =
+    'position:fixed;top:0;left:0;width:420px;z-index:-9999;pointer-events:none;';
   document.body.appendChild(container);
 
   try {
-    const el = container.firstElementChild as HTMLElement | null;
+    const el = container.querySelector('.receipt') as HTMLElement | null;
     if (!el) {
       throw new Error('Failed to create receipt container');
     }
@@ -666,17 +671,19 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
 
   const container = document.createElement('div');
   container.innerHTML = html;
-  // Offscreen but RENDERED: `visibility:hidden` or `display:none` elements can
-  // rasterize blank in html2canvas. Left-parked, opacity untouched, the card is
-  // laid out and measurable even though nothing is on screen.
+  // Same two fixes as the receipt: the HTML string is a FULL document, so
+  // div.innerHTML flattens it and `firstElementChild` is the <style> tag
+  // (display:none) → html2canvas measures 0x0 → jsPDF "wrong PNG signature".
+  // Query the actual .card, and keep the container in-viewport (offscreen /
+  // visibility:hidden are measured as 0x0 by html2canvas).
   container.style.cssText =
-    'position:fixed;top:0;left:-10000px;width:420px;z-index:-9999;pointer-events:none;';
+    'position:fixed;top:0;left:0;width:420px;z-index:-9999;pointer-events:none;';
   let appended = false;
   try {
     document.body.appendChild(container);
     appended = true;
 
-    const el = container.firstElementChild as HTMLElement | null;
+    const el = container.querySelector('.card') as HTMLElement | null;
     if (!el) {
       throw new Error('Failed to create result card container');
     }
