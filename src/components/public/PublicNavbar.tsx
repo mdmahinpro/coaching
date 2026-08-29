@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, GraduationCap } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from '@/store/useSettingsStore';
 
@@ -34,9 +34,7 @@ export function PublicNavbar() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 shrink-0">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center glow-blue shrink-0">
-              <GraduationCap size={20} className="text-white" />
-            </div>
+            <img src="/techely-mark.svg" alt="Techely" className="w-9 h-9 rounded-lg shrink-0 glow-blue" draggable={false} />
             <span className="font-inter font-bold text-white text-sm md:text-base">{settings.centerName}</span>
           </Link>
 
@@ -105,9 +103,7 @@ export function PublicNavbar() {
             >
               <div className="flex items-center justify-between px-5 h-16 border-b border-navy-700/50">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center">
-                    <GraduationCap size={17} className="text-white" />
-                  </div>
+                  <img src="/techely-mark.svg" alt="Techely" className="w-8 h-8 rounded-lg" draggable={false} />
                   <span className="font-inter font-bold text-white text-sm">{settings.centerName}</span>
                 </div>
                 <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white p-1">

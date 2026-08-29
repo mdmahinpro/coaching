@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { GraduationCap, Lock, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import toast from 'react-hot-toast';
@@ -85,9 +85,12 @@ export default function AdminLoginPage() {
           <div className="card-glass p-8">
             {/* Header */}
             <div className="text-center mb-8">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center mx-auto mb-4 glow-blue">
-                <GraduationCap size={28} className="text-white" />
-              </div>
+              <img
+                src="/techely-mark.svg"
+                alt="Techely"
+                className="w-14 h-14 rounded-2xl mx-auto mb-4 glow-blue"
+                draggable={false}
+              />
               <h1 className="font-inter font-black text-2xl text-white mb-1">Admin Panel</h1>
               <p className="text-slate-500 text-sm">{settings.centerName}</p>
               <span className="badge-blue mt-2 inline-block">লগইন</span>

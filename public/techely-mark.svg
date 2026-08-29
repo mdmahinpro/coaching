@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Techely Coaching Academy">
+  <defs>
+    <linearGradient id="cb-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B6EF3"/>
+      <stop offset="1" stop-color="#00C2A8"/>
+    </linearGradient>
+  </defs>
+  <!-- Ink tile (Concept B palette) -->
+  <rect width="128" height="128" rx="30" fill="#1B2A4A"/>
+  <!-- Mortarboard + circuit tassel mark, centered (scaled from the lockup art) -->
+  <g transform="translate(9.1 13.6) scale(0.9)">
+    <path d="M60 12 L114 40 L60 68 L6 40 Z" fill="url(#cb-grad)"/>
+    <path d="M28 54 V80 C28 93 42 100 60 100 C78 100 92 93 92 80 V54"
+          fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" opacity="0.95"/>
+    <path d="M108 43 V70" fill="none" stroke="#FFB020" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="108" cy="78" r="8" fill="#FFB020"/>
+    <circle cx="60" cy="40" r="7" fill="#FFFFFF" opacity="0.92"/>
+  </g>
+</svg>

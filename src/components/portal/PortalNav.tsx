@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  GraduationCap,
   LogOut,
   User,
   LayoutDashboard,
@@ -39,9 +38,7 @@ export function PortalNav() {
       <nav className="fixed top-0 inset-x-0 z-50 bg-navy-800/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <Link to="/portal/dashboard" className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-sky-500 flex items-center justify-center">
-              <GraduationCap size={14} className="text-white" />
-            </div>
+            <img src="/techely-mark.svg" alt="Techely" className="w-7 h-7 rounded-lg" draggable={false} />
             <span className="font-inter font-bold text-white text-sm hidden sm:block">
               {settings.centerName}
             </span>

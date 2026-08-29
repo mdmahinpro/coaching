@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 140" role="img" aria-label="Techely Coaching Academy">
+  <defs>
+    <linearGradient id="a-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00C2A8"/>
+      <stop offset="1" stop-color="#1B6EF3"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark: ascending chevrons inside a hex node -->
+  <g transform="translate(8,10)">
+    <polygon points="60,4 108,32 108,88 60,116 12,88 12,32"
+             fill="none" stroke="url(#a-grad)" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M34 66 L60 40 L86 66" fill="none" stroke="url(#a-grad)"
+          stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M34 92 L60 66 L86 92" fill="none" stroke="#1B2A4A"
+          stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+    <circle cx="60" cy="4" r="7" fill="#FFB020"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#1B2A4A">
+    <text x="152" y="74" font-size="48" font-weight="800" letter-spacing="0.5">Techely</text>
+    <text x="154" y="100" font-size="15" font-weight="600" letter-spacing="5.4" fill="#5A6B85">COACHING ACADEMY</text>
+  </g>
+</svg>

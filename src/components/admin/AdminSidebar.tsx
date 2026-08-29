@@ -97,9 +97,7 @@ function SidebarContent({
               exit={{ opacity: 0, x: -10 }}
               className="flex items-center gap-2.5 overflow-hidden"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center shrink-0 glow-blue">
-                <GraduationCap size={16} className="text-white" />
-              </div>
+              <img src="/techely-mark.svg" alt="Techely" className="w-8 h-8 rounded-lg shrink-0 glow-blue" draggable={false} />
               <div className="min-w-0">
                 <p className="font-inter font-bold text-white text-sm truncate leading-tight">
                   {settings.centerName}
@@ -113,9 +111,9 @@ function SidebarContent({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="mx-auto w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center glow-blue"
+              className="mx-auto w-8 h-8 rounded-lg glow-blue"
             >
-              <GraduationCap size={16} className="text-white" />
+              <img src="/techely-mark.svg" alt="Techely" className="w-8 h-8 rounded-lg" draggable={false} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -263,7 +263,6 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
     .header-top {
       display: flex;
       align-items: center;
-      gap: 14px;
       margin-bottom: 18px;
       position: relative;
       z-index: 1;
@@ -271,10 +270,8 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
     .logo-circle {
       width: 48px; height: 48px;
       border-radius: 14px;
-      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; font-weight: 700; color: #062033;
-      box-shadow: 0 4px 14px rgba(56,189,248,0.4);
+      margin-right: 14px;
+      object-fit: cover;
       flex-shrink: 0;
     }
     .inst-name {
@@ -296,7 +293,6 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       position: relative; z-index: 1;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
       background: rgba(56,189,248,0.15);
       border: 1px solid rgba(56,189,248,0.3);
       border-radius: 100px;
@@ -314,6 +310,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       width: 6px; height: 6px;
       border-radius: 50%;
       background: #38bdf8;
+      margin-right: 7px;
     }
     .receipt-no-row {
       position: relative; z-index: 1;
@@ -353,12 +350,13 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       border: 1px solid #bae6fd;
       border-radius: 14px;
       padding: 14px 18px;
-      display: flex; align-items: center; gap: 14px;
+      display: flex; align-items: center;
       margin-bottom: 20px;
     }
     .avatar {
       width: 44px; height: 44px;
       border-radius: 12px;
+      margin-right: 14px;
       background: #0ea5e9;
       display: flex; align-items: center; justify-content: center;
       font-size: 18px; font-weight: 700; color: #fff;
@@ -388,7 +386,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
     .info-row:last-child { border-bottom: none; }
     .info-label {
       font-size: 12px; color: #94a3b8; font-weight: 500;
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: center;
     }
     .info-value {
       font-size: 13px; color: #1e293b; font-weight: 600;
@@ -419,10 +417,11 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       letter-spacing: 0.8px; margin-bottom: 14px; position: relative; z-index: 1;
     }
     .amount-breakdown {
-      display: flex; justify-content: space-between; gap: 10px;
+      display: flex; justify-content: space-between;
       margin-bottom: 14px; position: relative; z-index: 1;
     }
-    .amt-item { flex: 1; min-width: 0; }
+    .amt-item { flex: 1; min-width: 0; margin: 0 5px; }
+    .amt-item:first-child { margin-left: 0; }
     .amt-item-label { font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
     .amt-item-val { font-size: 15px; font-weight: 700; }
     .amt-fee { color: #cbd5e1; }
@@ -443,7 +442,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
 
     /* ── Payment method chip ── */
     .payment-chip {
-      display: inline-flex; align-items: center; gap: 8px;
+      display: inline-flex; align-items: center;
       background: #f0fdf4; border: 1px solid #86efac;
       border-radius: 100px; padding: 6px 14px;
     }
@@ -451,6 +450,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       width: 10px; height: 10px; border-radius: 50%;
       background: ${methodColor(method)};
       flex-shrink: 0;
+      margin: 0 8px 0 0;
     }
     .payment-chip-label { font-size: 13px; font-weight: 600; color: #166534; text-transform: capitalize; }
 
@@ -489,7 +489,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       <!-- Header -->
       <div class="header">
         <div class="header-top">
-          <div class="logo-circle">${escapeHtml(r.instituteName.charAt(0).toUpperCase())}</div>
+          <img class="logo-circle" src="/techely-mark.svg" alt="" />
           <div>
             <div class="inst-name">${escapeHtml(r.instituteName)}</div>
             ${r.instituteAddress ? `<div class="inst-sub">${escapeHtml(r.instituteAddress)}</div>` : ''}
@@ -677,22 +677,36 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     .card { width: 420px; max-width: 100%; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; }
     /* Solid app-palette header (navy #0b1120), no gradients — html2canvas-safe. */
     .header { background: #0b1120; padding: 24px 24px 28px; }
-    .inst-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .inst-logo { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: #062033; }
+    .inst-row { display: flex; align-items: center; margin-bottom: 18px; }
+    .inst-logo { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; margin-right: 12px; object-fit: cover; }
     .inst-name { font-size: 15px; font-weight: 800; color: #fff; overflow-wrap: anywhere; }
-    .result-badge { display: inline-flex; align-items: center; gap: 8px; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 5px 12px; margin-bottom: 14px; }
+    .result-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 5px 12px; margin-bottom: 14px; }
     .result-badge span { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.8px; text-transform: uppercase; }
     .score-row { display: flex; align-items: flex-end; justify-content: space-between; }
     .score-sub { font-size: 12px; color: #64748b; margin-bottom: 4px; }
     .score-big { font-size: 48px; font-weight: 800; line-height: 1; color: ${accent}; }
     .grade-pill { background: #a78bfa; border-radius: 100px; padding: 6px 16px; color: #0b1120; font-size: 18px; font-weight: 800; letter-spacing: 1px; }
     .body { padding: 18px 24px 24px; }
-    .student-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
-    .avatar { width: 40px; height: 40px; border-radius: 10px; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #062033; flex-shrink: 0; }
+    .student-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; margin-bottom: 16px; }
+    .avatar { width: 40px; height: 40px; border-radius: 10px; margin-right: 14px; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #062033; flex-shrink: 0; }
     .student-name { font-size: 14px; font-weight: 700; color: #0b1120; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
     .student-id { font-size: 11px; color: #0369a1; margin-top: 2px; font-weight: 600; }
-    .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-    .stat-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 6px; text-align: center; }
+    /* html2canvas has NO grid and NO flex "gap" support — use inline-block with
+       explicit margins AND font-size:0 (kills the whitespace between inline
+       blocks that would otherwise wrap the third box off the row). */
+    .stats-grid { display: block; font-size: 0; margin-bottom: 16px; }
+    .stat-box {
+      display: inline-block;
+      width: 32%;
+      margin: 0 0.6%;
+      font-size: 12px;
+      box-sizing: border-box;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 10px 6px; text-align: center;
+      vertical-align: top;
+    }
+    .stat-box:first-child { margin-left: 0; }
+    .stat-box:last-child { margin-right: 0; }
     .stat-val { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
     .stat-correct { color: #10b981; }
     .stat-wrong { color: #ef4444; }
@@ -716,7 +730,7 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     <div class="card">
       <div class="header">
         <div class="inst-row">
-          <div class="inst-logo">${escapeHtml(r.instituteName.charAt(0).toUpperCase())}</div>
+          <img class="inst-logo" src="/techely-mark.svg" alt="" />
           <div class="inst-name">${escapeHtml(r.instituteName)}</div>
         </div>
         <div class="result-badge">

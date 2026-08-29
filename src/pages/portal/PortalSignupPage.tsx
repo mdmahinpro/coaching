@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { GraduationCap, Loader2, CheckCircle2 } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -112,9 +112,12 @@ export default function PortalSignupPage() {
       >
         <div className="card-glass p-7">
           <div className="text-center mb-6">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center mx-auto mb-3">
-              <GraduationCap size={22} className="text-white" />
-            </div>
+            <img
+              src="/techely-mark.svg"
+              alt="Techely"
+              className="w-12 h-12 rounded-xl mx-auto mb-3"
+              draggable={false}
+            />
             <h1 className="font-inter font-black text-xl text-white">ভর্তি আবেদন</h1>
             <p className="text-slate-400 text-sm">{settings.centerName}</p>
           </div>

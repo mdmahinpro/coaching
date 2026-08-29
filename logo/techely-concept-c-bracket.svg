@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140" role="img" aria-label="Techely Coaching Academy">
+  <defs>
+    <linearGradient id="c-grad" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#1B6EF3"/>
+      <stop offset="1" stop-color="#00C2A8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark: code brackets wrapping a T (monogram badge) -->
+  <g transform="translate(10,12)">
+    <rect x="2" y="2" width="112" height="112" rx="28" fill="#1B2A4A"/>
+    <path d="M40 36 L26 58 L40 80" fill="none" stroke="url(#c-grad)"
+          stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M76 36 L90 58 L76 80" fill="none" stroke="url(#c-grad)"
+          stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M48 40 H68 M58 40 V72" fill="none" stroke="#FFFFFF"
+          stroke-width="9" stroke-linecap="round"/>
+    <path d="M40 92 H76" fill="none" stroke="#FFB020" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#1B2A4A">
+    <text x="150" y="70" font-size="47" font-weight="800" letter-spacing="-0.5">Techely</text>
+    <text x="152" y="98" font-size="14.5" font-weight="600" letter-spacing="4.8" fill="#5A6B85">COACHING ACADEMY</text>
+  </g>
+</svg>

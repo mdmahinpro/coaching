@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { GraduationCap, Phone, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Phone, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import toast from 'react-hot-toast';
@@ -54,9 +54,12 @@ export default function PortalLoginPage() {
       >
         <div className="card-glass p-8">
           <div className="text-center mb-7">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-sky-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-violet-500/25">
-              <GraduationCap size={26} className="text-white" />
-            </div>
+            <img
+              src="/techely-mark.svg"
+              alt="Techely"
+              className="w-14 h-14 rounded-2xl mx-auto mb-4 shadow-lg shadow-violet-500/25"
+              draggable={false}
+            />
             <h1 className="font-inter font-black text-xl text-white mb-1">ছাত্র পোর্টাল</h1>
             <p className="text-slate-400 text-sm">{settings.centerName}</p>
           </div>

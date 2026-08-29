@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { GraduationCap, Phone, Mail, MapPin, Facebook, MessageCircle } from 'lucide-react';
+import { Phone, Mail, MapPin, Facebook, MessageCircle } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 
 export function Footer() {
@@ -12,9 +12,7 @@ export function Footer() {
         {/* Brand */}
         <div className="md:col-span-2">
           <div className="flex items-center gap-2.5 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-violet-500 flex items-center justify-center glow-blue">
-              <GraduationCap size={22} className="text-white" />
-            </div>
+            <img src="/techely-mark.svg" alt="Techely" className="w-10 h-10 rounded-xl glow-blue" draggable={false} />
             <span className="font-inter font-bold text-white text-lg">{settings.centerName}</span>
           </div>
           <p className="text-slate-400 text-sm leading-relaxed max-w-xs mb-6">
