@@ -125,6 +125,139 @@ const step = (name, ok, detail = '') => {
   body = await page.evaluate(() => document.body.innerText);
   step('Students: create ADM E2E Student', /ADM E2E Student|Student added|01800000000/.test(body), '');
 
+  // 5. Fees → Record Payment, driven end-to-end against the live DB.
+  //    Seed a DISPOSABLE student + pending fee through the same authenticated
+  //    Supabase client the app uses (deterministic, no modal flakiness), then
+  //    drive the real admin Record Payment UI on that row, verify the fee row
+  //    flips to 'paid' server-side with an audit entry, and check the receipt
+  //    PDF is a valid A4 document.
+  const seeded = await page.evaluate(async () => {
+    const { supabase } = await import('/src/lib/supabase.ts');
+    const uniq = Date.now().toString().slice(-6);
+    const name = `ADM E2E PAY ${uniq}`;
+    const phone = `019${uniq}`;
+    const now = new Date();
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const month = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+    // Re-seed cleanly: drop any prior E2E-PAY rows before inserting.
+    await supabase.from('fees').delete().eq('note', 'E2E-PAY-SEED');
+    const { data: stale } = await supabase.from('students').select('id').like('student_id', 'E2EPAY%');
+    for (const s of stale ?? []) {
+      await supabase.from('fees').delete().eq('student_id', s.id);
+      await supabase.from('mcq_submissions').delete().eq('student_id', s.id);
+      await supabase.from('students').delete().eq('id', s.id);
+    }
+    const { data: student, error: sErr } = await supabase.from('students').insert({
+      name, phone, student_id: `E2EPAY${uniq}`, status: 'active', is_approved: true,
+    }).select('id').single();
+    if (sErr) return { err: 'student insert: ' + sErr.message };
+    const due = new Date(`${month} 01`); due.setDate(10);
+    const { data: fee, error: fErr } = await supabase.from('fees').insert({
+      student_id: student.id, amount: 1500, month, status: 'pending',
+      due_date: due.toISOString().slice(0, 10), note: 'E2E-PAY-SEED',
+    }).select('id').single();
+    if (fErr) return { err: 'fee insert: ' + fErr.message };
+    return { name, phone, month, studentId: student.id, feeId: fee.id };
+  });
+  if (seeded.err) {
+    step('Fees: seed disposable student + pending fee', false, seeded.err);
+  } else {
+    step('Fees: seeded disposable student + pending fee', true, `month=${seeded.month}`);
+
+    await page.goto(BASE + '/admin/fees', { waitUntil: 'networkidle2', timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    await clickText('Record Payment');
+    await new Promise((r) => setTimeout(r, 600));
+    await typeInto('input[placeholder="Name or Student ID…"]', seeded.name);
+    await new Promise((r) => setTimeout(r, 1500));
+    const studentFound = await clickText(seeded.name, 6000);
+    await new Promise((r) => setTimeout(r, 1500));
+    const feeSelected = await page.evaluate((month) => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const fee = btns.find((x) => x.textContent.includes(month) && x.textContent.includes('৳'));
+      if (!fee) return false; fee.click(); return true;
+    }, seeded.month);
+    await new Promise((r) => setTimeout(r, 1000));
+    const cashClicked = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(
+        (x) => x.textContent.includes('Cash') && x.textContent.trim().length <= 12
+      );
+      if (!b) return false; b.click(); return true;
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    // Submit the payment. The tab bar ALSO contains "Record Payment" (it comes
+    // first in DOM order), so target the LAST matching button — the form's
+    // submit — not the tab.
+    await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll('button'));
+      const submit = all.filter((b) => b.textContent.includes('Record Payment')).pop();
+      if (submit) submit.click();
+    });
+    await new Promise((r) => setTimeout(r, 2500));
+    body = await page.evaluate(() => document.body.innerText);
+    const receiptNo = (body.match(/RCT-\d{8}-\d{4}/) || [null])[0];
+    const uiOk = studentFound && feeSelected && cashClicked && !!receiptNo;
+
+    // Verify the write actually persisted: fee → paid, audit row written.
+    const verified = await page.evaluate(async ({ feeId, receiptNo, month }) => {
+      const { supabase } = await import('/src/lib/supabase.ts');
+      const { data: fee } = await supabase.from('fees').select('*').eq('id', feeId).single();
+      const { data: audit } = await supabase.from('fee_audit_logs')
+        .select('action, fee_id').eq('fee_id', feeId).limit(5);
+      const note = (() => { try { return JSON.parse(fee.note || '{}'); } catch { return {}; } })();
+      return {
+        paid: fee.status === 'paid',
+        noteReceipt: note.receipt_no === receiptNo,
+        hasAudit: Array.isArray(audit) && audit.some((a) => a.action === 'payment_recorded'),
+      };
+    }, { feeId: seeded.feeId, receiptNo, month: seeded.month });
+    step('Fees: record cash payment UI flow', uiOk, `receipt=${receiptNo}`);
+    step(
+      'Fees: payment persisted as paid + audit logged',
+      uiOk && verified.paid && verified.noteReceipt && verified.hasAudit,
+      `paid=${verified.paid} audit=${verified.hasAudit}`
+    );
+
+    // 5c. Re-generate the receipt PDF via the exact library the UI download button
+    //     uses, and assert it is a valid A4 PDF (regression: was non-standard page).
+    const pdf = await page.evaluate(async (rno) => {
+      const orig = URL.createObjectURL;
+      const blobs = {};
+      URL.createObjectURL = function (b) { const u = orig.call(this, b); blobs[u] = b; return u; };
+      try {
+        const mod = await import('/src/lib/pdf.ts');
+        await mod.generateReceipt({
+          receiptNo: rno || 'RCT-00000000-0000', date: new Date().toISOString().slice(0, 10),
+          studentName: 'ADM E2E PAY', studentId: 'E2EPAY', month: 'August 2026',
+          feeAmount: 1500, discount: 0, finalAmount: 1500, paymentMethod: 'cash',
+          transactionId: undefined, instituteName: 'Techely Learning Academy',
+        });
+        await new Promise(r => setTimeout(r, 1600));
+        const keys = Object.keys(blobs);
+        if (!keys.length) return { ok: false, err: 'no blob' };
+        const bytes = new Uint8Array(await blobs[keys[0]].arrayBuffer());
+        const head = Array.from(bytes.slice(0,5)).map(b=>String.fromCharCode(b)).join('');
+        const str = String.fromCharCode.apply(null, bytes.slice(0, 4000));
+        const m = str.match(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/);
+        const mb = m ? m.slice(1,5).map(Number) : null;
+        return { ok: head === '%PDF-', bytes: bytes.length, a4: !!mb && Math.abs(mb[2]-595.28)<2 && Math.abs(mb[3]-841.89)<2 };
+      } catch (e) {
+        return { ok: false, err: String(e && e.message || e).slice(0,120) };
+      } finally {
+        URL.createObjectURL = orig;
+      }
+    }, receiptNo);
+    step('Fees: receipt PDF is valid A4', pdf.ok && pdf.a4, pdf.ok ? `${pdf.bytes} bytes A4=${pdf.a4}` : pdf.err);
+
+    // Cleanup the disposable rows so repeated runs stay idempotent.
+    await page.evaluate(async ({ feeId, studentId }) => {
+      const { supabase } = await import('/src/lib/supabase.ts');
+      await supabase.from('fee_audit_logs').delete().eq('fee_id', feeId);
+      await supabase.from('fees').delete().eq('id', feeId);
+      await supabase.from('students').delete().eq('id', studentId);
+    }, { feeId: seeded.feeId, studentId: seeded.studentId });
+  }
+
   // 5. Exams: admin page renders + draft start button present for any draft
   await page.goto(BASE + '/admin/exams', { waitUntil: 'networkidle2', timeout: 20000 });
   await new Promise((r) => setTimeout(r, 1500));
