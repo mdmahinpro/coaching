@@ -25,9 +25,42 @@ interface Exam {
   total_marks: number;
   pass_marks: number;
   status: 'draft' | 'active' | 'paused' | 'ended';
+  batch_id?: string;
+  batch_ids?: string[];
   start_time?: string;
   end_time?: string;
   type?: string;
+}
+
+/**
+ * Wall-clock exam state, mirroring the server gate (exam_get_meta / _exam_gate):
+ * a scheduled exam is "active" only while now ∈ [start_time, end_time). The
+ * stored `status` column alone is unreliable here (it is not advanced by a cron),
+ * so the banner must agree with what exam_submit/exam_join will enforce.
+ */
+function effectiveState(e: Exam): 'draft' | 'active' | 'paused' | 'ended' {
+  const now = Date.now();
+  const start = e.start_time ? new Date(e.start_time).getTime() : null;
+  const end = e.end_time ? new Date(e.end_time).getTime() : null;
+  if (start !== null && now < start) {
+    return 'draft'; // not yet open (banner: আসছে)
+  }
+  if (end !== null && now >= end) {
+    return 'ended';
+  }
+  return e.status === 'paused' ? 'paused' : 'active';
+}
+
+/** Client-side batch scoping (defense-in-depth): only show this student's exams. */
+function isForStudent(e: Exam, batchId?: string): boolean {
+  const target = e.batch_ids && e.batch_ids.length > 0 ? e.batch_ids : e.batch_id ? [e.batch_id] : null;
+  if (!target) {
+    return true; // batch_ids null → assigned to all batches
+  }
+  if (!batchId) {
+    return false; // student has no batch, exam targets specific batches
+  }
+  return target.includes(batchId);
 }
 
 function useCountdown(target?: string) {
@@ -55,12 +88,11 @@ function useCountdown(target?: string) {
 }
 
 function ExamCard({ exam, myResult }: { exam: Exam; myResult?: any }) {
-  const countdown = useCountdown(
-    exam.start_time && exam.status === 'draft' ? exam.start_time : undefined
-  );
-  const isActive = exam.status === 'active';
-  const isEnded = exam.status === 'ended';
-  const notStarted = exam.status === 'draft';
+  const state = effectiveState(exam);
+  const countdown = useCountdown(exam.start_time && state === 'draft' ? exam.start_time : undefined);
+  const isActive = state === 'active';
+  const isEnded = state === 'ended';
+  const notStarted = state === 'draft';
 
   return (
     <motion.div
@@ -94,12 +126,12 @@ function ExamCard({ exam, myResult }: { exam: Exam; myResult?: any }) {
                   ? 'badge-green'
                   : isEnded
                     ? 'badge-red'
-                    : exam.status === 'paused'
+                    : state === 'paused'
                       ? 'badge-yellow'
                       : 'badge-blue'
               )}
             >
-              {isActive ? 'চলছে' : isEnded ? 'শেষ' : exam.status === 'paused' ? 'বিরতি' : 'আসছে'}
+              {isActive ? 'চলছে' : isEnded ? 'শেষ' : state === 'paused' ? 'বিরতি' : 'আসছে'}
             </span>
           </div>
           <p className="text-slate-400 text-xs mb-2 font-hind">
@@ -189,10 +221,12 @@ export default function PortalExamsPage() {
     load();
   }, [student]);
 
-  const active = exams.filter((e) => e.status === 'active');
-  const paused = exams.filter((e) => e.status === 'paused');
-  const upcoming = exams.filter((e) => e.status === 'draft');
-  const ended = exams.filter((e) => e.status === 'ended');
+  // Only this student's own exams (batch-scoped), with wall-clock state.
+  const mine = exams.filter((e) => isForStudent(e, student?.batch_id));
+  const active = mine.filter((e) => effectiveState(e) === 'active');
+  const paused = mine.filter((e) => effectiveState(e) === 'paused');
+  const upcoming = mine.filter((e) => effectiveState(e) === 'draft');
+  const ended = mine.filter((e) => effectiveState(e) === 'ended');
 
   return (
     <PortalLayout>
@@ -209,13 +243,13 @@ export default function PortalExamsPage() {
           <p className="text-slate-500 font-hind">কোনো পরীক্ষা নির্ধারিত নেই</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {active.length > 0 && (
             <section>
-              <h2 className="text-emerald-400 text-sm font-semibold mb-3 flex items-center gap-2">
+              <h2 className="text-emerald-400 text-sm font-semibold mb-4 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" /> এখন চলছে
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {active.map((e) => (
                   <ExamCard key={e.id} exam={e} myResult={myResults[e.id]} />
                 ))}
@@ -224,10 +258,10 @@ export default function PortalExamsPage() {
           )}
           {paused.length > 0 && (
             <section>
-              <h2 className="text-amber-400 text-sm font-semibold mb-3 flex items-center gap-2">
+              <h2 className="text-amber-400 text-sm font-semibold mb-4 flex items-center gap-2">
                 <PauseCircle size={13} /> সাময়িক বিরতি
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {paused.map((e) => (
                   <ExamCard key={e.id} exam={e} myResult={myResults[e.id]} />
                 ))}
@@ -236,10 +270,10 @@ export default function PortalExamsPage() {
           )}
           {upcoming.length > 0 && (
             <section>
-              <h2 className="text-sky-400 text-sm font-semibold mb-3 flex items-center gap-2">
+              <h2 className="text-sky-400 text-sm font-semibold mb-4 flex items-center gap-2">
                 <Clock size={13} /> আসন্ন পরীক্ষা
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {upcoming.map((e) => (
                   <ExamCard key={e.id} exam={e} myResult={myResults[e.id]} />
                 ))}
@@ -248,10 +282,10 @@ export default function PortalExamsPage() {
           )}
           {ended.length > 0 && (
             <section>
-              <h2 className="text-slate-400 text-sm font-semibold mb-3 flex items-center gap-2">
+              <h2 className="text-slate-400 text-sm font-semibold mb-4 flex items-center gap-2">
                 <Trophy size={13} /> সমাপ্ত পরীক্ষা
               </h2>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {ended.map((e) => (
                   <ExamCard key={e.id} exam={e} myResult={myResults[e.id]} />
                 ))}

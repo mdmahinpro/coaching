@@ -49,7 +49,24 @@ export default function PortalDashboardPage() {
           subject: e.subject ?? '',
         }));
         setExamCount(examList.length);
-        setActiveExams(examList.filter((e: any) => e.status === 'active'));
+        // Wall-clock "running" (same rule as the server gate / PortalExamsPage):
+        // started but not yet past end_time. The stored status column alone is
+        // unreliable (not advanced by a cron), so the banner must agree with
+        // what exam_join will accept.
+        setActiveExams(
+          examList.filter((e: any) => {
+            const now = Date.now();
+            const start = e.start_time ? new Date(e.start_time).getTime() : null;
+            const end = e.end_time ? new Date(e.end_time).getTime() : null;
+            if (start !== null && now < start) {
+              return false;
+            }
+            if (end !== null && now >= end) {
+              return false;
+            }
+            return e.status === 'active' || e.status === 'paused';
+          })
+        );
 
         const allSubs = subs ?? [];
         const recentSubs = allSubs.slice(0, 3).map((s: any) => ({

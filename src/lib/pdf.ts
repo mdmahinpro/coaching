@@ -63,26 +63,12 @@ export function safePdfFilename(name: string): string {
   return (name || 'document').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
 }
 
-export interface GradeMeta {
-  letter: string;
-  /** Strong high-contrast fill (never a light gray-on-white). */
-  fill: string;
-  /** Text color on top of the fill (dark ink for contrast). */
-  text: string;
-}
+import { gradeInfo } from './grades';
+export type { GradeInfo } from './grades';
 
-/**
- * Letter-grade metadata with strong, high-contrast fills for the result card.
- * Grade boundaries: A+ ≥90, A ≥80, B ≥70, C ≥60, D ≥40, E ≥33, F below.
- */
-export function gradeMeta(pct: number): GradeMeta {
-  if (pct >= 90) {return { letter: 'A+', fill: '#10B981', text: '#06281E' };}
-  if (pct >= 80) {return { letter: 'A', fill: '#0FA868', text: '#F0FDF4' };}
-  if (pct >= 70) {return { letter: 'B', fill: '#0EA5E9', text: '#062B38' };}
-  if (pct >= 60) {return { letter: 'C', fill: '#38BDF8', text: '#062B38' };}
-  if (pct >= 40) {return { letter: 'D', fill: '#F59E0B', text: '#3B2309' };}
-  if (pct >= 33) {return { letter: 'E', fill: '#F97316', text: '#3B1507' };}
-  return { letter: 'F', fill: '#EF4444', text: '#460B0B' };
+/** Backwards-compatible alias for the shared grading system (see src/lib/grades.ts). */
+export function gradeMeta(pct: number) {
+  return gradeInfo(pct);
 }
 
 // ── Word-wrap (pure; measure() injectable for tests) ──────────────────────────
@@ -626,17 +612,18 @@ function drawResultCard(
   drawText(ctx, `${pct}%`, P + 26, y + 136, 42, accent, { weight: 800, baseline: 'top' });
   drawText(ctx, `${r.score} / ${r.totalMarks}`, P + 26, y + 136 + 46, 14, C.white, { weight: 700, baseline: 'top' });
 
-  const pillW = 86;
-  const pillH = 56;
+  const pillW = 96;
+  const pillH = 58;
   roundRect(ctx, {
     x: P + CW - 26 - pillW,
-    y: y + headerH - pillH - 26,
+    y: y + headerH - pillH - 24,
     w: pillW,
     h: pillH,
     r: 14,
     fill: grade.fill,
   });
-  drawText(ctx, grade.letter, P + CW - 26 - pillW / 2, y + headerH - 26 - pillH / 2, 30, grade.text, { align: 'center', weight: 800, baseline: 'middle' });
+  drawText(ctx, grade.letter, P + CW - 26 - pillW / 2, y + headerH - pillH - 24 + 15, 28, grade.text, { align: 'center', weight: 800, baseline: 'middle' });
+  drawText(ctx, grade.label, P + CW - 26 - pillW / 2, y + headerH - pillH - 24 + 40, 12, grade.text, { align: 'center', weight: 700, baseline: 'middle' });
 
   y += headerH + 18;
   track('header', y - headerH - 18, headerH);

@@ -448,24 +448,30 @@ function ExamSummaryTab() {
         );
 
         const grades = {
-          'A (90%+)': 0,
-          'B (75-89%)': 0,
-          'C (60-74%)': 0,
-          'D (40-59%)': 0,
-          'F (<40%)': 0,
+          'A+ (80-100%)': 0,
+          'A (70-79%)': 0,
+          'A- (60-69%)': 0,
+          'B (50-59%)': 0,
+          'C (40-49%)': 0,
+          'D (33-39%)': 0,
+          'F (<33%)': 0,
         };
         list.forEach((s) => {
           const pct = (s.score / total) * 100;
-          if (pct >= 90) {
-            grades['A (90%+)']++;
-          } else if (pct >= 75) {
-            grades['B (75-89%)']++;
+          if (pct >= 80) {
+            grades['A+ (80-100%)']++;
+          } else if (pct >= 70) {
+            grades['A (70-79%)']++;
           } else if (pct >= 60) {
-            grades['C (60-74%)']++;
+            grades['A- (60-69%)']++;
+          } else if (pct >= 50) {
+            grades['B (50-59%)']++;
           } else if (pct >= 40) {
-            grades['D (40-59%)']++;
+            grades['C (40-49%)']++;
+          } else if (pct >= 33) {
+            grades['D (33-39%)']++;
           } else {
-            grades['F (<40%)']++;
+            grades['F (<33%)']++;
           }
         });
         setGradeData(Object.entries(grades).map(([grade, count]) => ({ grade, count })));

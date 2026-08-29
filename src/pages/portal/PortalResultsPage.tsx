@@ -50,8 +50,8 @@ interface Question {
   order_num: number;
 }
 
-const GRADE = (pct: number) =>
-  pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
+import { gradeInfo } from '@/lib/grades';
+const GRADE = (pct: number) => gradeInfo(pct).letter;
 const fmtTime = (s?: number) => (!s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`);
 
 const parseAnswers = (raw: unknown): Record<string, string> => {

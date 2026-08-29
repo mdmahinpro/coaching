@@ -1,36 +1,52 @@
 import { describe, it, expect } from 'vitest';
-import { gradeMeta, wrapTextPx } from './pdf';
+import { gradeInfo } from './grades';
+import { wrapTextPx } from './pdf';
 
-describe('gradeMeta', () => {
-  it('maps every letter grade bucket with a strong fill', () => {
-    expect(gradeMeta(95)).toMatchObject({ letter: 'A+' });
-    expect(gradeMeta(90)).toMatchObject({ letter: 'A+' });
-    expect(gradeMeta(89)).toMatchObject({ letter: 'A' });
-    expect(gradeMeta(80)).toMatchObject({ letter: 'A' });
-    expect(gradeMeta(79)).toMatchObject({ letter: 'B' });
-    expect(gradeMeta(70)).toMatchObject({ letter: 'B' });
-    expect(gradeMeta(69)).toMatchObject({ letter: 'C' });
-    expect(gradeMeta(60)).toMatchObject({ letter: 'C' });
-    expect(gradeMeta(59)).toMatchObject({ letter: 'D' });
-    expect(gradeMeta(40)).toMatchObject({ letter: 'D' });
-    expect(gradeMeta(39)).toMatchObject({ letter: 'E' });
-    expect(gradeMeta(33)).toMatchObject({ letter: 'E' });
-    expect(gradeMeta(32)).toMatchObject({ letter: 'F' });
-    expect(gradeMeta(0)).toMatchObject({ letter: 'F' });
+describe('gradeInfo (7-step grading system)', () => {
+  it('maps the exact grade boundaries with point values', () => {
+    expect(gradeInfo(100)).toMatchObject({ letter: 'A+', point: 5.0 });
+    expect(gradeInfo(80)).toMatchObject({ letter: 'A+', point: 5.0 });
+    expect(gradeInfo(79)).toMatchObject({ letter: 'A', point: 4.0 });
+    expect(gradeInfo(70)).toMatchObject({ letter: 'A', point: 4.0 });
+    expect(gradeInfo(69)).toMatchObject({ letter: 'A-', point: 3.5 });
+    expect(gradeInfo(60)).toMatchObject({ letter: 'A-', point: 3.5 });
+    expect(gradeInfo(59)).toMatchObject({ letter: 'B', point: 3.0 });
+    expect(gradeInfo(50)).toMatchObject({ letter: 'B', point: 3.0 });
+    expect(gradeInfo(49)).toMatchObject({ letter: 'C', point: 2.0 });
+    expect(gradeInfo(40)).toMatchObject({ letter: 'C', point: 2.0 });
+    expect(gradeInfo(39)).toMatchObject({ letter: 'D', point: 1.0 });
+    expect(gradeInfo(33)).toMatchObject({ letter: 'D', point: 1.0 });
+    expect(gradeInfo(32)).toMatchObject({ letter: 'F', point: 0, failed: true });
+    expect(gradeInfo(0)).toMatchObject({ letter: 'F', point: 0, failed: true });
   });
 
-  it('never returns a light-gray-on-white grade (fill strongly saturated, text is dark ink for contrast)', () => {
+  it('labels include the grade point', () => {
+    expect(gradeInfo(85).label).toBe('A+ (5.00)');
+    expect(gradeInfo(75).label).toBe('A (4.00)');
+    expect(gradeInfo(65).label).toBe('A- (3.50)');
+    expect(gradeInfo(55).label).toBe('B (3.00)');
+    expect(gradeInfo(45).label).toBe('C (2.00)');
+    expect(gradeInfo(35).label).toBe('D (1.00)');
+    expect(gradeInfo(20).label).toBe('F (0.00)');
+  });
+
+  it('only F is failed; every other grade passes', () => {
     for (let pct = 0; pct <= 100; pct += 1) {
-      const g = gradeMeta(pct);
-      // fill must be a saturated color (not a near-white/gray), text is readable on it
-      expect(g.letter).toBeTruthy();
+      const g = gradeInfo(pct);
+      expect(g.failed).toBe(pct < 33);
+    }
+  });
+
+  it('never returns a light-gray-on-white fill (strongly saturated + dark text contrast)', () => {
+    for (let pct = 0; pct <= 100; pct += 1) {
+      const g = gradeInfo(pct);
       expect(g.fill).toMatch(/^#[0-9A-F]{6}$/i);
-      // Reject washed-out fills: hex channels should not all be >= 0xB0 (near-white)
       const r = parseInt(g.fill.slice(1, 3), 16);
       const gr = parseInt(g.fill.slice(3, 5), 16);
       const b = parseInt(g.fill.slice(5, 7), 16);
       expect(r < 0xB0 || gr < 0xB0 || b < 0xB0).toBe(true);
       expect(g.text).toBeTruthy();
+      expect(g.letter).toBeTruthy();
     }
   });
 });

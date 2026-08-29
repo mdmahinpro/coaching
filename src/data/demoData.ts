@@ -6,6 +6,68 @@ export function isDemoLoaded(): boolean {
   return localStorage.getItem(DEMO_KEY) === 'true';
 }
 
+// Stable identity markers for every demo row, so a re-run can remove a
+// previous (possibly partial) seed instead of hitting unique-constraint
+// errors (e.g. students_student_id_key from a fixed demo student ID).
+const DEMO_STUDENT_IDS = ['CF250001', 'CF250002', 'CF250003', 'CF250004', 'CF250005'];
+const DEMO_PHONES = [
+  '01811000001',
+  '01811000002',
+  '01811000003',
+  '01811000004',
+  '01811000005',
+  '01911000001',
+  '01911000002',
+  '01911000003',
+  '01911000004',
+  '01911000005',
+];
+const DEMO_TEACHER_EMAILS = ['rafiq@demo.com', 'fatema@demo.com', 'karim@demo.com'];
+const DEMO_BATCH_NAMES = ['SSC-2025 গণিত', 'HSC-2025 ইংরেজি', 'Class 8 বিজ্ঞান'];
+const DEMO_EXAM_TITLE = 'গণিত মডেল টেস্ট ০১';
+
+/**
+ * Remove any previously-seeded demo rows (keyed by their stable IDs/emails/
+ * names) so loadDemoData is idempotent and never double-inserts. Child rows
+ * (fees, submissions, questions, tokens) are removed first to respect FKs.
+ */
+async function clearDemoData() {
+  // Resolve ids of any existing demo students/batches/exams first.
+  const { data: demoStudents } = await supabase
+    .from('students')
+    .select('id')
+    .or(`student_id.in.(${DEMO_STUDENT_IDS.join(',')}),phone.in.(${DEMO_PHONES.join(',')})`);
+  const sIds = (demoStudents ?? []).map((s) => s.id);
+  if (sIds.length > 0) {
+    await supabase.from('fees').delete().in('student_id', sIds);
+    await supabase.from('mcq_submissions').delete().in('student_id', sIds);
+    await supabase.from('students').delete().in('id', sIds);
+  }
+
+  const { data: demoExams } = await supabase.from('exams').select('id,title').eq('title', DEMO_EXAM_TITLE);
+  const eIds = (demoExams ?? []).map((e) => e.id);
+  if (eIds.length > 0) {
+    await supabase.from('mcq_questions').delete().in('exam_id', eIds);
+    await supabase.from('exam_tokens').delete().in('exam_id', eIds);
+    await supabase.from('mcq_submissions').delete().in('exam_id', eIds);
+    await supabase.from('exams').delete().in('id', eIds);
+  }
+
+  if (DEMO_TEACHER_EMAILS.length > 0) {
+    await supabase.from('teachers').delete().in('email', DEMO_TEACHER_EMAILS);
+  }
+  await supabase.from('batches').delete().in('name', DEMO_BATCH_NAMES);
+
+  // Notices seeded by the demo carry stable titles.
+  try {
+    await supabase.from('notices').delete().ilike('title', '%মডেল টেস্ট ০১%');
+    await supabase.from('notices').delete().ilike('title', '%ফি পরিশোধের অনুরোধ%');
+    await supabase.from('notices').delete().ilike('title', '%ঈদ উপলক্ষে%');
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function loadDemoData(): Promise<void> {
   // Never allow demo data seeding in production builds
   if (import.meta.env.PROD) {
@@ -15,6 +77,9 @@ export async function loadDemoData(): Promise<void> {
   if (isDemoLoaded()) {
     return;
   }
+
+  // Remove any previous demo rows (idempotent re-runs, no duplicate keys).
+  await clearDemoData();
 
   // ── 1. Teachers ──────────────────────────────────────────────────────────
   const { data: teachers, error: tErr } = await supabase

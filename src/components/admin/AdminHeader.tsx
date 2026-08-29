@@ -253,24 +253,26 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-52 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-[60] shadow-2xl"
+                // Solid dark background: `card-glass` is only 5% white, which made
+                // the menu items invisible against the dark header.
+                className="absolute right-0 top-full mt-2 w-52 bg-navy-800 border border-navy-600/70 rounded-xl overflow-hidden z-[60] shadow-2xl shadow-black/50"
               >
-                <div className="px-4 py-3 border-b border-white/5">
+                <div className="px-4 py-3 border-b border-white/10 bg-navy-900/60">
                   <p className="text-white text-sm font-medium truncate">{name}</p>
-                  <p className="text-slate-500 text-xs truncate">{user?.email}</p>
+                  <p className="text-slate-400 text-xs truncate">{user?.email}</p>
                 </div>
                 <Link
                   to="/admin/settings"
                   onClick={() => setShowDropdown(false)}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
                 >
-                  Settings
+                  <Hash size={14} className="text-sky-400" /> Settings
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-200 hover:text-red-400 hover:bg-red-500/20 transition-colors"
                 >
-                  <LogOut size={14} /> Sign Out
+                  <LogOut size={14} className="text-red-400" /> Sign Out
                 </button>
               </motion.div>
             </>
