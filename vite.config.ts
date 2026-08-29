@@ -61,6 +61,12 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist"),
       emptyOutDir: true,
+      rollupOptions: {
+        // jsPDF's optional pdf.html() API lazily imports 'html2canvas'. We draw
+        // PDFs natively on canvas (see src/lib/pdf.ts) and never call it, so
+        // keep that ~200KB chunk out of the bundle entirely.
+        external: ["html2canvas"],
+      },
     },
     server: {
       port,

@@ -115,9 +115,6 @@ importers:
       framer-motion:
         specifier: ^12.6.3
         version: 12.43.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      html2canvas:
-        specifier: ^1.4.1
-        version: 1.4.1
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -5837,7 +5834,8 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  base64-arraybuffer@1.0.2: {}
+  base64-arraybuffer@1.0.2:
+    optional: true
 
   baseline-browser-mapping@2.11.14: {}
 
@@ -5962,6 +5960,7 @@ snapshots:
   css-line-break@2.1.0:
     dependencies:
       utrie: 1.0.2
+    optional: true
 
   css-tree@3.2.1:
     dependencies:
@@ -6576,6 +6575,7 @@ snapshots:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3
+    optional: true
 
   iceberg-js@0.8.1: {}
 
@@ -7521,6 +7521,7 @@ snapshots:
   text-segmentation@1.0.3:
     dependencies:
       utrie: 1.0.2
+    optional: true
 
   text-table@0.2.0: {}
 
@@ -7668,6 +7669,7 @@ snapshots:
   utrie@1.0.2:
     dependencies:
       base64-arraybuffer: 1.0.2
+    optional: true
 
   vaul@1.1.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:

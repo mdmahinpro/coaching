@@ -1,20 +1,27 @@
-// html2canvas (~200KB) and jsPDF (~400KB) are heavy. Load them on demand the
-// first time a PDF is actually generated, so they stay out of the main bundle
-// and page chunks.
-let pdfLibs: {
-  html2canvas: typeof import('html2canvas').default;
-  jsPDF: typeof import('jspdf').jsPDF;
-} | null = null;
+// PDF generation via native browser-canvas rendering + jsPDF embedding.
+//
+// Background: the previous implementation rasterized HTML with html2canvas,
+// whose bespoke layout engine mis-rendered tables/flex and produced overlapping
+// output (proven by a pixel-band diagnostic). Here we instead draw the card
+// directly onto a 2x <canvas> with the browser's own text engine (so Bengali
+// shaping and word-wrap are correct), then embed that canvas into a standard
+// A4 page with jsPDF. Every rect/text is placed at explicit coordinates from a
+// running y-cursor, so overlapping content is structurally impossible.
+//
+// jsPDF (~400KB) is loaded on demand the first time a PDF is generated, so it
+// stays out of the main bundle.
 
-async function loadPdfLibs() {
-  if (!pdfLibs) {
-    const [h2c, jspdf] = await Promise.all([import('html2canvas'), import('jspdf')]);
-    pdfLibs = { html2canvas: h2c.default, jsPDF: jspdf.jsPDF };
+let jsPDFMod: typeof import('jspdf').jsPDF | null = null;
+
+async function loadJspdf() {
+  if (!jsPDFMod) {
+    const m = await import('jspdf');
+    jsPDFMod = m.jsPDF;
   }
-  return pdfLibs;
+  return jsPDFMod;
 }
 
-// ── Pure geometry helpers (unit-tested in pdfFit.test.ts) ─────────────────────
+// ── Pure geometry & grade helpers (unit-tested) ───────────────────────────────
 
 export interface PdfFit {
   /** Left offset (mm) of the placed image on the page. */
@@ -31,7 +38,6 @@ export interface PdfFit {
  * Compute the rectangle (in mm) that places an image of the given aspect
  * ratio (width/height) centered within a page minus a uniform margin,
  * preserving the aspect ratio and never overflowing the printable area.
- * Allows margins ≥ 0; for margins larger than the page, callers should clamp.
  */
 export function computeCenteredFit(opts: {
   pageWidth: number;
@@ -57,125 +63,311 @@ export function safePdfFilename(name: string): string {
   return (name || 'document').replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
 }
 
-// ── Rendering pipeline ─────────────────────────────────────────────────────────
-
-/**
- * Wait for the document fonts (chiefly the Bengali webfont) to actually be
- * ready rather than sleeping a fixed magic delay. `document.fonts.ready`
- * resolves when all fonts listed by the page have loaded *or failed*; the
- * additional check loop guarantees the "Noto Sans Bengali" face is really
- * present before rasterizing, so glyph shaping is deterministic across
- * devices and network conditions. Also bounded by a timeout so a slow/absent
- * network degrades to the fallback font instead of hanging the download.
- */
-async function waitForFonts(timeoutMs = 5000): Promise<void> {
-  try {
-    await document.fonts.ready;
-  } catch {
-    /* FontAccess unsupported — proceed optimistically. */
-  }
-  const deadline = Date.now() + timeoutMs;
-  try {
-    while (Date.now() < deadline && !document.fonts.check('16px "Noto Sans Bengali"')) {
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-  } catch {
-    /* check() unsupported — already awaited ready; move on. */
-  }
-  // Let the just-settled layout paint so html2canvas measures final boxes.
-  await new Promise((resolve) => setTimeout(resolve, 80));
+export interface GradeMeta {
+  letter: string;
+  /** Strong high-contrast fill (never a light gray-on-white). */
+  fill: string;
+  /** Text color on top of the fill (dark ink for contrast). */
+  text: string;
 }
 
 /**
- * A4 page geometry used by every generated document, so the PDF opens and
- * prints identically on phones, tablets, desktops and physical printers:
- * a standard A4 portrait sheet with the card centered inside a 10mm margin.
- * Contrast with the previous behaviour of sizing the page to the raw canvas
- * pixels, which produced non-standard page sizes that viewers scaled
- * unpredictably.
+ * Letter-grade metadata with strong, high-contrast fills for the result card.
+ * Grade boundaries: A+ ≥90, A ≥80, B ≥70, C ≥60, D ≥40, E ≥33, F below.
  */
-const A4_PORTRAIT = { pageWidth: 210, pageHeight: 297, margin: 10 };
+export function gradeMeta(pct: number): GradeMeta {
+  if (pct >= 90) {return { letter: 'A+', fill: '#10B981', text: '#06281E' };}
+  if (pct >= 80) {return { letter: 'A', fill: '#0FA868', text: '#F0FDF4' };}
+  if (pct >= 70) {return { letter: 'B', fill: '#0EA5E9', text: '#062B38' };}
+  if (pct >= 60) {return { letter: 'C', fill: '#38BDF8', text: '#062B38' };}
+  if (pct >= 40) {return { letter: 'D', fill: '#F59E0B', text: '#3B2309' };}
+  if (pct >= 33) {return { letter: 'E', fill: '#F97316', text: '#3B1507' };}
+  return { letter: 'F', fill: '#EF4444', text: '#460B0B' };
+}
+
+// ── Word-wrap (pure; measure() injectable for tests) ──────────────────────────
+
+export type TextMeasurer = (text: string) => number;
 
 /**
- * Render a self-contained HTML card into a standard A4 PDF.
- *
- * @param html      Full HTML document to stamp into the DOM (the template).
- * @param selector  Query selector for the card element within that HTML —
- *                  the string is a FULL document, so div.innerHTML flattens
- *                  its nodes and `firstElementChild` is the <style> tag
- *                  (display:none) → html2canvas measures 0x0 → jsPDF
- *                  "wrong PNG signature". Always query by real selector.
- * @param filename  Output file name (should end in .pdf).
+ * Wrap text to a pixel width using a supplied measure function. Breaks at
+ * whitespace; a single token wider than the line is hard-wrapped. Preserves
+ * Unicode/Bengali intact (operates on characters, never bytes).
  */
-async function renderCardToPdf(html: string, selector: string, filename: string): Promise<void> {
-  // The HTML string is a FULL document; assigning a document into div.innerHTML
-  // flattens its nodes, so the first child is the <style> element — NOT the
-  // card. Query by selector, and keep the container in-viewport (offscreen or
-  // `visibility:hidden` make html2canvas measure 0x0 → broken PNG).
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  container.style.cssText =
-    'position:fixed;top:0;left:0;width:420px;z-index:-9999;pointer-events:none;';
-  let appended = false;
-  try {
-    document.body.appendChild(container);
-    appended = true;
-
-    const el = container.querySelector(selector) as HTMLElement | null;
-    if (!el) {
-      throw new Error(`Failed to create PDF container (${selector})`);
-    }
-
-    // Lazy libraries are dynamic-imported; a first failure can be a transient
-    // chunk-load hiccup, so retry once before surfacing.
-    let libs: { html2canvas: typeof import('html2canvas').default; jsPDF: typeof import('jspdf').jsPDF };
-    try {
-      libs = await loadPdfLibs();
-    } catch (importErr) {
-      libs = await loadPdfLibs();
-    }
-    const { html2canvas, jsPDF } = libs;
-
-    await waitForFonts();
-
-    // Rasterize at a resolution that stays crisp when the card is scaled up
-    // to A4 width, while capping memory on very high-DPR screens.
-    // 420px card × 2.5 → ≈1050px wide → ≈140 DPI at 190mm printable width.
-    const rastScale = Math.min(4, Math.max(2.5, window.devicePixelRatio || 1));
-    const canvas = await html2canvas(el, {
-      scale: rastScale,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-    });
-
-    // JPEG, not PNG: these cards are flat design (solid fills + text), and PNG's
-    // lossless RGBA makes a 6MB file for a 420px card scaled to 2.5x. JPEG at
-    // 0.92 is visually indistinguishable on this artwork and keeps the download
-    // a few hundred KB on phones.
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const { pageWidth, pageHeight, margin } = A4_PORTRAIT;
-    const fit = computeCenteredFit({
-      pageWidth,
-      pageHeight,
-      margin,
-      imageAspect: canvas.width / canvas.height,
-    });
-    pdf.addImage(imgData, 'JPEG', fit.x, fit.y, fit.w, fit.h);
-    pdf.save(filename);
-  } finally {
-    if (appended && container.parentNode) {
-      try {
-        document.body.removeChild(container);
-      } catch {
-        /* already detached */
+export function wrapTextPx(
+  text: string,
+  measure: TextMeasurer,
+  maxWidthPx: number
+): string[] {
+  const clean = (text ?? '').replace(/\s+/g, ' ').trim();
+  if (!clean) {return [];}
+  if (maxWidthPx <= 0 || measure(clean) <= maxWidthPx) {
+    return [clean];
+  }
+  const tokens = clean.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const tok of tokens) {
+    const candidate = line ? `${line} ${tok}` : tok;
+    if (measure(candidate) <= maxWidthPx) {
+      line = candidate;
+    } else if (!line && measure(tok) > maxWidthPx) {
+      let cur = '';
+      for (const ch of tok) {
+        if (cur && measure(cur + ch) > maxWidthPx) {
+          lines.push(cur);
+          cur = ch;
+        } else {
+          cur += ch;
+        }
       }
+      if (cur) {line = cur;}
+    } else {
+      lines.push(line);
+      line = tok;
     }
+  }
+  if (line) {lines.push(line);}
+  return lines;
+}
+
+// ── Browser-canvas font / measurement primitives ──────────────────────────────
+
+const FONT_STACK = "'Hind Siliguri', 'Noto Sans Bengali', 'Inter', 'Segoe UI', sans-serif";
+
+function fontCss(sizePx: number, weight = 400): string {
+  return `${weight} ${sizePx}px ${FONT_STACK}`;
+}
+
+const measureCanvas = (() => {
+  let cv: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+  return () => {
+    if (!cv) {
+      cv = document.createElement('canvas');
+      ctx = cv.getContext('2d');
+    }
+    return ctx;
+  };
+})();
+
+/** Measure text width in px using the current font (fallback: rough estimate). */
+function measureText(text: string, sizePx: number, weight = 400): number {
+  const ctx = measureCanvas();
+  if (ctx) {
+    ctx.font = fontCss(sizePx, weight);
+    return ctx.measureText(text).width;
+  }
+  return text.length * sizePx * 0.55;
+}
+
+/** Ensure the fonts the PDF text relies on are loaded before drawing. */
+async function ensureFontsLoaded(): Promise<void> {
+  try {
+    if (!document.fonts) {return;}
+    const loads = [
+      `400 16px ${FONT_STACK}`,
+      `600 16px ${FONT_STACK}`,
+      `700 16px ${FONT_STACK}`,
+      `800 16px ${FONT_STACK}`,
+    ].map((f) => document.fonts.load(f).catch(() => null));
+    await Promise.all(loads);
+  } catch {
+    /* best-effort — fall back to whatever fonts are available */
   }
 }
 
-// ── Admin: Fee Receipt ─────────────────────────────────────────────────────────
+// ── Image loading ──────────────────────────────────────────────────────────────
+
+async function loadImageBitmap(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+let markImage: HTMLImageElement | null = null;
+/** Loaded (decoded) Concept-B mark image, cached after first load. */
+async function loadMark(): Promise<HTMLImageElement | null> {
+  if (markImage !== null) {return markImage;}
+  markImage = await loadImageBitmap('/techely-mark.svg');
+  return markImage;
+}
+
+// ── Canvas drawing helpers ─────────────────────────────────────────────────────
+
+interface RoundParams {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, p: RoundParams): void {
+  const { x, y, w, h, r: rr, fill, stroke, strokeWidth } = p;
+  const rad = Math.min(rr, w / 2, h / 2);
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, rad);
+  } else {
+    ctx.moveTo(x + rad, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rad);
+    ctx.arcTo(x + w, y + h, x, y + h, rad);
+    ctx.arcTo(x, y + h, x, y, rad);
+    ctx.arcTo(x, y, x + w, y, rad);
+    ctx.closePath();
+  }
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth ?? 1;
+    ctx.stroke();
+  }
+}
+
+function drawText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  sizePx: number,
+  color: string,
+  opts: { weight?: number; align?: CanvasTextAlign; baseline?: CanvasTextBaseline } = {}
+): void {
+  const { weight = 400, align = 'left', baseline = 'alphabetic' } = opts;
+  ctx.font = fontCss(sizePx, weight);
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  ctx.fillText(text, x, y);
+}
+
+/** Draw a wrapped block of text starting at topY; returns the block height. */
+function drawTextWrapped(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  topY: number,
+  maxWidthPx: number,
+  sizePx: number,
+  color: string,
+  weight = 400,
+  align: CanvasTextAlign = 'left'
+): { heightPx: number } {
+  const lines = wrapTextPx(text, (t) => measureText(t, sizePx, weight), maxWidthPx);
+  let y = topY;
+  for (const ln of lines) {
+    drawText(ctx, ln, x, y, sizePx, color, { weight, align, baseline: 'top' });
+    y += Math.round(sizePx * 1.3);
+  }
+  return { heightPx: Math.round(y - topY) };
+}
+
+/** Draw an image (mark/avatar) centered inside a box, scaled to fit. */
+function drawImageBox(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  boxW: number,
+  boxH: number,
+  radius: number,
+  bg: string
+): void {
+  roundRect(ctx, { x, y, w: boxW, h: boxH, r: radius, fill: bg });
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x + boxW / 2, y + boxH / 2, Math.min(boxW, boxH) / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const side = Math.min(boxW, boxH) * 0.9;
+  ctx.drawImage(img, x + (boxW - side) / 2, y + (boxH - side) / 2, side, side);
+  ctx.restore();
+}
+
+// ── Shared canvas → A4 embedding ───────────────────────────────────────────────
+
+/**
+ * Place a card canvas centered within a standard A4 portrait sheet (10mm
+ * margin), preserving aspect — prints/views identically on every device.
+ */
+async function placeOnA4(canvas: HTMLCanvasElement, filename: string): Promise<void> {
+  const JsPDF = await loadJspdf();
+  const pdf = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const fit = computeCenteredFit({
+    pageWidth: 210,
+    pageHeight: 297,
+    margin: 10,
+    imageAspect: canvas.width / canvas.height,
+  });
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', fit.x, fit.y, fit.w, fit.h);
+  pdf.save(filename);
+}
+
+// ── Shared layout tracking (for tests + debug assertions) ─────────────────────
+
+export interface LayoutSection {
+  name: string;
+  y: number; // top
+  h: number; // height
+}
+
+const lastLayout: LayoutSection[] = [];
+/** Order the drawn sections (debug/testing only — proves non-overlap structurally). */
+export function pdfDebugLayout(): LayoutSection[] {
+  return lastLayout.slice();
+}
+
+function track(name: string, y: number, h: number): void {
+  lastLayout.push({ name, y, h });
+}
+
+// ── Colors ─────────────────────────────────────────────────────────────────────
+
+const C = {
+  ink: '#0B1120',
+  ink2: '#1E293B',
+  nearBlack: '#0F172A',
+  slateDark: '#334155',
+  slateDim: '#64748B',
+  border: '#E2E8F0',
+  skyLight: '#EEF7FF',
+  skyBorder: '#BAE6FD',
+  emerald: '#10B981',
+  red: '#EF4444',
+  amber: '#F59E0B',
+  teal: '#0369A1',
+  sky: '#0EA5E9',
+  white: '#FFFFFF',
+  muted: '#FFFFFF99',
+};
+
+// ── RECEIPT ────────────────────────────────────────────────────────────────────
+
+/** Payment-method color dot (no emoji — device-safe). */
+function methodColor(method: string): string {
+  switch ((method || '').toLowerCase()) {
+    case 'cash':
+      return '#16A34A';
+    case 'bkash':
+      return '#E0218A';
+    case 'nagad':
+      return '#F97316';
+    default:
+      return '#0EA5E9';
+  }
+}
+
 export interface ReceiptData {
   receiptNo: string;
   date: string;
@@ -193,465 +385,6 @@ export interface ReceiptData {
   institutePhone?: string;
 }
 
-/** Deterministic payment-method dot color (no emoji — device-safe). */
-function methodColor(method: string): string {
-  switch ((method || '').toLowerCase()) {
-    case 'cash':
-      return '#16a34a';
-    case 'bkash':
-      return '#e0218a';
-    case 'nagad':
-      return '#f97316';
-    default:
-      return '#0ea5e9';
-  }
-}
-
-export async function generateReceipt(r: ReceiptData): Promise<void> {
-  const discount = r.discount ?? 0;
-  const finalAmount = r.finalAmount ?? r.feeAmount;
-  const method = r.paymentMethod || 'Cash';
-
-  const html = /* html */ `<!DOCTYPE html>
-<html lang="bn">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Receipt ${r.receiptNo}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
-      background: #ffffff;
-    }
-
-    .receipt {
-      width: 420px;
-      max-width: 100%;
-      background: #fff;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-    }
-
-    /* ── Header ── */
-    .header {
-      background: #0b1120;
-      padding: 28px 28px 36px;
-      position: relative;
-      overflow: hidden;
-    }
-    .header::before {
-      content: '';
-      position: absolute;
-      top: -40px; right: -40px;
-      width: 160px; height: 160px;
-      border-radius: 50%;
-      background: rgba(56,189,248,0.12);
-    }
-    .header::after {
-      content: '';
-      position: absolute;
-      bottom: -30px; left: 20px;
-      width: 100px; height: 100px;
-      border-radius: 50%;
-      background: rgba(56,189,248,0.07);
-    }
-    .header-top {
-      display: table;
-      width: 100%;
-      margin-bottom: 18px;
-      position: relative;
-      z-index: 1;
-    }
-    .logo-circle {
-      display: table-cell;
-      width: 48px; height: 48px;
-      border-radius: 14px;
-      object-fit: cover;
-      vertical-align: middle;
-    }
-    .ht-text {
-      display: table-cell;
-      vertical-align: middle;
-      padding-left: 14px;
-    }
-    .inst-name {
-      font-size: 17px;
-      font-weight: 800;
-      color: #fff;
-      letter-spacing: -0.3px;
-      line-height: 1.2;
-      overflow-wrap: anywhere;
-    }
-    .inst-sub {
-      font-size: 11px;
-      color: rgba(255,255,255,0.55);
-      margin-top: 3px;
-      font-family: 'Noto Sans Bengali', sans-serif;
-      overflow-wrap: anywhere;
-    }
-    .receipt-badge {
-      position: relative; z-index: 1;
-      display: inline-flex;
-      align-items: center;
-      background: rgba(56,189,248,0.15);
-      border: 1px solid rgba(56,189,248,0.3);
-      border-radius: 100px;
-      padding: 6px 14px;
-      margin-bottom: 12px;
-    }
-    .receipt-badge span {
-      font-size: 11px;
-      font-weight: 600;
-      color: #38bdf8;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-    }
-    .receipt-badge-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: #38bdf8;
-      margin-right: 7px;
-    }
-    .receipt-no-row {
-      position: relative; z-index: 1;
-      display: table;
-      width: 100%;
-    }
-    .receipt-no-cell {
-      display: table-cell;
-      vertical-align: bottom;
-    }
-    .receipt-no-label {
-      font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 2px;
-    }
-    .receipt-no-val {
-      font-size: 15px; font-weight: 700; color: #fff; font-family: 'Inter', monospace; letter-spacing: 0.5px;
-    }
-    .receipt-date {
-      text-align: right;
-    }
-
-    /* ── Curved divider ── */
-    .curve {
-      height: 28px;
-      background: #0b1120;
-      position: relative;
-    }
-    .curve::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 28px;
-      background: #fff;
-      border-radius: 28px 28px 0 0;
-    }
-
-    /* ── Body ── */
-    .body { padding: 20px 28px 28px; }
-
-    /* ── Student card ── */
-    .student-card {
-      display: table;
-      width: 100%;
-      background: #f0f9ff;
-      border: 1px solid #bae6fd;
-      border-radius: 14px;
-      padding: 14px 18px;
-      margin-bottom: 20px;
-    }
-    .avatar {
-      display: table-cell;
-      width: 44px;
-      height: 54px;
-      vertical-align: middle;
-    }
-    .avatar-in {
-      width: 44px; height: 44px;
-      border-radius: 50%;
-      background: #0ea5e9;
-      color: #fff;
-      line-height: 44px;
-      text-align: center;
-      font-size: 18px; font-weight: 700;
-      overflow: hidden;
-      display: block;
-    }
-    .avatar-in img {
-      width: 100%; height: 100%;
-      object-fit: cover;
-      display: block;
-      border-radius: 50%;
-    }
-    .sc-text {
-      display: table-cell;
-      vertical-align: middle;
-      padding-left: 14px;
-    }
-    .student-name {
-      font-size: 15px; font-weight: 700; color: #0c1a2e;
-      font-family: 'Noto Sans Bengali', 'Inter', sans-serif;
-      overflow-wrap: anywhere;
-    }
-    .student-meta {
-      font-size: 12px; color: #0369a1; margin-top: 2px; font-weight: 500;
-      font-family: 'Inter', monospace;
-    }
-    .student-batch {
-      font-size: 11px; color: #64748b; margin-top: 1px;
-      font-family: 'Noto Sans Bengali', sans-serif;
-    }
-
-    /* ── Info rows ── */
-    .info-section { margin-bottom: 18px; }
-    .info-row {
-      display: table;
-      width: 100%;
-      padding: 9px 0;
-      border-bottom: 1px solid #f1f5f9;
-    }
-    .info-row:last-child { border-bottom: none; }
-    .info-label {
-      display: table-cell;
-      width: 40%;
-      vertical-align: middle;
-      font-size: 12px; color: #94a3b8; font-weight: 500;
-    }
-    .info-value {
-      display: table-cell;
-      vertical-align: middle;
-      font-size: 13px; color: #1e293b; font-weight: 600;
-      font-family: 'Noto Sans Bengali', 'Inter', sans-serif;
-      overflow-wrap: anywhere;
-      text-align: right;
-    }
-
-    /* ── Amount box ── */
-    .amount-box {
-      background: #0f172a;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 20px;
-      position: relative;
-      overflow: hidden;
-    }
-    .amount-box::before {
-      content: '';
-      position: absolute;
-      top: -20px; right: -20px;
-      width: 90px; height: 90px;
-      border-radius: 50%;
-      background: rgba(56,189,248,0.1);
-    }
-    .amount-title {
-      font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase;
-      letter-spacing: 0.8px; margin-bottom: 14px; position: relative; z-index: 1;
-    }
-    .amount-breakdown {
-      display: table;
-      width: 100%;
-      margin-bottom: 14px; position: relative; z-index: 1;
-    }
-    .amt-item {
-      display: table-cell;
-      vertical-align: top;
-      font-size: 13px;
-    }
-    .amt-item + .amt-item { text-align: right; }
-    .amt-item-label { font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
-    .amt-item-val { font-size: 15px; font-weight: 700; }
-    .amt-fee { color: #cbd5e1; }
-    .amt-disc { color: #f87171; }
-    .total-row {
-      display: table;
-      width: 100%;
-      background: rgba(56,189,248,0.15);
-      border: 1px solid rgba(56,189,248,0.25);
-      border-radius: 10px;
-      padding: 10px 14px;
-      position: relative; z-index: 1;
-    }
-    .total-label { display: table-cell; vertical-align: middle; font-size: 12px; color: rgba(255,255,255,0.7); font-weight: 500; }
-    .total-val { display: table-cell; vertical-align: middle; text-align: right; font-size: 22px; font-weight: 800; color: #38bdf8; letter-spacing: -0.5px; }
-
-    /* ── Payment method chip ── */
-    .payment-chip {
-      display: inline-flex; align-items: center;
-      background: #f0fdf4; border: 1px solid #86efac;
-      border-radius: 100px; padding: 6px 14px;
-    }
-    .payment-chip-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: ${methodColor(method)};
-      flex-shrink: 0;
-      margin: 0 8px 0 0;
-    }
-    .payment-chip-label { font-size: 13px; font-weight: 600; color: #166534; text-transform: capitalize; }
-
-    /* ── Footer ── */
-    .footer {
-      background: #f8fafc;
-      border-top: 1px dashed #e2e8f0;
-      padding: 16px 28px;
-      text-align: center;
-    }
-    .footer-thanks {
-      font-size: 13px; font-weight: 600; color: #0369a1;
-      font-family: 'Noto Sans Bengali', 'Inter', sans-serif;
-      margin-bottom: 4px;
-    }
-    .footer-sub {
-      font-size: 10px; color: #94a3b8; letter-spacing: 0.3px;
-    }
-    .footer-sig {
-      display: table;
-      width: 100%;
-      margin-top: 20px;
-    }
-    .sig-cell {
-      display: table-cell;
-      width: 50%;
-      vertical-align: bottom;
-    }
-    .sig-cell + .sig-cell { text-align: right; }
-    .sig-line {
-      display: inline-block;
-      width: 110px; border-top: 1.5px solid #cbd5e1; padding-top: 6px;
-      font-size: 10px; color: #94a3b8; text-align: center;
-    }
-    .watermark {
-      font-size: 9px; color: #cbd5e1; text-align: center; margin-top: 12px;
-      letter-spacing: 0.3px;
-    }
-  </style>
-</head>
-<body>
-  <div>
-    <div class="receipt">
-      <!-- Header -->
-      <div class="header">
-        <div class="header-top">
-          <img class="logo-circle" src="/techely-mark.svg" alt="" />
-          <div class="ht-text">
-            <div class="inst-name">${escapeHtml(r.instituteName)}</div>
-            ${r.instituteAddress ? `<div class="inst-sub">${escapeHtml(r.instituteAddress)}</div>` : ''}
-            ${r.institutePhone ? `<div class="inst-sub">${escapeHtml(r.institutePhone)}</div>` : ''}
-          </div>
-        </div>
-        <div class="receipt-badge">
-          <div class="receipt-badge-dot"></div>
-          <span>Fee Receipt &nbsp;·&nbsp; ফি রশিদ</span>
-        </div>
-        <div class="receipt-no-row">
-          <div class="receipt-no-cell">
-            <div class="receipt-no-label">Receipt Number</div>
-            <div class="receipt-no-val">${escapeHtml(r.receiptNo)}</div>
-          </div>
-          <div class="receipt-no-cell receipt-date">
-            <div class="receipt-no-label">Date</div>
-            <div class="receipt-no-val" style="font-size:13px">${escapeHtml(r.date)}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Curved divider -->
-      <div class="curve"></div>
-
-      <!-- Body -->
-      <div class="body">
-
-        <!-- Student card -->
-        <div class="student-card">
-          <div class="avatar">
-            <div class="avatar-in">${escapeHtml(r.studentName.charAt(0).toUpperCase())}</div>
-          </div>
-          <div class="sc-text">
-            <div class="student-name">${escapeHtml(r.studentName)}</div>
-            ${r.studentId ? `<div class="student-meta">${escapeHtml(r.studentId)}</div>` : ''}
-            ${r.batchName ? `<div class="student-batch">${escapeHtml(r.batchName)}</div>` : ''}
-          </div>
-        </div>
-
-        <!-- Info rows -->
-        <div class="info-section">
-          <div class="info-row">
-            <span class="info-label">
-              Fee Month
-            </span>
-            <span class="info-value">${escapeHtml(r.month)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">
-              Payment Method
-            </span>
-            <div class="payment-chip">
-              <span class="payment-chip-dot"></span>
-              <span class="payment-chip-label">${escapeHtml(method)}</span>
-            </div>
-          </div>
-          ${
-            r.transactionId
-              ? `
-          <div class="info-row">
-            <span class="info-label">
-              Transaction ID
-            </span>
-            <span class="info-value" style="font-family:monospace;font-size:12px;color:#0369a1">${escapeHtml(r.transactionId!)}</span>
-          </div>`
-              : ''
-          }
-        </div>
-
-        <!-- Amount breakdown -->
-        <div class="amount-box">
-          <div class="amount-title">Payment Breakdown</div>
-          <div class="amount-breakdown">
-            <div class="amt-item">
-              <div class="amt-item-label">Original Fee</div>
-              <div class="amt-item-val amt-fee">৳${Math.round(r.feeAmount).toLocaleString('en-IN')}</div>
-            </div>
-            ${
-              discount > 0
-                ? `
-            <div class="amt-divider"></div>
-            <div class="amt-item">
-              <div class="amt-item-label">Discount</div>
-              <div class="amt-item-val amt-disc">−৳${Math.round(discount).toLocaleString('en-IN')}</div>
-            </div>`
-                : ''
-            }
-          </div>
-          <div class="total-row">
-            <span class="total-label">Amount Paid &nbsp;·&nbsp; পরিশোধিত</span>
-            <span class="total-val">৳${Math.round(finalAmount).toLocaleString('en-IN')}</span>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Footer -->
-      <div class="footer">
-        <div class="footer-thanks">ধন্যবাদ আপনার পেমেন্টের জন্য</div>
-        <div class="footer-sub">Thank you for your payment &nbsp;·&nbsp; Computer-generated receipt</div>
-        <div class="footer-sig">
-          <div class="sig-cell"><span class="sig-line">Student Signature</span></div>
-          <div class="sig-cell"><span class="sig-line">Authorized By</span></div>
-        </div>
-        <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)} &nbsp;·&nbsp; All rights reserved</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  await renderCardToPdf(html, '.receipt', `receipt-${r.receiptNo}.pdf`);
-}
-
-// ── Student Portal: Fee Receipt ───────────────────────────────────────────────
 export interface StudentReceiptData {
   receiptNo: string;
   date: string;
@@ -664,6 +397,158 @@ export interface StudentReceiptData {
   paymentMethod: string;
   transactionId?: string;
   instituteName: string;
+}
+
+// ── RECEIPT layout ─────────────────────────────────────────────────────────────
+
+const PAGE = { w: 620, s: 2, pad: 30 };
+
+function newCanvas(hPx: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement('canvas');
+  canvas.width = PAGE.w * PAGE.s;
+  canvas.height = hPx * PAGE.s;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {throw new Error('Canvas 2D context unavailable');}
+  ctx.scale(PAGE.s, PAGE.s);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, PAGE.w, hPx);
+  return { canvas, ctx };
+}
+
+function trimToUsed(canvas: HTMLCanvasElement, usedHPx: number): HTMLCanvasElement {
+  const h = Math.ceil(usedHPx);
+  const out = document.createElement('canvas');
+  out.width = canvas.width;
+  out.height = h * PAGE.s;
+  out.getContext('2d')!.drawImage(canvas, 0, 0);
+  return out;
+}
+
+function drawReceiptCanvas(r: ReceiptData, mark: HTMLImageElement | null): { canvas: HTMLCanvasElement; usedH: number } {
+  const W = PAGE.w;
+  const P = PAGE.pad;
+  const CW = W - P * 2;
+  const headerH = 156;
+  const { canvas, ctx } = newCanvas(900);
+  let y = P;
+  lastLayout.length = 0;
+
+  const discount = r.discount ?? 0;
+  const finalAmount = r.finalAmount ?? r.feeAmount;
+  const method = r.paymentMethod || 'Cash';
+
+  // ── Header ──
+  roundRect(ctx, { x: P, y, w: CW, h: headerH, r: 18, fill: C.ink });
+  if (mark) {
+    drawImageBox(ctx, mark, P + 22, y + 20, 48, 48, 12, 'transparent');
+    drawText(ctx, 'FEE RECEIPT · ফি রশিদ', P + 86, y + 24, 15, '#7DD3FC', { weight: 700, baseline: 'top' });
+  } else {
+    drawText(ctx, 'FEE RECEIPT · ফি রশিদ', P + 22, y + 24, 17, C.white, { weight: 800, baseline: 'top' });
+  }
+  drawTextWrapped(ctx, r.instituteName, P + (mark ? 86 : 22), y + (mark ? 56 : 56), CW - 220, 24, C.white, 800);
+
+  drawText(ctx, 'Receipt Number', P + CW - 30, y + 28, 11, C.muted, { align: 'right', weight: 600, baseline: 'top' });
+  drawText(ctx, r.receiptNo, P + CW - 30, y + 42, 16, C.white, { align: 'right', weight: 700, baseline: 'top' });
+  drawText(ctx, 'Date', P + CW - 30, y + 72, 11, C.muted, { align: 'right', weight: 600, baseline: 'top' });
+  drawText(ctx, r.date, P + CW - 30, y + 86, 13, C.white, { align: 'right', weight: 600, baseline: 'top' });
+  roundRect(ctx, { x: P + CW - 30 - 122, y: y + 112, w: 122, h: 26, r: 13, fill: C.emerald });
+  drawText(ctx, 'PAID', P + CW - 30, y + 124, 13, C.white, { align: 'right', weight: 800, baseline: 'middle' });
+
+  y += headerH + 18;
+  track('header', y - headerH - 18, headerH);
+
+  // ── Student card ──
+  const stuH = 84;
+  roundRect(ctx, { x: P, y, w: CW, h: stuH, r: 14, fill: C.skyLight, stroke: C.skyBorder });
+  roundRect(ctx, { x: P + 16, y: y + 15, w: 54, h: 54, r: 27, fill: C.sky });
+  drawText(ctx, r.studentName.charAt(0).toUpperCase(), P + 16 + 27, y + 15 + 27, 24, C.white, { align: 'center', weight: 800, baseline: 'middle' });
+  drawText(ctx, r.studentName, P + 92, y + 26, 19, C.nearBlack, { weight: 700, baseline: 'top' });
+  let subY = y + 54;
+  if (r.studentId) {
+    drawText(ctx, r.studentId, P + 92, subY, 13, C.teal, { weight: 600, baseline: 'top' });
+    subY += 18;
+  }
+  if (r.batchName) {
+    drawText(ctx, r.batchName, P + 92, subY, 12, C.slateDim, { weight: 500, baseline: 'top' });
+  }
+  y += stuH + 18;
+  track('student', y - stuH - 18, stuH);
+
+  // ── Info rows ──
+  const rows: Array<[string, string, string?]> = [
+    ['Fee Month', r.month],
+    ['Payment Method', method],
+    ...(r.transactionId ? ([[
+      'Transaction ID',
+      r.transactionId,
+      '#0369A1',
+    ]] as Array<[string, string, string?]>) : []),
+  ];
+  const rowH = 40;
+  for (const [label, value, valColor] of rows) {
+    drawText(ctx, label, P + 4, y + rowH / 2, 14, C.slateDark, { weight: 600, baseline: 'middle' });
+    roundRect(ctx, { x: P + CW - 12, y: y + rowH / 2 - 8, w: 16, h: 16, r: 8, fill: methodColor(method) });
+    drawText(ctx, value, P + CW - 26, y + rowH / 2, 15, valColor ?? C.nearBlack, { align: 'right', weight: 700, baseline: 'middle' });
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(P + 2, y + rowH);
+    ctx.lineTo(P + CW - 2, y + rowH);
+    ctx.stroke();
+    y += rowH;
+  }
+  track('info', y - rows.length * rowH, rows.length * rowH);
+
+  y += 18;
+
+  // ── Amount box ──
+  const amtH = 172;
+  roundRect(ctx, { x: P, y, w: CW, h: amtH, r: 16, fill: C.ink2 });
+  drawText(ctx, 'Payment Breakdown', P + 26, y + 24, 12, C.muted, { weight: 600, baseline: 'top' });
+  drawText(ctx, 'Original Fee', P + 26, y + 58, 14, C.white, { weight: 500, baseline: 'top' });
+  drawText(ctx, `৳${Math.round(r.feeAmount).toLocaleString('en-IN')}`, P + CW - 26, y + 58, 15, C.white, { align: 'right', weight: 700, baseline: 'top' });
+  if (discount > 0) {
+    drawText(ctx, 'Discount', P + 26, y + 90, 14, '#FCA5A5', { weight: 500, baseline: 'top' });
+    drawText(ctx, `−৳${Math.round(discount).toLocaleString('en-IN')}`, P + CW - 26, y + 90, 15, '#FCA5A5', { align: 'right', weight: 700, baseline: 'top' });
+  }
+  roundRect(ctx, { x: P + 18, y: y + 118, w: CW - 36, h: 40, r: 10, fill: 'rgba(56,189,248,0.18)', stroke: 'rgba(56,189,248,0.4)' });
+  drawText(ctx, 'Amount Paid · পরিশোধিত', P + 40, y + 138, 14, C.white, { weight: 600, baseline: 'middle' });
+  drawText(ctx, `৳${Math.round(finalAmount).toLocaleString('en-IN')}`, P + CW - 40, y + 138, 22, '#38BDF8', { align: 'right', weight: 800, baseline: 'middle' });
+  y += amtH + 18;
+  track('amount', y - amtH - 18, amtH);
+
+  // ── Signature ──
+  const sigH = 64;
+  const sigW = (CW - 48) / 2;
+  const drawSig = (x: number, label: string) => {
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 30);
+    ctx.lineTo(x + sigW, y + 30);
+    ctx.stroke();
+    drawText(ctx, label, x + sigW / 2, y + 42, 11, C.slateDim, { align: 'center', weight: 500, baseline: 'top' });
+  };
+  drawSig(P + 22, 'Student Signature');
+  drawSig(P + 22 + sigW + 24, 'Authorized By');
+  y += sigH;
+  track('signature', y - sigH, sigH);
+
+  // ── Footer ──
+  const footH = 42;
+  drawText(ctx, `© ${new Date().getFullYear()} ${r.instituteName} · All rights reserved`, W / 2, y + 20, 11, C.slateDim, { align: 'center', weight: 400, baseline: 'top' });
+  y += footH;
+  track('footer', y - footH, footH);
+
+  return { canvas, usedH: y + P };
+}
+
+export async function generateReceipt(r: ReceiptData): Promise<void> {
+  await ensureFontsLoaded();
+  const mark = await loadMark();
+  const { canvas, usedH } = drawReceiptCanvas(r, mark);
+  const trimmed = trimToUsed(canvas, usedH);
+  await placeOnA4(trimmed, `receipt-${r.receiptNo}.pdf`);
 }
 
 export async function generateStudentReceipt(r: StudentReceiptData): Promise<void> {
@@ -682,7 +567,8 @@ export async function generateStudentReceipt(r: StudentReceiptData): Promise<voi
   });
 }
 
-// ── Student Portal: Result Card ───────────────────────────────────────────────
+// ── RESULT CARD ────────────────────────────────────────────────────────────────
+
 export interface ResultCardData {
   studentName: string;
   studentId?: string;
@@ -701,177 +587,158 @@ export interface ResultCardData {
   instituteName: string;
 }
 
-export async function generateResultCard(r: ResultCardData): Promise<void> {
+function drawResultCard(
+  r: ResultCardData,
+  mark: HTMLImageElement | null,
+  avatar: HTMLImageElement | null
+): { canvas: HTMLCanvasElement; usedH: number } {
+  const W = PAGE.w;
+  const P = PAGE.pad;
+  const CW = W - P * 2;
+  const headerH = 178;
+  const { canvas, ctx } = newCanvas(980);
+  let y = P;
+  lastLayout.length = 0;
+
   const pct = r.totalMarks > 0 ? Math.round((r.score / r.totalMarks) * 100) : 0;
   const passed = r.score >= r.passMarks;
-  const grade =
-    pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
+  const grade = gradeMeta(pct);
+  const accent = passed ? C.emerald : C.red;
   const fmtTime = (s?: number) => (!s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`);
 
-  const accent = passed ? '#10b981' : '#ef4444';
-  // The card is 600px wide (was 420px) so the rasterized text is larger and
-  // readable when fitted to A4 width; the layout below uses ONLY html2canvas-safe
-  // constructs — display:table rows, absolute positioning, explicit margins.
-  // (html2canvas 1.4.1 mis-renders flex `gap`, grid, and space-between rows.)
-  const html = /* html */ `<!DOCTYPE html>
-<html lang="bn">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Result Card</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', 'Noto Sans Bengali', sans-serif; background: #ffffff; }
-    .wrap { padding: 0 8px; }
-    .card { width: 600px; background: #fff; border-radius: 18px; border: 1px solid #e2e8f0; overflow: hidden; }
+  // ── Header ──
+  roundRect(ctx, { x: P, y, w: CW, h: headerH, r: 18, fill: C.ink });
 
-    /* ── Table-row helper (html2canvas renders display:table reliably) ── */
-    .t { display: table; width: 100%; }
-    .tr { display: table-row; }
-    .td { display: table-cell; vertical-align: middle; }
+  if (mark) {
+    drawImageBox(ctx, mark, P + 26, y + 22, 44, 44, 12, 'transparent');
+    drawText(ctx, r.instituteName, P + 88, y + 26, 19, C.white, { weight: 800, baseline: 'top' });
+    drawText(ctx, 'COACHING ACADEMY', P + 88, y + 50, 10, C.muted, { weight: 600, baseline: 'top' });
+  } else {
+    drawText(ctx, r.instituteName, P + 26, y + 28, 20, C.white, { weight: 800, baseline: 'top' });
+  }
 
-    /* ── Header ── */
-    .header { background: #0b1120; padding: 26px 26px 30px; }
-    .h-logo { width: 44px; height: 44px; object-fit: cover; border-radius: 12px; display: block; }
-    .h-inn { padding-left: 14px; }
-    .inst-name { font-size: 17px; font-weight: 800; color: #fff; overflow-wrap: anywhere; }
-    .inst-sub { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 3px; letter-spacing: 1.5px; text-transform: uppercase; }
-    .badge { display: inline-block; margin: 0 0 16px; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 6px 14px; }
-    .badge span { font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.8px; text-transform: uppercase; }
-    .score-cell { width: 55%; }
-    .score-sub { font-size: 12px; color: #7c8b9f; margin-bottom: 6px; }
-    .score-big { font-size: 56px; font-weight: 800; line-height: 1; color: ${accent}; }
-    .score-frac { font-size: 13px; color: #7c8b9f; margin-top: 6px; }
-    .grade-cell { vertical-align: bottom !important; text-align: right; }
-    .grade-pill { display: inline-block; background: #a78bfa; border-radius: 14px; padding: 10px 22px; color: #0b1120; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
-    .sub-label { font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+  // Badge
+  roundRect(ctx, { x: P + 26, y: y + 82, w: 190, h: 27, r: 14, fill: C.ink2, stroke: '#334155' });
+  drawText(ctx, 'RESULT CARD · ফলাফল কার্ড', P + 26 + 95, y + 95, 10.5, '#7DD3FC', { align: 'center', weight: 700, baseline: 'middle' });
 
-    /* ── Body ── */
-    .body { padding: 20px 26px 26px; }
-    .stu { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; }
-    .avatar-w { width: 62px; }
-    .avatar {
-      width: 54px; height: 54px; border-radius: 50%;
-      background: #0ea5e9; color: #fff;
-      line-height: 54px; text-align: center; font-size: 22px; font-weight: 700;
-      overflow: hidden; display: block;
-    }
-    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .stu-in { padding-left: 14px; }
-    .student-name { font-size: 16px; font-weight: 700; color: #0b1120; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
-    .student-id { font-size: 12px; color: #0369a1; margin-top: 3px; font-weight: 600; }
+  // Score (left) + grade pill (right at bottom of header)
+  drawText(ctx, 'SCORE', P + 26, y + 124, 11, '#94A3B8', { weight: 600, baseline: 'top' });
+  drawText(ctx, `${pct}%`, P + 26, y + 136, 42, accent, { weight: 800, baseline: 'top' });
+  drawText(ctx, `${r.score} / ${r.totalMarks}`, P + 26, y + 136 + 46, 14, C.white, { weight: 700, baseline: 'top' });
 
-    .stats { margin-bottom: 18px; }
-    .stat {
-      display: table-cell; width: 33.33%;
-      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
-      padding: 12px 6px; text-align: center; vertical-align: middle;
-      font-size: 13px;
-    }
-    .stat + .stat { padding-left: 10px; }
-    .stat-val { font-size: 22px; font-weight: 800; margin-bottom: 3px; }
-    .stat-correct { color: #10b981; }
-    .stat-wrong { color: #ef4444; }
-    .stat-skip { color: #64748b; }
-    .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Noto Sans Bengali', sans-serif; }
+  const pillW = 86;
+  const pillH = 56;
+  roundRect(ctx, {
+    x: P + CW - 26 - pillW,
+    y: y + headerH - pillH - 26,
+    w: pillW,
+    h: pillH,
+    r: 14,
+    fill: grade.fill,
+  });
+  drawText(ctx, grade.letter, P + CW - 26 - pillW / 2, y + headerH - 26 - pillH / 2, 30, grade.text, { align: 'center', weight: 800, baseline: 'middle' });
 
-    .info-row { padding: 9px 2px; border-bottom: 1px solid #f1f5f9; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { font-size: 12px; color: #94a3b8; width: 34%; }
-    .info-val { font-size: 13px; color: #0f172a; font-weight: 600; text-align: right; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
+  y += headerH + 18;
+  track('header', y - headerH - 18, headerH);
 
-    .pass { margin-top: 16px; background: #f8fafc; border: 2px solid ${accent}; border-radius: 14px; padding: 14px; text-align: center; }
-    .pass-icon { font-size: 26px; color: ${accent}; margin-bottom: 4px; }
-    .pass-text { font-size: 18px; font-weight: 800; letter-spacing: 1.5px; color: ${accent}; }
-    .pass-sub { font-size: 12px; margin-top: 5px; color: #475569; font-family: 'Noto Sans Bengali', sans-serif; }
+  // ── Student row ──
+  const stuH = 88;
+  roundRect(ctx, { x: P, y, w: CW, h: stuH, r: 14, fill: C.skyLight, stroke: C.skyBorder });
+  const d = 56;
+  const avX = P + 18;
+  const avY = y + (stuH - d) / 2;
+  if (avatar) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avX + d / 2, avY + d / 2, d / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.fillStyle = C.sky;
+    ctx.fillRect(avX, avY, d, d);
+    ctx.drawImage(avatar, avX, avY, d, d);
+    ctx.restore();
+  } else {
+    roundRect(ctx, { x: avX, y: avY, w: d, h: d, r: d / 2, fill: C.sky });
+    drawText(ctx, r.studentName.charAt(0).toUpperCase(), avX + d / 2, avY + d / 2, 24, C.white, { align: 'center', weight: 800, baseline: 'middle' });
+  }
+  drawText(ctx, r.studentName, P + 96, y + 26, 19, C.nearBlack, { weight: 700, baseline: 'top' });
+  let stuSubY = y + 54;
+  if (r.studentId) {
+    drawText(ctx, r.studentId, P + 96, stuSubY, 13, C.teal, { weight: 600, baseline: 'top' });
+    stuSubY += 18;
+  }
+  void stuSubY;
+  y += stuH + 18;
+  track('student', y - stuH - 18, stuH);
 
-    .footer { background: #f8fafc; border-top: 1px dashed #e2e8f0; padding: 14px 26px; text-align: center; }
-    .footer-sub { font-size: 11px; color: #94a3b8; }
-    .watermark { font-size: 10px; color: #cbd5e1; text-align: center; margin-top: 6px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <div class="header">
-        <div class="t">
-          <div class="td" style="width:52px"><img class="h-logo" src="/techely-mark.svg" alt="" /></div>
-          <div class="td h-inn">
-            <div class="inst-name">${escapeHtml(r.instituteName)}</div>
-            <div class="inst-sub">Coaching Academy</div>
-          </div>
-        </div>
-        <div class="badge"><span>RESULT CARD · ফলাফল কার্ড</span></div>
-        <div class="t">
-          <div class="td score-cell">
-            <div class="sub-label">Score</div>
-            <div class="score-big">${pct}%</div>
-            <div class="score-frac">${r.score} / ${r.totalMarks}</div>
-          </div>
-          <div class="td grade-cell"><span class="grade-pill">${grade}</span></div>
-        </div>
-      </div>
+  // ── Stats ──
+  const stats: Array<{ label: string; value: string; fill: string }> = [
+    { label: 'সঠিক / Correct', value: String(r.correctCount ?? 0), fill: C.emerald },
+    { label: 'ভুল / Wrong', value: String(r.wrongCount ?? 0), fill: C.red },
+    { label: 'সময় / Time', value: fmtTime(r.timeTaken), fill: C.amber },
+  ];
+  const gap = 14;
+  const statW = (CW - gap * 2) / 3;
+  const statH = 96;
+  stats.forEach((s, i) => {
+    const sx = P + i * (statW + gap);
+    roundRect(ctx, { x: sx, y, w: statW, h: statH, r: 14, fill: s.fill });
+    drawText(ctx, s.value, sx + statW / 2, y + 50, 30, C.white, { align: 'center', weight: 800, baseline: 'middle' });
+    drawText(ctx, s.label, sx + statW / 2, y + 80, 11, C.white, { align: 'center', weight: 600, baseline: 'middle' });
+  });
+  y += statH + 18;
+  track('stats', y - statH - 18, statH);
 
-      <div class="body">
-        <div class="t stu">
-          <div class="td avatar-w">
-            <div class="avatar">
-              ${r.photoUrl ? `<img src="${escapeHtml(r.photoUrl)}" alt="" />` : escapeHtml(r.studentName.charAt(0).toUpperCase())}
-            </div>
-          </div>
-          <div class="td stu-in">
-            <div class="student-name">${escapeHtml(r.studentName)}</div>
-            ${r.studentId ? `<div class="student-id">${escapeHtml(r.studentId)}</div>` : ''}
-          </div>
-        </div>
+  // ── Info rows ──
+  const infoRows: Array<[string, string, string?]> = [
+    ['Exam', r.examTitle],
+    ['Subject', r.subject],
+    ['Pass Marks', `${r.passMarks} / ${r.totalMarks}`],
+    ...(r.rank ? ([[
+      'Rank',
+      `#${r.rank}`,
+      '#7C3AED',
+    ]] as Array<[string, string, string?]>) : []),
+    ['Date', r.submittedAt],
+  ];
+  const infoH = 40;
+  for (const [label, value, valColor] of infoRows) {
+    drawText(ctx, label, P + 4, y + infoH / 2, 14, C.slateDark, { weight: 600, baseline: 'middle' });
+    drawText(ctx, value, P + CW - 4, y + infoH / 2, 15, valColor ?? C.nearBlack, { align: 'right', weight: 700, baseline: 'middle' });
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(P + 2, y + infoH);
+    ctx.lineTo(P + CW - 2, y + infoH);
+    ctx.stroke();
+    y += infoH;
+  }
+  track('info', y - infoRows.length * infoH, infoRows.length * infoH);
 
-        <div class="t stats">
-          <div class="stat">
-            <div class="stat-val stat-correct">${r.correctCount}</div>
-            <div class="stat-label">সঠিক</div>
-          </div>
-          <div class="stat">
-            <div class="stat-val stat-wrong">${r.wrongCount}</div>
-            <div class="stat-label">ভুল</div>
-          </div>
-          <div class="stat">
-            <div class="stat-val stat-skip">${r.timeTaken !== null && r.timeTaken !== undefined ? fmtTime(r.timeTaken) : '—'}</div>
-            <div class="stat-label">সময়</div>
-          </div>
-        </div>
+  y += 18;
 
-        <div class="t info-row"><div class="td info-label">Exam</div><div class="td info-val">${escapeHtml(r.examTitle)}</div></div>
-        <div class="t info-row"><div class="td info-label">Subject</div><div class="td info-val">${escapeHtml(r.subject)}</div></div>
-        <div class="t info-row"><div class="td info-label">Pass Marks</div><div class="td info-val">${r.passMarks} / ${r.totalMarks}</div></div>
-        ${r.rank ? `<div class="t info-row"><div class="td info-label">Rank</div><div class="td info-val" style="color:#7c3aed">#${r.rank}</div></div>` : ''}
-        <div class="t info-row"><div class="td info-label">Date</div><div class="td info-val">${escapeHtml(r.submittedAt)}</div></div>
+  // ── Pass stamp ──
+  const passH = 96;
+  roundRect(ctx, { x: P, y, w: CW, h: passH, r: 16, fill: accent });
+  drawText(ctx, passed ? '✔' : '✘', P + CW / 2, y + 26, 24, C.white, { align: 'center', weight: 800, baseline: 'top' });
+  drawText(ctx, passed ? 'PASSED' : 'FAILED', P + CW / 2, y + 52, 22, C.white, { align: 'center', weight: 800, baseline: 'top' });
+  drawText(ctx, passed ? 'অভিনন্দন! তুমি পরীক্ষায় পাস করেছ।' : 'আরও পড়াশোনা করো। পরেরবার পারবে!', P + CW / 2, y + 82, 11, C.white, { align: 'center', weight: 600, baseline: 'top' });
+  y += passH + 18;
+  track('pass', y - passH - 18, passH);
 
-        <div class="pass">
-          <div class="pass-icon">${passed ? '✔' : '✘'}</div>
-          <div class="pass-text">${passed ? 'PASSED' : 'FAILED'}</div>
-          <div class="pass-sub">${passed ? 'অভিনন্দন! তুমি পরীক্ষায় পাস করেছ।' : 'আরও পড়াশোনা করো। পরেরবার পারবে!'}</div>
-        </div>
-      </div>
+  // ── Footer ──
+  const footH = 42;
+  drawText(ctx, `Computer-generated result card · ${r.instituteName}`, W / 2, y + 20, 11, C.slateDim, { align: 'center', weight: 400, baseline: 'top' });
+  y += footH;
+  track('footer', y - footH, footH);
 
-      <div class="footer">
-        <div class="footer-sub">Computer-generated result card · ${escapeHtml(r.instituteName)}</div>
-        <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)}</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  await renderCardToPdf(html, '.card', `result-card-${safePdfFilename(r.studentName)}.pdf`);
+  return { canvas, usedH: y + P };
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+export async function generateResultCard(r: ResultCardData): Promise<void> {
+  await ensureFontsLoaded();
+  const [mark, avatar] = await Promise.all([loadMark(), r.photoUrl ? loadImageBitmap(r.photoUrl) : Promise.resolve(null)]);
+  const { canvas, usedH } = drawResultCard(r, mark, avatar);
+  const trimmed = trimToUsed(canvas, usedH);
+  await placeOnA4(trimmed, `result-card-${safePdfFilename(r.studentName)}.pdf`);
 }
