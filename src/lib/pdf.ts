@@ -261,18 +261,23 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       background: rgba(56,189,248,0.07);
     }
     .header-top {
-      display: flex;
-      align-items: center;
+      display: table;
+      width: 100%;
       margin-bottom: 18px;
       position: relative;
       z-index: 1;
     }
     .logo-circle {
+      display: table-cell;
       width: 48px; height: 48px;
       border-radius: 14px;
-      margin-right: 14px;
       object-fit: cover;
-      flex-shrink: 0;
+      vertical-align: middle;
+    }
+    .ht-text {
+      display: table-cell;
+      vertical-align: middle;
+      padding-left: 14px;
     }
     .inst-name {
       font-size: 17px;
@@ -314,7 +319,12 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
     }
     .receipt-no-row {
       position: relative; z-index: 1;
-      display: flex; align-items: flex-end; justify-content: space-between;
+      display: table;
+      width: 100%;
+    }
+    .receipt-no-cell {
+      display: table-cell;
+      vertical-align: bottom;
     }
     .receipt-no-label {
       font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 2px;
@@ -346,21 +356,41 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
 
     /* ── Student card ── */
     .student-card {
+      display: table;
+      width: 100%;
       background: #f0f9ff;
       border: 1px solid #bae6fd;
       border-radius: 14px;
       padding: 14px 18px;
-      display: flex; align-items: center;
       margin-bottom: 20px;
     }
     .avatar {
+      display: table-cell;
+      width: 44px;
+      height: 54px;
+      vertical-align: middle;
+    }
+    .avatar-in {
       width: 44px; height: 44px;
-      border-radius: 12px;
-      margin-right: 14px;
+      border-radius: 50%;
       background: #0ea5e9;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; color: #fff;
-      flex-shrink: 0;
+      color: #fff;
+      line-height: 44px;
+      text-align: center;
+      font-size: 18px; font-weight: 700;
+      overflow: hidden;
+      display: block;
+    }
+    .avatar-in img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 50%;
+    }
+    .sc-text {
+      display: table-cell;
+      vertical-align: middle;
+      padding-left: 14px;
     }
     .student-name {
       font-size: 15px; font-weight: 700; color: #0c1a2e;
@@ -379,16 +409,21 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
     /* ── Info rows ── */
     .info-section { margin-bottom: 18px; }
     .info-row {
-      display: flex; align-items: center; justify-content: space-between;
+      display: table;
+      width: 100%;
       padding: 9px 0;
       border-bottom: 1px solid #f1f5f9;
     }
     .info-row:last-child { border-bottom: none; }
     .info-label {
+      display: table-cell;
+      width: 40%;
+      vertical-align: middle;
       font-size: 12px; color: #94a3b8; font-weight: 500;
-      display: flex; align-items: center;
     }
     .info-value {
+      display: table-cell;
+      vertical-align: middle;
       font-size: 13px; color: #1e293b; font-weight: 600;
       font-family: 'Noto Sans Bengali', 'Inter', sans-serif;
       overflow-wrap: anywhere;
@@ -417,28 +452,31 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       letter-spacing: 0.8px; margin-bottom: 14px; position: relative; z-index: 1;
     }
     .amount-breakdown {
-      display: flex; justify-content: space-between;
+      display: table;
+      width: 100%;
       margin-bottom: 14px; position: relative; z-index: 1;
     }
-    .amt-item { flex: 1; min-width: 0; margin: 0 5px; }
-    .amt-item:first-child { margin-left: 0; }
+    .amt-item {
+      display: table-cell;
+      vertical-align: top;
+      font-size: 13px;
+    }
+    .amt-item + .amt-item { text-align: right; }
     .amt-item-label { font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
     .amt-item-val { font-size: 15px; font-weight: 700; }
     .amt-fee { color: #cbd5e1; }
     .amt-disc { color: #f87171; }
-    .amt-divider {
-      width: 1px; background: rgba(255,255,255,0.1); flex-shrink: 0; margin: 0 4px;
-    }
     .total-row {
-      display: flex; align-items: center; justify-content: space-between;
+      display: table;
+      width: 100%;
       background: rgba(56,189,248,0.15);
       border: 1px solid rgba(56,189,248,0.25);
       border-radius: 10px;
       padding: 10px 14px;
       position: relative; z-index: 1;
     }
-    .total-label { font-size: 12px; color: rgba(255,255,255,0.7); font-weight: 500; }
-    .total-val { font-size: 22px; font-weight: 800; color: #38bdf8; letter-spacing: -0.5px; }
+    .total-label { display: table-cell; vertical-align: middle; font-size: 12px; color: rgba(255,255,255,0.7); font-weight: 500; }
+    .total-val { display: table-cell; vertical-align: middle; text-align: right; font-size: 22px; font-weight: 800; color: #38bdf8; letter-spacing: -0.5px; }
 
     /* ── Payment method chip ── */
     .payment-chip {
@@ -470,10 +508,18 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       font-size: 10px; color: #94a3b8; letter-spacing: 0.3px;
     }
     .footer-sig {
+      display: table;
+      width: 100%;
       margin-top: 20px;
-      display: flex; justify-content: space-between; align-items: flex-end;
     }
+    .sig-cell {
+      display: table-cell;
+      width: 50%;
+      vertical-align: bottom;
+    }
+    .sig-cell + .sig-cell { text-align: right; }
     .sig-line {
+      display: inline-block;
       width: 110px; border-top: 1.5px solid #cbd5e1; padding-top: 6px;
       font-size: 10px; color: #94a3b8; text-align: center;
     }
@@ -490,7 +536,7 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
       <div class="header">
         <div class="header-top">
           <img class="logo-circle" src="/techely-mark.svg" alt="" />
-          <div>
+          <div class="ht-text">
             <div class="inst-name">${escapeHtml(r.instituteName)}</div>
             ${r.instituteAddress ? `<div class="inst-sub">${escapeHtml(r.instituteAddress)}</div>` : ''}
             ${r.institutePhone ? `<div class="inst-sub">${escapeHtml(r.institutePhone)}</div>` : ''}
@@ -501,11 +547,11 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
           <span>Fee Receipt &nbsp;·&nbsp; ফি রশিদ</span>
         </div>
         <div class="receipt-no-row">
-          <div>
+          <div class="receipt-no-cell">
             <div class="receipt-no-label">Receipt Number</div>
             <div class="receipt-no-val">${escapeHtml(r.receiptNo)}</div>
           </div>
-          <div class="receipt-date">
+          <div class="receipt-no-cell receipt-date">
             <div class="receipt-no-label">Date</div>
             <div class="receipt-no-val" style="font-size:13px">${escapeHtml(r.date)}</div>
           </div>
@@ -520,8 +566,10 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
 
         <!-- Student card -->
         <div class="student-card">
-          <div class="avatar">${escapeHtml(r.studentName.charAt(0).toUpperCase())}</div>
-          <div>
+          <div class="avatar">
+            <div class="avatar-in">${escapeHtml(r.studentName.charAt(0).toUpperCase())}</div>
+          </div>
+          <div class="sc-text">
             <div class="student-name">${escapeHtml(r.studentName)}</div>
             ${r.studentId ? `<div class="student-meta">${escapeHtml(r.studentId)}</div>` : ''}
             ${r.batchName ? `<div class="student-batch">${escapeHtml(r.batchName)}</div>` : ''}
@@ -590,8 +638,8 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
         <div class="footer-thanks">ধন্যবাদ আপনার পেমেন্টের জন্য</div>
         <div class="footer-sub">Thank you for your payment &nbsp;·&nbsp; Computer-generated receipt</div>
         <div class="footer-sig">
-          <div class="sig-line">Student Signature</div>
-          <div class="sig-line">Authorized By</div>
+          <div class="sig-cell"><span class="sig-line">Student Signature</span></div>
+          <div class="sig-cell"><span class="sig-line">Authorized By</span></div>
         </div>
         <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)} &nbsp;·&nbsp; All rights reserved</div>
       </div>
@@ -638,6 +686,8 @@ export async function generateStudentReceipt(r: StudentReceiptData): Promise<voi
 export interface ResultCardData {
   studentName: string;
   studentId?: string;
+  /** Public photo URL from students.photo_url (rendered as a round avatar). */
+  photoUrl?: string;
   examTitle: string;
   subject: string;
   score: number;
@@ -659,6 +709,10 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
   const fmtTime = (s?: number) => (!s ? '—' : `${Math.floor(s / 60)}m ${s % 60}s`);
 
   const accent = passed ? '#10b981' : '#ef4444';
+  // The card is 600px wide (was 420px) so the rasterized text is larger and
+  // readable when fitted to A4 width; the layout below uses ONLY html2canvas-safe
+  // constructs — display:table rows, absolute positioning, explicit margins.
+  // (html2canvas 1.4.1 mis-renders flex `gap`, grid, and space-between rows.)
   const html = /* html */ `<!DOCTYPE html>
 <html lang="bn">
 <head>
@@ -669,132 +723,138 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Inter', 'Noto Sans Bengali', sans-serif;
-      background: #ffffff;
+    body { font-family: 'Inter', 'Noto Sans Bengali', sans-serif; background: #ffffff; }
+    .wrap { padding: 0 8px; }
+    .card { width: 600px; background: #fff; border-radius: 18px; border: 1px solid #e2e8f0; overflow: hidden; }
+
+    /* ── Table-row helper (html2canvas renders display:table reliably) ── */
+    .t { display: table; width: 100%; }
+    .tr { display: table-row; }
+    .td { display: table-cell; vertical-align: middle; }
+
+    /* ── Header ── */
+    .header { background: #0b1120; padding: 26px 26px 30px; }
+    .h-logo { width: 44px; height: 44px; object-fit: cover; border-radius: 12px; display: block; }
+    .h-inn { padding-left: 14px; }
+    .inst-name { font-size: 17px; font-weight: 800; color: #fff; overflow-wrap: anywhere; }
+    .inst-sub { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 3px; letter-spacing: 1.5px; text-transform: uppercase; }
+    .badge { display: inline-block; margin: 0 0 16px; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 6px 14px; }
+    .badge span { font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.8px; text-transform: uppercase; }
+    .score-cell { width: 55%; }
+    .score-sub { font-size: 12px; color: #7c8b9f; margin-bottom: 6px; }
+    .score-big { font-size: 56px; font-weight: 800; line-height: 1; color: ${accent}; }
+    .score-frac { font-size: 13px; color: #7c8b9f; margin-top: 6px; }
+    .grade-cell { vertical-align: bottom !important; text-align: right; }
+    .grade-pill { display: inline-block; background: #a78bfa; border-radius: 14px; padding: 10px 22px; color: #0b1120; font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+    .sub-label { font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+
+    /* ── Body ── */
+    .body { padding: 20px 26px 26px; }
+    .stu { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; }
+    .avatar-w { width: 62px; }
+    .avatar {
+      width: 54px; height: 54px; border-radius: 50%;
+      background: #0ea5e9; color: #fff;
+      line-height: 54px; text-align: center; font-size: 22px; font-weight: 700;
+      overflow: hidden; display: block;
     }
-    .wrap { display: flex; flex-direction: column; align-items: center; }
-    .card { width: 420px; max-width: 100%; background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; }
-    /* Solid app-palette header (navy #0b1120), no gradients — html2canvas-safe. */
-    .header { background: #0b1120; padding: 24px 24px 28px; }
-    .inst-row { display: flex; align-items: center; margin-bottom: 18px; }
-    .inst-logo { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; margin-right: 12px; object-fit: cover; }
-    .inst-name { font-size: 15px; font-weight: 800; color: #fff; overflow-wrap: anywhere; }
-    .result-badge { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 100px; padding: 5px 12px; margin-bottom: 14px; }
-    .result-badge span { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.8px; text-transform: uppercase; }
-    .score-row { display: flex; align-items: flex-end; justify-content: space-between; }
-    .score-sub { font-size: 12px; color: #64748b; margin-bottom: 4px; }
-    .score-big { font-size: 48px; font-weight: 800; line-height: 1; color: ${accent}; }
-    .grade-pill { background: #a78bfa; border-radius: 100px; padding: 6px 16px; color: #0b1120; font-size: 18px; font-weight: 800; letter-spacing: 1px; }
-    .body { padding: 18px 24px 24px; }
-    .student-card { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; margin-bottom: 16px; }
-    .avatar { width: 40px; height: 40px; border-radius: 10px; margin-right: 14px; background: #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #062033; flex-shrink: 0; }
-    .student-name { font-size: 14px; font-weight: 700; color: #0b1120; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
-    .student-id { font-size: 11px; color: #0369a1; margin-top: 2px; font-weight: 600; }
-    /* html2canvas has NO grid and NO flex "gap" support — use inline-block with
-       explicit margins AND font-size:0 (kills the whitespace between inline
-       blocks that would otherwise wrap the third box off the row). */
-    .stats-grid { display: block; font-size: 0; margin-bottom: 16px; }
-    .stat-box {
-      display: inline-block;
-      width: 32%;
-      margin: 0 0.6%;
-      font-size: 12px;
-      box-sizing: border-box;
-      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
-      padding: 10px 6px; text-align: center;
-      vertical-align: top;
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .stu-in { padding-left: 14px; }
+    .student-name { font-size: 16px; font-weight: 700; color: #0b1120; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
+    .student-id { font-size: 12px; color: #0369a1; margin-top: 3px; font-weight: 600; }
+
+    .stats { margin-bottom: 18px; }
+    .stat {
+      display: table-cell; width: 33.33%;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+      padding: 12px 6px; text-align: center; vertical-align: middle;
+      font-size: 13px;
     }
-    .stat-box:first-child { margin-left: 0; }
-    .stat-box:last-child { margin-right: 0; }
-    .stat-val { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
+    .stat + .stat { padding-left: 10px; }
+    .stat-val { font-size: 22px; font-weight: 800; margin-bottom: 3px; }
     .stat-correct { color: #10b981; }
     .stat-wrong { color: #ef4444; }
     .stat-skip { color: #64748b; }
-    .stat-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Noto Sans Bengali', sans-serif; }
-    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+    .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Noto Sans Bengali', sans-serif; }
+
+    .info-row { padding: 9px 2px; border-bottom: 1px solid #f1f5f9; }
     .info-row:last-child { border-bottom: none; }
-    .info-label { font-size: 11px; color: #94a3b8; }
-    .info-val { font-size: 12px; color: #0f172a; font-weight: 600; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; text-align: right; }
-    .pass-stamp { margin-top: 14px; background: #f8fafc; border: 2px solid ${accent}; border-radius: 12px; padding: 12px; text-align: center; }
-    .pass-stamp-icon { font-size: 24px; color: ${accent}; margin-bottom: 2px; }
-    .pass-stamp-text { font-size: 16px; font-weight: 800; letter-spacing: 1px; color: ${accent}; }
-    .pass-stamp-sub { font-size: 10px; margin-top: 4px; color: #475569; font-family: 'Noto Sans Bengali', sans-serif; }
-    .footer { background: #f8fafc; border-top: 1px dashed #e2e8f0; padding: 12px 24px; text-align: center; }
-    .footer-sub { font-size: 10px; color: #94a3b8; }
-    .watermark { font-size: 9px; color: #cbd5e1; text-align: center; margin-top: 8px; }
+    .info-label { font-size: 12px; color: #94a3b8; width: 34%; }
+    .info-val { font-size: 13px; color: #0f172a; font-weight: 600; text-align: right; font-family: 'Noto Sans Bengali', sans-serif; overflow-wrap: anywhere; }
+
+    .pass { margin-top: 16px; background: #f8fafc; border: 2px solid ${accent}; border-radius: 14px; padding: 14px; text-align: center; }
+    .pass-icon { font-size: 26px; color: ${accent}; margin-bottom: 4px; }
+    .pass-text { font-size: 18px; font-weight: 800; letter-spacing: 1.5px; color: ${accent}; }
+    .pass-sub { font-size: 12px; margin-top: 5px; color: #475569; font-family: 'Noto Sans Bengali', sans-serif; }
+
+    .footer { background: #f8fafc; border-top: 1px dashed #e2e8f0; padding: 14px 26px; text-align: center; }
+    .footer-sub { font-size: 11px; color: #94a3b8; }
+    .watermark { font-size: 10px; color: #cbd5e1; text-align: center; margin-top: 6px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
       <div class="header">
-        <div class="inst-row">
-          <img class="inst-logo" src="/techely-mark.svg" alt="" />
-          <div class="inst-name">${escapeHtml(r.instituteName)}</div>
-        </div>
-        <div class="result-badge">
-          <span>Result Card · ফলাফল কার্ড</span>
-        </div>
-        <div class="score-row">
-          <div>
-            <div class="score-sub">Score</div>
-            <div class="score-big">${pct}%</div>
-            <div style="color:#64748b;font-size:11px;margin-top:2px">${r.score} / ${r.totalMarks}</div>
+        <div class="t">
+          <div class="td" style="width:52px"><img class="h-logo" src="/techely-mark.svg" alt="" /></div>
+          <div class="td h-inn">
+            <div class="inst-name">${escapeHtml(r.instituteName)}</div>
+            <div class="inst-sub">Coaching Academy</div>
           </div>
-          <div class="grade-pill">${grade}</div>
+        </div>
+        <div class="badge"><span>RESULT CARD · ফলাফল কার্ড</span></div>
+        <div class="t">
+          <div class="td score-cell">
+            <div class="sub-label">Score</div>
+            <div class="score-big">${pct}%</div>
+            <div class="score-frac">${r.score} / ${r.totalMarks}</div>
+          </div>
+          <div class="td grade-cell"><span class="grade-pill">${grade}</span></div>
         </div>
       </div>
+
       <div class="body">
-        <div class="student-card">
-          <div class="avatar">${escapeHtml(r.studentName.charAt(0).toUpperCase())}</div>
-          <div>
+        <div class="t stu">
+          <div class="td avatar-w">
+            <div class="avatar">
+              ${r.photoUrl ? `<img src="${escapeHtml(r.photoUrl)}" alt="" />` : escapeHtml(r.studentName.charAt(0).toUpperCase())}
+            </div>
+          </div>
+          <div class="td stu-in">
             <div class="student-name">${escapeHtml(r.studentName)}</div>
             ${r.studentId ? `<div class="student-id">${escapeHtml(r.studentId)}</div>` : ''}
           </div>
         </div>
 
-        <div class="stats-grid">
-          <div class="stat-box">
+        <div class="t stats">
+          <div class="stat">
             <div class="stat-val stat-correct">${r.correctCount}</div>
             <div class="stat-label">সঠিক</div>
           </div>
-          <div class="stat-box">
+          <div class="stat">
             <div class="stat-val stat-wrong">${r.wrongCount}</div>
             <div class="stat-label">ভুল</div>
           </div>
-          <div class="stat-box">
+          <div class="stat">
             <div class="stat-val stat-skip">${r.timeTaken !== null && r.timeTaken !== undefined ? fmtTime(r.timeTaken) : '—'}</div>
             <div class="stat-label">সময়</div>
           </div>
         </div>
 
-        <div>
-          <div class="info-row">
-            <span class="info-label">Exam</span>
-            <span class="info-val">${escapeHtml(r.examTitle)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Subject</span>
-            <span class="info-val">${escapeHtml(r.subject)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Pass Marks</span>
-            <span class="info-val">${r.passMarks} / ${r.totalMarks}</span>
-          </div>
-          ${r.rank ? `<div class="info-row"><span class="info-label">Rank</span><span class="info-val" style="color:#7c3aed">#${r.rank}</span></div>` : ''}
-          <div class="info-row">
-            <span class="info-label">Date</span>
-            <span class="info-val">${escapeHtml(r.submittedAt)}</span>
-          </div>
-        </div>
+        <div class="t info-row"><div class="td info-label">Exam</div><div class="td info-val">${escapeHtml(r.examTitle)}</div></div>
+        <div class="t info-row"><div class="td info-label">Subject</div><div class="td info-val">${escapeHtml(r.subject)}</div></div>
+        <div class="t info-row"><div class="td info-label">Pass Marks</div><div class="td info-val">${r.passMarks} / ${r.totalMarks}</div></div>
+        ${r.rank ? `<div class="t info-row"><div class="td info-label">Rank</div><div class="td info-val" style="color:#7c3aed">#${r.rank}</div></div>` : ''}
+        <div class="t info-row"><div class="td info-label">Date</div><div class="td info-val">${escapeHtml(r.submittedAt)}</div></div>
 
-        <div class="pass-stamp">
-          <div class="pass-stamp-icon">${passed ? '✔' : '✘'}</div>
-          <div class="pass-stamp-text">${passed ? 'PASSED' : 'FAILED'}</div>
-          <div class="pass-stamp-sub">${passed ? 'অভিনন্দন! তুমি পরীক্ষায় পাস করেছ।' : 'আরও পড়াশোনা করো। পরেরবার পারবে!'}</div>
+        <div class="pass">
+          <div class="pass-icon">${passed ? '✔' : '✘'}</div>
+          <div class="pass-text">${passed ? 'PASSED' : 'FAILED'}</div>
+          <div class="pass-sub">${passed ? 'অভিনন্দন! তুমি পরীক্ষায় পাস করেছ।' : 'আরও পড়াশোনা করো। পরেরবার পারবে!'}</div>
         </div>
       </div>
+
       <div class="footer">
         <div class="footer-sub">Computer-generated result card · ${escapeHtml(r.instituteName)}</div>
         <div class="watermark">© ${new Date().getFullYear()} ${escapeHtml(r.instituteName)}</div>

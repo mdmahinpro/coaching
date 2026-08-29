@@ -134,6 +134,7 @@ export default function PortalResultsPage() {
       await generateResultCard({
         studentName: student?.name ?? '',
         studentId: student?.student_id,
+        photoUrl: student?.photo_url,
         examTitle: sub.exam?.title ?? '',
         subject: sub.exam?.subject ?? '',
         score: sub.score,
