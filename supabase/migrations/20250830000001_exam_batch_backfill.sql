@@ -35,6 +35,13 @@ SET batch_ids = ARRAY[batch_id]
 WHERE batch_id IS NOT NULL AND (batch_ids IS NULL OR cardinality(batch_ids) = 0);
 
 -- ── 2. Strict portal_get_exams (drop + recreate, returns batch_ids) ──
+--
+-- STRICT per-batch scoping: a student may ONLY see exams that target their
+-- own batch. `batch_ids` is authoritative; `batch_id` is the legacy single-
+-- batch fallback (backfilled into batch_ids by step 1 / re-run of this file).
+-- An exam with NO target batch (both NULL) is treated as UNASSIGNED and is
+-- returned to no student — it must never leak into every portal (the previous
+-- `batch_ids IS NULL OR ...` clause leaked unassigned exams to everyone).
 DROP FUNCTION IF EXISTS portal_get_exams(TEXT);
 
 CREATE FUNCTION portal_get_exams(p_token TEXT)
@@ -50,12 +57,15 @@ DECLARE v_sid UUID := _student_id_from_token(p_token); v_batch UUID;
 BEGIN
   IF v_sid IS NULL THEN RAISE EXCEPTION 'Session expired. Please log in again.'; END IF;
   SELECT s.batch_id INTO v_batch FROM students s WHERE s.id = v_sid;
+  IF v_batch IS NULL THEN
+    RETURN; -- a student with no batch sees no batch-scoped exams
+  END IF;
   RETURN QUERY
   SELECT e.id, e.title, e.subject, e.exam_date, e.duration_minutes,
          e.total_marks, e.pass_marks, e.status, e.batch_id, e.batch_ids,
          e.start_time, e.end_time
   FROM exams e
-  WHERE e.batch_ids IS NULL OR v_batch = ANY(e.batch_ids)
+  WHERE v_batch = ANY(COALESCE(e.batch_ids, ARRAY[e.batch_id]::uuid[]))
   ORDER BY e.exam_date DESC;
 END;
 $fn$;
@@ -118,6 +128,19 @@ BEGIN
   SELECT count(*) INTO v_leak
   FROM portal_get_exams(v_tok) WHERE title = '__E2E Scoped B__';
 
+  -- STRICT: an exam with NO batch target (unassigned) must NOT appear for
+  -- any student — it must never leak into every portal.
+  INSERT INTO exams (title, subject, status, exam_date, duration_minutes,
+                     total_marks, pass_marks, timer_enabled)
+  VALUES ('__E2E Unassigned__', 'General', 'active', CURRENT_DATE, 10, 10, 4, true)
+  RETURNING id INTO v_exam;
+  SELECT count(*) INTO v_leak
+  FROM portal_get_exams(v_tok) WHERE title = '__E2E Unassigned__';
+  IF v_leak <> 0 THEN
+    RAISE EXCEPTION 'batch backfill: UNASSIGNED exam leaked into every student (got %)', v_leak;
+  END IF;
+  -- Restore v_exam to the legacy-A id used for cleanup by title anyway; safe.
+
   IF v_n <> 1 THEN
     RAISE EXCEPTION 'batch backfill: legacy batch-A exam not visible to batch-A student (got %)', v_n;
   END IF;
@@ -131,6 +154,6 @@ BEGIN
   DELETE FROM exams WHERE title LIKE '__E2E %';
   DELETE FROM batches WHERE name LIKE '__E2E Backfill %';
 
-  RAISE NOTICE 'verify OK: batch scoping strict — legacy A visible, batch B not leaked.';
+  RAISE NOTICE 'verify OK: strict batch scoping — legacy A visible, batch B + unassigned hidden.';
 END
 $verify$;

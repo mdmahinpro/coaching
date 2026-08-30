@@ -1097,10 +1097,18 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setInfo((p) => ({ ...p, batch_ids: [] }))}
+                  onClick={() =>
+                    setInfo((p) => ({
+                      ...p,
+                      // Strictly requires the exam to appear for a batch; empty
+                      // selection = unassigned = hidden from ALL students, so
+                      // "All Batches" expands to every active batch's ID.
+                      batch_ids: batches.map((b) => b.id),
+                    }))
+                  }
                   className={cn(
                     'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
-                    info.batch_ids.length === 0
+                    batches.length > 0 && info.batch_ids.length === batches.length
                       ? 'bg-sky-500/20 border-sky-400/40 text-sky-400'
                       : 'border-white/10 text-slate-400 hover:border-white/20'
                   )}
@@ -1136,8 +1144,8 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
               </div>
               <p className="text-slate-600 text-xs mt-1.5">
                 {info.batch_ids.length === 0
-                  ? 'Visible to every batch'
-                  : `${info.batch_ids.length} batch(es) selected`}
+                  ? '⚠ No batch selected — students will NOT see this exam'
+                  : `Only ${info.batch_ids.length} batch(es) will see this exam`}
               </p>
             </div>
             <div>

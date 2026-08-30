@@ -38,16 +38,19 @@ export function getInitials(name: string): string {
 }
 
 /**
- * Client-side batch scoping for exams (defense-in-depth on top of
- * portal_get_exams). `batch_ids` is authoritative when present; `batch_id`
- * is the legacy single-batch fallback. NULL/empty on both = no target batch =
- * the exam genuinely applies to all batches. A student with no batch gets
- * nothing when an exam targets specific batches.
+ * Strict client-side batch scoping for exams (defense-in-depth on top of
+ * portal_get_exams). A student can see an exam ONLY when it targets their
+ * batch: `batch_ids` is authoritative, `batch_id` is the legacy single-batch
+ * fallback. An exam with NO batch target at all is considered unassigned and
+ * is shown to no student — it must never leak into every portal.
  */
 export function isExamForBatch(
   exam: { batch_ids?: string[] | null; batch_id?: string | null },
   batchId?: string | null
 ): boolean {
+  if (!batchId) {
+    return false; // student has no batch → nothing that targets batches
+  }
   const target =
     exam.batch_ids && exam.batch_ids.length > 0
       ? exam.batch_ids
@@ -55,10 +58,7 @@ export function isExamForBatch(
         ? [exam.batch_id]
         : null;
   if (!target) {
-    return true; // no target batch → assigned to all batches
-  }
-  if (!batchId) {
-    return false; // student has no batch, exam targets specific batches
+    return false; // unassigned exam → hidden from every student
   }
   return target.includes(batchId);
 }

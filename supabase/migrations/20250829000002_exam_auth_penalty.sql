@@ -72,15 +72,17 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $fn$
 DECLARE
-  v_status   TEXT;
-  v_start    TIMESTAMPTZ;
-  v_end      TIMESTAMPTZ;
-  v_batchids UUID[];
-  v_total    INTEGER;
-  v_strict   BOOLEAN;
+  v_status    TEXT;
+  v_start     TIMESTAMPTZ;
+  v_end       TIMESTAMPTZ;
+  v_batchids  UUID[];
+  v_batchid   UUID;
+  v_total     INTEGER;
+  v_strict    BOOLEAN;
 BEGIN
-  SELECT e.status, e.start_time, e.end_time, e.batch_ids, e.total_marks, e.strict_mode
-    INTO v_status, v_start, v_end, v_batchids, v_total, v_strict
+  SELECT e.status, e.start_time, e.end_time, e.batch_ids, e.batch_id,
+         e.total_marks, e.strict_mode
+    INTO v_status, v_start, v_end, v_batchids, v_batchid, v_total, v_strict
   FROM exams e WHERE e.id = p_exam_id;
 
   IF v_status IS NULL THEN
@@ -102,9 +104,17 @@ BEGIN
     END IF;
   END IF;
 
-  -- #10b batch assignment: an exam scoped to batches requires the student
-  -- to belong to one of them.
-  IF v_batchids IS NOT NULL AND (p_student_batch IS NULL OR NOT (p_student_batch = ANY(v_batchids))) THEN
+  -- #10b batch assignment (STRICT): an exam is joinable ONLY by a student of
+  -- a batch it targets (`batch_ids` authoritative, `batch_id` legacy fallback).
+  -- An exam with NO target batch is UNASSIGNED and no student may join it —
+  -- it must never fall through to "everyone". Empty/NULL target arrays are
+  -- rejected explicitly (ANY(ARRAY[NULL]) is NULL, so the plain check alone
+  -- would wrongly admit everyone).
+  IF p_student_batch IS NULL
+     OR (v_batchids IS NULL AND v_batchid IS NULL)
+     OR (v_batchids IS NOT NULL AND cardinality(v_batchids) = 0)
+     OR NOT (p_student_batch = ANY(COALESCE(v_batchids, ARRAY[v_batchid]::uuid[])))
+  THEN
     RAISE EXCEPTION 'EXAM_NOT_ASSIGNED';
   END IF;
 
