@@ -1328,7 +1328,64 @@ function AuditLogTab() {
           q = q.eq('action', filter);
         }
         const { data } = await q;
-        const rows = data ?? [];
+        let rows = (data ?? []) as any[];
+        // Payment rows approved via the student portal can arrive from the
+        // server without student_name / month / new_data when the live
+        // `admin_approve_payment` predates the full-payload audit fix. Fill
+        // those gaps from the fee row + its note JSON so the Audit Log always
+        // shows which student's payment was received. Best-effort: a lookup
+        // failure never breaks the list.
+        if (rows.some((r: any) => r.action === 'payment_recorded')) {
+          try {
+            const feeIds = [
+              ...new Set(
+                rows
+                  .filter((r: any) => r.action === 'payment_recorded' && r.fee_id)
+                  .map((r: any) => r.fee_id)
+              ),
+            ];
+            if (feeIds.length > 0) {
+              const { data: fees } = await supabase
+                .from('fees')
+                .select('id, month, amount, status, note, student:students(id, name, student_id)')
+                .in('id', feeIds);
+              const feeById = new Map((fees ?? []).map((f: any) => [f.id, f]));
+              rows = rows.map((r: any) => {
+                if (r.action !== 'payment_recorded' || !r.fee_id) {
+                  return r;
+                }
+                const f = feeById.get(r.fee_id);
+                if (!f) {
+                  return r;
+                }
+                const enriched = { ...r };
+                if (!enriched.student_name && f.student?.name) {
+                  enriched.student_name = f.student.name;
+                }
+                if (!enriched.student_code && f.student?.student_id) {
+                  enriched.student_code = f.student.student_id;
+                }
+                if (!enriched.month && f.month) {
+                  enriched.month = f.month;
+                }
+                if (!enriched.new_data && f.note) {
+                  try {
+                    enriched.new_data = { status: f.status, ...JSON.parse(f.note) };
+                  } catch {
+                    /* keep null — renderer shows "—" */
+                  }
+                }
+                if (!enriched.old_data) {
+                  // Portal approvals only touch unpaid fees, so "before" was pending.
+                  enriched.old_data = { status: f.status === 'paid' ? 'pending' : f.status };
+                }
+                return enriched;
+              });
+            }
+          } catch {
+            /* best-effort enrichment must never break the audit list */
+          }
+        }
         setLogs((prev) => (currentPage === 0 ? rows : [...prev, ...rows]));
         setHasMore(rows.length === PER_PAGE);
       } catch (err) {

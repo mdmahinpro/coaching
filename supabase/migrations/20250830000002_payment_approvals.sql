@@ -169,10 +169,17 @@ RETURNS TABLE (receipt_no TEXT, amount NUMERIC)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
 AS $fn$
 DECLARE
-  v_admin   TEXT;
-  v_appr    RECORD;
-  v_receipt TEXT;
-  v_meta    TEXT;
+  v_admin     TEXT;
+  v_appr      RECORD;
+  v_receipt   TEXT;
+  v_meta      TEXT;
+  v_stu_name  TEXT;
+  v_stu_code  TEXT;
+  v_month     TEXT;
+  v_amount    NUMERIC;
+  v_old_status TEXT;
+  v_old_note  TEXT;
+  v_old       JSONB;
 BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Admin authorization required'; END IF;
   SELECT (current_setting('request.jwt.claims', true)::jsonb ->> 'email') INTO v_admin;
@@ -184,6 +191,19 @@ BEGIN
     RAISE EXCEPTION 'APPROVAL_NOT_FOUND';
   END IF;
 
+  -- Snapshot student + fee BEFORE marking the fee paid, so the audit "before"
+  -- state is the true pre-payment state (portal approvals only ever target
+  -- unpaid fees, so f.status at this point is guaranteed NOT 'paid').
+  SELECT s.name, s.student_id, f.month, f.amount, f.status, f.note
+    INTO v_stu_name, v_stu_code, v_month, v_amount, v_old_status, v_old_note
+  FROM students s JOIN fees f ON f.id = v_appr.fee_id
+  WHERE s.id = v_appr.student_id;
+  v_old := jsonb_build_object(
+    'status', v_old_status,
+    'note', v_old_note,
+    'amount', v_amount
+  );
+
   v_receipt := 'RCT-' || to_char(now(), 'YYYYMMDD') || '-' ||
                lpad(floor(random() * 9000 + 1000)::int::text, 4, '0');
 
@@ -192,7 +212,7 @@ BEGIN
     'receipt_no', v_receipt,
     'payment_method', v_appr.method,
     'transaction_id', v_appr.transaction_id,
-    'final_amount', (SELECT f.amount FROM fees f WHERE f.id = v_appr.fee_id),
+    'final_amount', v_amount,
     'source', 'portal-approval'
   )::text;
 
@@ -208,16 +228,16 @@ BEGIN
 
   -- Audit entry — same table + column shape as logFeeAudit() on the Fees page,
   -- so the Audit Log tab renders Student / Month / Summary and before/after
-  -- instead of "—". Final amount comes from the fees row (already in v_meta).
+  -- instead of "—". Uses the pre-payment snapshot for old_data (NOT the
+  -- post-update fee row, which would wrongly report status='paid' as "before").
   BEGIN
     INSERT INTO fee_audit_logs
       (fee_id, action, admin_email, student_name, student_code, month, old_data, new_data)
-    SELECT v_appr.fee_id, 'payment_recorded', v_admin, s.name, s.student_id, f.month,
-           jsonb_build_object('status', f.status, 'note', f.note, 'amount', f.amount),
-           (v_meta::jsonb || jsonb_build_object('status', 'paid', 'amount', f.amount))::jsonb
-    FROM students s
-    JOIN fees f ON f.id = v_appr.fee_id
-    WHERE s.id = v_appr.student_id;
+    VALUES (
+      v_appr.fee_id, 'payment_recorded', v_admin, v_stu_name, v_stu_code, v_month,
+      v_old,
+      (v_meta::jsonb || jsonb_build_object('status', 'paid', 'amount', v_amount))::jsonb
+    );
   EXCEPTION WHEN OTHERS THEN
     NULL; -- audit must never block the payment flow
   END;
