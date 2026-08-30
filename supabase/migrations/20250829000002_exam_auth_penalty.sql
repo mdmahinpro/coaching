@@ -560,7 +560,7 @@ COMMIT;
 DO $verify$
 DECLARE
   v_col BOOLEAN;
-  v_probe UUID;
+  v_probe INT; -- holds COUNT(*) results, NOT a uuid (was UUID -> 22P02 on re-run)
   v_sid UUID; v_b1 UUID; v_b2 UUID; v_exam UUID;
   v_x TEXT;
   v_cards INT;
