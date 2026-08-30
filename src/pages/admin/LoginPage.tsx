@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { Lock, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { Logo } from '@/components/shared/Logo';
 import toast from 'react-hot-toast';
 
 const schema = z.object({
@@ -85,12 +86,7 @@ export default function AdminLoginPage() {
           <div className="card-glass p-8">
             {/* Header */}
             <div className="text-center mb-8">
-              <img
-                src="/techely-mark.svg"
-                alt="Techely"
-                className="w-14 h-14 rounded-2xl mx-auto mb-4 glow-blue"
-                draggable={false}
-              />
+              <Logo className="w-14 h-14 rounded-2xl mx-auto mb-4 glow-blue" />
               <h1 className="font-inter font-black text-2xl text-white mb-1">Admin Panel</h1>
               <p className="text-slate-500 text-sm">{settings.centerName}</p>
               <span className="badge-blue mt-2 inline-block">লগইন</span>

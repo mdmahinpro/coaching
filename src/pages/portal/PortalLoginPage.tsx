@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Phone, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { Logo } from '@/components/shared/Logo';
 import toast from 'react-hot-toast';
 
 export default function PortalLoginPage() {
@@ -54,12 +55,7 @@ export default function PortalLoginPage() {
       >
         <div className="card-glass p-8">
           <div className="text-center mb-7">
-            <img
-              src="/techely-mark.svg"
-              alt="Techely"
-              className="w-14 h-14 rounded-2xl mx-auto mb-4 shadow-lg shadow-violet-500/25"
-              draggable={false}
-            />
+            <Logo className="w-14 h-14 rounded-2xl mx-auto mb-4 shadow-lg shadow-violet-500/25" />
             <h1 className="font-inter font-black text-xl text-white mb-1">ছাত্র পোর্টাল</h1>
             <p className="text-slate-400 text-sm">{settings.centerName}</p>
           </div>

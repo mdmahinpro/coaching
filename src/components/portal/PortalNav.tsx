@@ -11,6 +11,7 @@ import {
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { Avatar } from '@/components/shared/Avatar';
+import { Logo } from '@/components/shared/Logo';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
@@ -38,7 +39,7 @@ export function PortalNav() {
       <nav className="fixed top-0 inset-x-0 z-50 bg-navy-800/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <Link to="/portal/dashboard" className="flex items-center gap-2 shrink-0">
-            <img src="/techely-mark.svg" alt="Techely" className="w-7 h-7 rounded-lg" draggable={false} />
+            <Logo className="w-7 h-7 rounded-lg" />
             <span className="font-inter font-bold text-white text-sm hidden sm:block">
               {settings.centerName}
             </span>

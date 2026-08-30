@@ -22,6 +22,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { cn } from '@/lib/utils';
 import { Avatar } from '@/components/shared/Avatar';
+import { Logo } from '@/components/shared/Logo';
 
 const sections = [
   {
@@ -97,7 +98,7 @@ function SidebarContent({
               exit={{ opacity: 0, x: -10 }}
               className="flex items-center gap-2.5 overflow-hidden"
             >
-              <img src="/techely-mark.svg" alt="Techely" className="w-8 h-8 rounded-lg shrink-0 glow-blue" draggable={false} />
+              <Logo className="w-8 h-8 rounded-lg glow-blue" />
               <div className="min-w-0">
                 <p className="font-inter font-bold text-white text-sm truncate leading-tight">
                   {settings.centerName}
@@ -113,7 +114,7 @@ function SidebarContent({
               exit={{ opacity: 0 }}
               className="mx-auto w-8 h-8 rounded-lg glow-blue"
             >
-              <img src="/techely-mark.svg" alt="Techely" className="w-8 h-8 rounded-lg" draggable={false} />
+              <Logo className="w-8 h-8 rounded-lg" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -182,7 +183,7 @@ function SidebarContent({
       <div className="border-t border-navy-700/50 p-3 shrink-0">
         {!collapsed && (
           <div className="flex items-center gap-2.5 px-2 mb-3">
-            <Avatar name={name} size="sm" />
+            <Avatar name={name} size="sm" src={user?.user_metadata?.photo_url as string | undefined} />
             <div className="min-w-0">
               <p className="text-xs font-medium text-white truncate">{name}</p>
               <p className="text-[10px] text-sky-400">Administrator</p>

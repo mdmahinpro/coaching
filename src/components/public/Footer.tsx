@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Facebook, MessageCircle } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { Logo } from '@/components/shared/Logo';
 
 export function Footer() {
   const { settings } = useSettingsStore();
@@ -12,7 +13,7 @@ export function Footer() {
         {/* Brand */}
         <div className="md:col-span-2">
           <div className="flex items-center gap-2.5 mb-4">
-            <img src="/techely-mark.svg" alt="Techely" className="w-10 h-10 rounded-xl glow-blue" draggable={false} />
+            <Logo className="w-10 h-10 rounded-xl glow-blue" />
             <span className="font-inter font-bold text-white text-lg">{settings.centerName}</span>
           </div>
           <p className="text-slate-400 text-sm leading-relaxed max-w-xs mb-6">

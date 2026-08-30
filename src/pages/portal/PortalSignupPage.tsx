@@ -5,6 +5,7 @@ import { Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { Logo } from '@/components/shared/Logo';
 import { toast } from 'react-hot-toast';
 import { sanitize } from '@/lib/utils';
 
@@ -112,12 +113,7 @@ export default function PortalSignupPage() {
       >
         <div className="card-glass p-7">
           <div className="text-center mb-6">
-            <img
-              src="/techely-mark.svg"
-              alt="Techely"
-              className="w-12 h-12 rounded-xl mx-auto mb-3"
-              draggable={false}
-            />
+            <Logo className="w-12 h-12 rounded-xl mx-auto mb-3" />
             <h1 className="font-inter font-black text-xl text-white">ভর্তি আবেদন</h1>
             <p className="text-slate-400 text-sm">{settings.centerName}</p>
           </div>

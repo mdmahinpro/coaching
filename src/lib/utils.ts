@@ -38,6 +38,23 @@ export function getInitials(name: string): string {
 }
 
 /**
+ * Keep the browser-tab favicon in sync with the active site logo so the two
+ * always match. Replaces the <link rel="icon"> href (creating it if missing).
+ */
+export function applyFavicon(urlOrFallback: string): void {
+  const href = urlOrFallback || '/favicon.svg';
+  let link = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  if (link.getAttribute('href') !== href) {
+    link.setAttribute('href', href);
+  }
+}
+
+/**
  * Strict client-side batch scoping for exams (defense-in-depth on top of
  * portal_get_exams). A student can see an exam ONLY when it targets their
  * batch: `batch_ids` is authoritative, `batch_id` is the legacy single-batch

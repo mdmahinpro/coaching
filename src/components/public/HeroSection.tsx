@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, Users, BookOpen, Award, TrendingUp } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { Logo } from '@/components/shared/Logo';
 import { useEffect, useState } from 'react';
 import { useIntersection } from '@/hooks/useIntersection';
 
@@ -75,12 +76,7 @@ export function HeroSection() {
               transition={{ delay: 0.1 }}
               className="inline-flex items-center gap-2 mb-6"
             >
-              <img
-                src="/techely-mark.svg"
-                alt="Techely"
-                className="w-5 h-5 rounded"
-                draggable={false}
-              />
+              <Logo className="w-5 h-5 rounded" />
               <span className="badge-blue">ভর্তি চলছে ২০২৫</span>
             </motion.div>
 

@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useAdminNotifications } from '@/hooks/useAdminNotifications';
+import { DEFAULT_LOGO } from '@/components/shared/Logo';
+import { applyFavicon } from '@/lib/utils';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { StudentProtectedRoute } from '@/components/StudentProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -283,12 +285,17 @@ function AppRoutes() {
 
 function App() {
   const { initialize, teardown } = useAuthStore();
-  const { loadFromDB } = useSettingsStore();
+  const { loadFromDB, settings } = useSettingsStore();
   useEffect(() => {
     initialize();
     loadFromDB();
     return () => teardown();
   }, []);
+  // Keep favicon === logo: mirrors the active logo (custom or default) in the
+  // browser tab, so they can never drift apart.
+  useEffect(() => {
+    applyFavicon(settings.logoUrl || DEFAULT_LOGO);
+  }, [settings.logoUrl]);
   const base = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
   return (
     <ErrorBoundary>

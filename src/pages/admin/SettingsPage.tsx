@@ -21,10 +21,12 @@ import {
   ShieldOff,
   Lock as LockIcon,
   ClipboardList,
+  Camera,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { Avatar } from '@/components/shared/Avatar';
 
 type Tab = 'institute' | 'payment' | 'sms' | 'stats' | 'social' | 'appearance' | 'admins';
 const TABS: { id: Tab; label: string; icon: any }[] = [
@@ -62,6 +64,9 @@ export default function SettingsPage() {
   const [admins, setAdmins] = useState<{ email: string; created_at: string }[]>([]);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
+  // Admin profile picture
+  const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -74,6 +79,9 @@ export default function SettingsPage() {
       .then(({ data }) => {
         if (data.user?.email) {
           setAdminEmail(data.user.email);
+        }
+        if (data.user?.user_metadata?.photo_url) {
+          setAdminPhotoUrl(data.user.user_metadata.photo_url);
         }
       })
       .catch((err) => {
@@ -220,6 +228,74 @@ export default function SettingsPage() {
       handleSupabaseError(err);
     } finally {
       setLoadingAdmins(false);
+    }
+  };
+
+  /** Shrink an image to ≤1024px JPEG before upload (mirrors portal/student flow). */
+  const compressImage = (file: File): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        const MAX = 1024;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(objectUrl);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('compress failed'))), 'image/jpeg', 0.85);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('image load failed'));
+      };
+      img.src = objectUrl;
+    });
+
+  const handleAdminPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5 MB');
+      return;
+    }
+    setPhotoUploading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Not signed in');
+        return;
+      }
+      const blob = await compressImage(file);
+      const path = `admins/${user.id}-photo.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+      if (upErr) {
+        throw upErr;
+      }
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      // Persist on the auth user; the header/sidebar read it from user_metadata.
+      const { error: metaErr } = await supabase.auth.updateUser({
+        data: { photo_url: data.publicUrl },
+      });
+      if (metaErr) {
+        throw metaErr;
+      }
+      setAdminPhotoUrl(`${data.publicUrl}?t=${Date.now()}`);
+      toast.success('Profile picture updated');
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setPhotoUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -799,8 +875,32 @@ export default function SettingsPage() {
                   <Users size={15} className="text-sky-400" /> Current Admin
                 </h3>
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-navy-800/50">
-                  <div className="w-9 h-9 rounded-xl bg-sky-400/15 flex items-center justify-center">
-                    <Users size={16} className="text-sky-400" />
+                  {/* Profile picture + change control */}
+                  <div className="relative shrink-0 group">
+                    <Avatar
+                      name={adminEmail?.split('@')[0] ?? 'Admin'}
+                      src={adminPhotoUrl ?? undefined}
+                      size="md"
+                      className="w-12 h-12 text-sm"
+                    />
+                    <label
+                      htmlFor="admin-photo-input"
+                      className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-sky-500 hover:bg-sky-400 text-navy-900 flex items-center justify-center cursor-pointer shadow border-2 border-navy-800 transition-colors"
+                      title="Change profile picture"
+                    >
+                      {photoUploading ? (
+                        <Loader2 size={10} className="animate-spin" />
+                      ) : (
+                        <Camera size={10} />
+                      )}
+                    </label>
+                    <input
+                      id="admin-photo-input"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAdminPhotoChange}
+                    />
                   </div>
                   <div>
                     <p className="text-white text-sm font-medium">{adminEmail || 'Admin'}</p>

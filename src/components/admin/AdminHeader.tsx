@@ -236,7 +236,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
           aria-expanded={showDropdown}
           className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
         >
-          <Avatar name={name} size="sm" />
+          <Avatar name={name} size="sm" src={user?.user_metadata?.photo_url as string | undefined} />
           <span className="hidden sm:block text-sm font-medium text-white max-w-[100px] truncate">
             {name}
           </span>
