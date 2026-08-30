@@ -252,7 +252,7 @@ COMMIT;
 -- ============================================================
 DO $verify$
 DECLARE
-  v_b UUID; v_s UUID; v_f UUID; v_tok TEXT; v_app_id UUID;
+  v_b UUID; v_s UUID; v_f UUID; v_tok TEXT; v_app_id UUID; v_receipt TEXT;
 BEGIN
   -- Disposable batch + student + unpaid fee.
   INSERT INTO batches (name, capacity, is_active) VALUES ('__E2E PAYA__', 10, true) RETURNING id INTO v_b;
@@ -298,8 +298,11 @@ BEGIN
     RAISE EXCEPTION 'approve path did not mark the fee paid';
   END IF;
 
-  -- Cleanup.
-  DELETE FROM fee_audit_logs WHERE fee_id = v_f;
+  -- Cleanup (fee_audit_logs is created out-of-band in this project; only
+  -- touch it if it actually exists).
+  IF TO_REGCLASS('public.fee_audit_logs') IS NOT NULL THEN
+    DELETE FROM fee_audit_logs WHERE fee_id = v_f;
+  END IF;
   DELETE FROM payment_approvals WHERE id = v_app_id;
   DELETE FROM fees WHERE id = v_f;
   DELETE FROM student_sessions WHERE student_id = v_s;
