@@ -61,6 +61,7 @@ ALTER TABLE mcq_submissions ADD COLUMN IF NOT EXISTS penalty_marks INTEGER DEFAU
 
 -- ═══════════ Shared exam authorization gate ═══════════
 -- Internal only — revoked from all external roles.
+DROP FUNCTION IF EXISTS _exam_gate(UUID, UUID, BOOLEAN);
 CREATE FUNCTION _exam_gate(
   p_exam_id UUID,
   p_student_batch UUID,
@@ -522,6 +523,7 @@ ALTER TABLE notice_reads ENABLE ROW LEVEL SECURITY;
 -- No anon/authenticated policy → direct table access denied; the SECURITY
 -- DEFINER RPCs below are the only paths (portal students act as anon).
 
+DROP FUNCTION IF EXISTS portal_mark_notice_read(TEXT, UUID);
 CREATE FUNCTION portal_mark_notice_read(p_token TEXT, p_notice_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
@@ -536,6 +538,7 @@ BEGIN
 END;
 $fn$;
 
+DROP FUNCTION IF EXISTS portal_get_notice_reads(TEXT);
 CREATE FUNCTION portal_get_notice_reads(p_token TEXT)
 RETURNS TABLE (notice_id UUID, read_at TIMESTAMPTZ)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
