@@ -152,6 +152,9 @@ export default function PortalFeesPage() {
         paymentMethod: note.payment_method ?? 'Cash',
         transactionId: note.transaction_id,
         instituteName: settings.centerName,
+        instituteAddress: settings.centerAddress,
+        institutePhone: settings.centerPhone,
+        receiptFooter: settings.receiptFooter,
       });
     } catch (err) {
       logError('Student receipt PDF generation failed', {
@@ -250,8 +253,13 @@ export default function PortalFeesPage() {
                   <p className="text-slate-400 text-xs font-semibold">
                     {hasPendingApproval ? 'আরও পেমেন্ট করতে:' : 'পেমেন্ট করতে:'}
                   </p>
+                  {settings.paymentInstructions && (
+                    <p className="text-slate-400 text-xs font-hind leading-relaxed">
+                      {settings.paymentInstructions}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
-                    {settings.bkashNumber && (
+                    {settings.bkashEnabled && settings.bkashNumber && (
                       <button
                         type="button"
                         onClick={() => openSubmit(fee, 'bkash')}
@@ -261,7 +269,7 @@ export default function PortalFeesPage() {
                         <Smartphone size={11} /> bKash: {settings.bkashNumber}
                       </button>
                     )}
-                    {settings.nagadNumber && (
+                    {settings.nagadEnabled && settings.nagadNumber && (
                       <button
                         type="button"
                         onClick={() => openSubmit(fee, 'nagad')}

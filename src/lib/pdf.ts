@@ -369,6 +369,7 @@ export interface ReceiptData {
   instituteName: string;
   instituteAddress?: string;
   institutePhone?: string;
+  receiptFooter?: string;
 }
 
 export interface StudentReceiptData {
@@ -383,6 +384,9 @@ export interface StudentReceiptData {
   paymentMethod: string;
   transactionId?: string;
   instituteName: string;
+  instituteAddress?: string;
+  institutePhone?: string;
+  receiptFooter?: string;
 }
 
 // ── RECEIPT layout ─────────────────────────────────────────────────────────────
@@ -432,6 +436,14 @@ function drawReceiptCanvas(r: ReceiptData, mark: HTMLImageElement | null): { can
     drawText(ctx, 'FEE RECEIPT · ফি রশিদ', P + 22, y + 24, 17, C.white, { weight: 800, baseline: 'top' });
   }
   drawTextWrapped(ctx, r.instituteName, P + (mark ? 86 : 22), y + (mark ? 56 : 56), CW - 220, 24, C.white, 800);
+  // Institute address/phone under the name (left, muted; fits above the PAID
+  // badge which starts at y+112 on the right).
+  if (r.instituteAddress || r.institutePhone) {
+    const contact = [r.instituteAddress, `☎ ${r.institutePhone}`]
+      .filter(Boolean)
+      .join(' · ');
+    drawTextWrapped(ctx, contact, P + (mark ? 86 : 22), y + 86, CW - 220, 16, C.muted, 500);
+  }
 
   drawText(ctx, 'Receipt Number', P + CW - 30, y + 28, 11, C.muted, { align: 'right', weight: 600, baseline: 'top' });
   drawText(ctx, r.receiptNo, P + CW - 30, y + 42, 16, C.white, { align: 'right', weight: 700, baseline: 'top' });
@@ -530,10 +542,20 @@ function drawReceiptCanvas(r: ReceiptData, mark: HTMLImageElement | null): { can
   track('signature', y - sigH, sigH);
 
   // ── Footer ──
-  const footH = 42;
-  drawText(ctx, `© ${new Date().getFullYear()} ${r.instituteName} · All rights reserved`, W / 2, y + 20, 11, C.slateDim, { align: 'center', weight: 400, baseline: 'top' });
-  y += footH;
-  track('footer', y - footH, footH);
+  // Optional receipt footer (tax/thanks line) wraps under the signature; the
+  // copyright sits below it. Blank (empty/whitespace) → copyright only.
+  let footY = y;
+  if (r.receiptFooter && r.receiptFooter.trim()) {
+    const footerText = r.receiptFooter.trim();
+    const lines = wrapTextPx(footerText, (t) => measureText(t, 15, 500), CW - 60);
+    const footH = Math.max(30, lines.length * 18 + 6);
+    drawTextWrapped(ctx, footerText, W / 2, footY, CW - 60, 15, C.slateDim, 500, 'center');
+    footY += footH;
+    track('footer-note', footY - footH, footH);
+  }
+  drawText(ctx, `© ${new Date().getFullYear()} ${r.instituteName} · All rights reserved`, W / 2, footY, 11, C.slateDim, { align: 'center', weight: 400, baseline: 'top' });
+  y = footY + 26;
+  track('footer', y - 26, 26);
 
   return { canvas, usedH: y + P };
 }
@@ -559,6 +581,9 @@ export async function generateStudentReceipt(r: StudentReceiptData): Promise<voi
     paymentMethod: r.paymentMethod,
     transactionId: r.transactionId,
     instituteName: r.instituteName,
+    instituteAddress: r.instituteAddress,
+    institutePhone: r.institutePhone,
+    receiptFooter: r.receiptFooter,
   });
 }
 

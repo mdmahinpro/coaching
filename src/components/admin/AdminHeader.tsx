@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, Menu, LogOut, X, Hash } from 'lucide-react';
+import { Search, Menu, LogOut, X, Hash } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { useAuthStore } from '@/store/useAuthStore';
+import { AdminNotificationBell } from '@/components/admin/AdminNotificationBell';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -225,10 +226,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
       </div>
 
       {/* Bell */}
-      <button className="relative w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors shrink-0">
-        <Bell size={16} />
-        <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-sky-400 rounded-full" />
-      </button>
+      <AdminNotificationBell />
 
       {/* Avatar + dropdown */}
       <div className="relative" ref={dropdownRef}>

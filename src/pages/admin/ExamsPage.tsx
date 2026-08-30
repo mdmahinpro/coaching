@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { cn, formatDate, sanitize } from '@/lib/utils';
 import { parseBulkQuestions } from '@/lib/bulkQuestionParser';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   Plus,
@@ -841,7 +842,10 @@ function QuestionCard({
 
 // ── Create Exam Tab ───────────────────────────────────────────────────────────
 function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void }) {
+  const { settings } = useSettingsStore();
   const [step, setStep] = useState(1);
+  // Pre-fill default duration/strict-mode from site settings (read once — do
+  // NOT re-sync here or the form would fight the admin while they type).
   const [info, setInfo] = useState({
     title: '',
     subject: '',
@@ -849,10 +853,10 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
     batch_ids: [] as string[],
     exam_date: '',
     exam_time: '09:00',
-    duration_minutes: 30,
+    duration_minutes: settings.defaultExamDuration,
     timer_enabled: true,
     // Strict Mode: enables red-card (tab-minimize) penalties. Default OFF.
-    strict_mode: false,
+    strict_mode: settings.defaultStrictMode,
     pass_marks: 10,
     instructions: '',
   });

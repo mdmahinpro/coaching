@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useAdminNotifications } from '@/hooks/useAdminNotifications';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { StudentProtectedRoute } from '@/components/StudentProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -55,6 +56,14 @@ function PageLoader() {
 
 function LazyWrapper({ children }: { children: React.ReactNode }) {
   return <ErrorBoundary>{children}</ErrorBoundary>;
+}
+
+/** Single always-mounted notification engine for admins (bell in AdminHeader). */
+function AdminNotificationMount() {
+  const { user, role, initialized } = useAuthStore();
+  const email = role === 'admin' && user ? user.email ?? null : null;
+  useAdminNotifications(initialized ? email : null);
+  return null;
 }
 
 function AppRoutes() {
@@ -285,6 +294,7 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter basename={base}>
         <AppRoutes />
+        <AdminNotificationMount />
         <Toaster
           position="top-right"
           toastOptions={{

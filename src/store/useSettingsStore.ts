@@ -30,6 +30,15 @@ export interface Settings {
   socialYoutube: string;
   socialInstagram: string;
   primaryColor: string;
+  // Receipt + offline-payment presentation.
+  receiptFooter: string;
+  paymentInstructions: string;
+  // Create-exam defaults.
+  defaultExamDuration: number;
+  defaultStrictMode: boolean;
+  // Per-gateway enable/disable for the portal fees page.
+  bkashEnabled: boolean;
+  nagadEnabled: boolean;
 }
 
 interface SettingsState {
@@ -66,6 +75,13 @@ export const defaults: Settings = {
   socialYoutube: '',
   socialInstagram: '',
   primaryColor: '#38bdf8',
+  receiptFooter: '',
+  paymentInstructions:
+    'পেমেন্ট করতে: bKash / Nagad নম্বরে টাকা পাঠিয়ে রশিদ নিশ্চিত করুন, তারপর নিচের বাটনে ক্লিক করে ট্রানজেকশন আইডি জমা দিন।',
+  defaultExamDuration: 30,
+  defaultStrictMode: false,
+  bkashEnabled: true,
+  nagadEnabled: true,
 };
 
 /* ── key mapping: Settings field ↔ site_settings.key ── */
@@ -95,6 +111,12 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   socialYoutube: 'social_youtube',
   socialInstagram: 'social_instagram',
   primaryColor: 'primary_color',
+  receiptFooter: 'receipt_footer',
+  paymentInstructions: 'payment_instructions',
+  defaultExamDuration: 'default_exam_duration',
+  defaultStrictMode: 'default_exam_strict_mode',
+  bkashEnabled: 'bkash_enabled',
+  nagadEnabled: 'nagad_enabled',
 };
 
 /* Reverse map: db key → settings field */
@@ -109,9 +131,16 @@ const NUMBER_FIELDS = new Set<keyof Settings>([
   'statTeachers',
   'statBatches',
   'statSuccessRate',
+  'defaultExamDuration',
 ]);
 /* Fields that are stored as booleans */
-const BOOL_FIELDS = new Set<keyof Settings>(['admissionOpen', 'statAutoFromDb']);
+const BOOL_FIELDS = new Set<keyof Settings>([
+  'admissionOpen',
+  'statAutoFromDb',
+  'defaultStrictMode',
+  'bkashEnabled',
+  'nagadEnabled',
+]);
 
 function castValue(field: keyof Settings, raw: string): Settings[keyof Settings] {
   if (BOOL_FIELDS.has(field)) {

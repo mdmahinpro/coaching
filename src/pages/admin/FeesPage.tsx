@@ -30,6 +30,7 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
 import { calculateFinalAmount, daysOverdue } from '@/utils/money';
 import { ShieldCheck, ShieldX } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 
 const MONTHS = [
   'January',
@@ -738,6 +739,7 @@ function RecordPaymentTab({ batches }: { batches: { id: string; name: string }[]
         instituteName: settings.centerName,
         instituteAddress: settings.centerAddress,
         institutePhone: settings.centerPhone,
+        receiptFooter: settings.receiptFooter,
       });
     } catch (err) {
       logError('Receipt PDF generation failed', {
@@ -1782,7 +1784,12 @@ function ApprovalsTab() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FeesPage() {
-  const [tab, setTab] = useState<Tab>('overview');
+  // ?tab=approvals deep-link (from the admin notification bell) opens the
+  // Payment Approvals tab directly; everything else defaults to overview.
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(
+    () => (searchParams.get('tab') === 'approvals' ? 'approvals' : 'overview')
+  );
   const [batches, setBatches] = useState<any[]>([]);
 
   useEffect(() => {

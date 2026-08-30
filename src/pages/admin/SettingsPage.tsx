@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ShieldOff,
   Lock as LockIcon,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sendSMS } from '@/lib/sms';
@@ -436,6 +437,50 @@ export default function SettingsPage() {
                   </div>
                 </label>
               </div>
+              <div className="card p-5 space-y-4">
+                <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+                  <ClipboardList size={15} className="text-sky-400" /> Exam Defaults
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Default Duration (minutes)">
+                    <input
+                      type="number"
+                      min={1}
+                      value={form.defaultExamDuration}
+                      onChange={(e) => set('defaultExamDuration', Number(e.target.value))}
+                      className="input-field"
+                      placeholder="30"
+                    />
+                  </Field>
+                  <div>
+                    <span className="text-xs text-slate-400 mb-1.5 block">Default Strict Mode</span>
+                    <label className="flex items-center gap-3 cursor-pointer pt-1">
+                      <div
+                        onClick={() => set('defaultStrictMode', !form.defaultStrictMode)}
+                        className={cn(
+                          'w-10 h-6 rounded-full transition-colors relative',
+                          form.defaultStrictMode ? 'bg-violet-500' : 'bg-white/10'
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'absolute top-1 w-4 h-4 rounded-full bg-white transition-all',
+                            form.defaultStrictMode ? 'left-5' : 'left-1'
+                          )}
+                        />
+                      </div>
+                      <span className="text-xs text-slate-400 font-hind">
+                        {form.defaultStrictMode
+                          ? 'Tab-switch penalty ON for new exams'
+                          : 'Tab-switch penalty OFF for new exams'}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <p className="text-slate-600 text-xs">
+                  Pre-fills the Create Exam form. Existing exams are never changed.
+                </p>
+              </div>
             </>
           )}
 
@@ -470,6 +515,65 @@ export default function SettingsPage() {
                   placeholder="500"
                 />
               </Field>
+
+              {/* Gateway toggles — explicit on/off per payment method */}
+              <div className="grid sm:grid-cols-2 gap-2">
+                {(
+                  [
+                    ['bkashEnabled', 'bKash', 'bkashNumber'],
+                    ['nagadEnabled', 'Nagad', 'nagadNumber'],
+                  ] as const
+                ).map(([enabledKey, label, numKey]) => (
+                  <label key={enabledKey} className="flex items-center gap-3 cursor-pointer">
+                    <div
+                      onClick={() => set(enabledKey, !form[enabledKey])}
+                      className={cn(
+                        'w-10 h-6 rounded-full transition-colors relative shrink-0',
+                        form[enabledKey] ? 'bg-sky-500' : 'bg-white/10'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'absolute top-1 w-4 h-4 rounded-full bg-white transition-all',
+                          form[enabledKey] ? 'left-5' : 'left-1'
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-sm text-white">{label}</p>
+                      <p className="text-xs text-slate-400">
+                        {form[enabledKey]
+                          ? `Visible on portal (${form[numKey] || 'no number set'})`
+                          : 'Hidden from students'}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <Field label="Payment Instructions (portal fee page)">
+                <textarea
+                  value={form.paymentInstructions}
+                  onChange={(e) => set('paymentInstructions', e.target.value)}
+                  className="input-field font-hind"
+                  rows={3}
+                  placeholder="পেমেন্ট করতে: bKash / Nagad নম্বরে টাকা পাঠিয়ে ট্রানজেকশন আইডি জমা দিন…"
+                />
+              </Field>
+
+              <Field label="Receipt Footer (optional — tax/thanks line)">
+                <textarea
+                  value={form.receiptFooter}
+                  onChange={(e) => set('receiptFooter', e.target.value)}
+                  className="input-field font-hind"
+                  rows={2}
+                  placeholder="e.g. ধন্যবাদ — Techely Learning Academy"
+                />
+                <p className="text-slate-600 text-xs mt-1">
+                  Printed below the signature on every fee receipt (blank = omitted).
+                </p>
+              </Field>
+
               {(form.bkashNumber || form.nagadNumber) && (
                 <div className="card-glass p-3 text-xs text-slate-400 space-y-1 font-hind">
                   <p>ℹ️ এই নম্বরগুলো ছাত্র পোর্টালে ফি পরিশোধের জন্য দেখানো হবে।</p>
