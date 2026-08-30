@@ -32,14 +32,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   setSeenKey: (email) => {
     const key = email ? seenKeyFor(email) : null;
+    // Read the persisted seen-set WITHOUT pruning — pruning must only happen
+    // in setFeed where the active feed is known; pruning against an empty feed
+    // here would wipe read state and re-toast everything after each reload.
     const stored = key ? loadSeenIds(key) : [];
-    if (key) {
-      // Drop ids no longer in the feed (feed is empty at this point).
-      saveSeenIds(key, pruneSeen(stored, []));
-    }
     const items = get().items;
-    const seenSet = new Set(key ? loadSeenIds(key) : []);
-    set({ seenKey: key, unread: unreadCount(items, [...seenSet]) });
+    set({ seenKey: key, unread: unreadCount(items, stored) });
   },
 
   setFeed: (items, seen) => {
