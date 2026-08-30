@@ -50,6 +50,34 @@ export async function fetchFees() {
   return unwrap(data, error) ?? [];
 }
 
+/**
+ * Submit a manual payment (bKash/Nagad/etc.) transaction for admin approval.
+ * Returns the pending approval row (id/status/created_at).
+ */
+export async function submitPaymentApproval(payload: {
+  feeId: string;
+  method: string;
+  transactionId: string;
+  note?: string;
+}) {
+  const { data, error } = await supabase.rpc('portal_submit_payment', {
+    p_token: requireToken(),
+    p_fee_id: payload.feeId,
+    p_method: payload.method,
+    p_transaction_id: payload.transactionId,
+    p_note: payload.note ?? null,
+  });
+  return unwrap(data, error)?.[0] ?? null;
+}
+
+/** This student's own payment-approval submissions (with fee month/amount). */
+export async function fetchMyPaymentApprovals() {
+  const { data, error } = await supabase.rpc('portal_my_payment_approvals', {
+    p_token: requireToken(),
+  });
+  return unwrap(data, error) ?? [];
+}
+
 export async function fetchExams() {
   const { data, error } = await supabase.rpc('portal_get_exams', { p_token: requireToken() });
   return unwrap(data, error) ?? [];

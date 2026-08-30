@@ -249,6 +249,88 @@ const step = (name, ok, detail = '') => {
     }, receiptNo);
     step('Fees: receipt PDF is valid A4', pdf.ok && pdf.a4, pdf.ok ? `${pdf.bytes} bytes A4=${pdf.a4}` : pdf.err);
 
+    // 5d. Student-submitted payment → admin approval round trip.
+    //     Seed a second unpaid fee + a pending payment_approval row, then drive
+    //     the new admin "Payment Approvals" tab Approve action and assert the
+    //     fee flips to paid with a receipt in the note.
+    const appr = await page.evaluate(async () => {
+      const { supabase } = await import('/src/lib/supabase.ts');
+      const now = new Date();
+      const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const month = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+      // Use the seeded E2E student (studentId from the earlier seed) — but the
+      // earlier seed cleaned up its student inside this same run, so recreate a
+      // fresh one here for approval round trip.
+      const uniq = Date.now().toString().slice(-6);
+      const name = `ADM E2E APR ${uniq}`;
+      const phone = `019${uniq}`;
+      const { data: student } = await supabase.from('students').insert({
+        name, phone, student_id: `E2EAPR${uniq}`, status: 'active', is_approved: true,
+      }).select('id').single();
+      const due = new Date(`${month} 01`); due.setDate(10);
+      const { data: fee } = await supabase.from('fees').insert({
+        student_id: student.id, amount: 2000, month, status: 'pending',
+        due_date: due.toISOString().slice(0, 10), note: 'E2E-APR-SEED',
+      }).select('id').single();
+      const { data: apprRow, error: aErr } = await supabase.from('payment_approvals').insert({
+        student_id: student.id, fee_id: fee.id, method: 'bkash',
+        transaction_id: 'TRXAPRE2E' + uniq, status: 'pending', note: 'E2E approval',
+      }).select('id').single();
+      if (aErr) return { err: 'approval insert: ' + aErr.message };
+      return { name, month, studentId: student.id, feeId: fee.id, approvalId: apprRow.id, trx: 'TRXAPRE2E' + uniq };
+    });
+    if (appr.err) {
+      step('Fees: seed pending payment approval', false, appr.err);
+    } else {
+      step('Fees: seed pending payment approval', true, `month=${appr.month} trx=${appr.trx}`);
+
+      // Open the Payment Approvals tab.
+      await page.evaluate(() => { location.href = '/admin/fees'; });
+      await new Promise((r) => setTimeout(r, 1500));
+      await clickText('Payment Approvals');
+      await new Promise((r) => setTimeout(r, 1000));
+      body = await page.evaluate(() => document.body.innerText);
+      const rowVisible = body.includes(appr.name) && body.includes(appr.trx);
+
+      // Click Approve for this row (the first Approve button in the table).
+      const approved = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll('button')).find(
+          (x) => x.textContent.trim().startsWith('Approve') || /Approve/.test(x.textContent)
+        );
+        if (!b) return false; b.click(); return true;
+      });
+      await new Promise((r) => setTimeout(r, 2500));
+      body = await page.evaluate(() => document.body.innerText);
+
+      // Verify server-side: approval approved + fee paid with a receipt note.
+      const apprVerified = await page.evaluate(async ({ feeId, approvalId }) => {
+        const { supabase } = await import('/src/lib/supabase.ts');
+        const { data: approval } = await supabase.from('payment_approvals').select('*').eq('id', approvalId).single();
+        const { data: fee } = await supabase.from('fees').select('*').eq('id', feeId).single();
+        const note = (() => { try { return JSON.parse(fee.note || '{}'); } catch { return {}; } })();
+        return {
+          approved: approval.status === 'approved',
+          paid: fee.status === 'paid',
+          hasReceipt: !!(note.receipt_no),
+        };
+      }, { feeId: appr.feeId, approvalId: appr.approvalId });
+      step('Fees: approval listed in admin tab', rowVisible, `trx=${appr.trx}`);
+      step(
+        'Fees: approve marks fee paid + receipt issued',
+        approved && apprVerified.approved && apprVerified.paid && apprVerified.hasReceipt,
+        `approval=${apprVerified.approved} paid=${apprVerified.paid}`
+      );
+
+      // Cleanup the approval round-trip rows.
+      await page.evaluate(async ({ feeId, studentId, approvalId }) => {
+        const { supabase } = await import('/src/lib/supabase.ts');
+        await supabase.from('payment_approvals').delete().eq('id', approvalId);
+        await supabase.from('fee_audit_logs').delete().eq('fee_id', feeId);
+        await supabase.from('fees').delete().eq('id', feeId);
+        await supabase.from('students').delete().eq('id', studentId);
+      }, { feeId: appr.feeId, studentId: appr.studentId, approvalId: appr.approvalId });
+    }
+
     // Cleanup the disposable rows so repeated runs stay idempotent.
     await page.evaluate(async ({ feeId, studentId }) => {
       const { supabase } = await import('/src/lib/supabase.ts');

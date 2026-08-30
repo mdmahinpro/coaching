@@ -314,6 +314,9 @@ export async function loadDemoData(): Promise<void> {
         title: 'গণিত মডেল টেস্ট ০১',
         subject: 'Mathematics',
         batch_id: b1.id,
+        // Batch-scoped: without batch_ids the RPC's `batch_ids IS NULL` rule
+        // treats the exam as "all batches" and leaks it to other-batch students.
+        batch_ids: [b1.id],
         duration_minutes: 30,
         total_marks: 30,
         pass_marks: 18,

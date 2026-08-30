@@ -29,6 +29,7 @@ import { generateReceipt } from '@/lib/pdf';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
 import { calculateFinalAmount, daysOverdue } from '@/utils/money';
+import { ShieldCheck, ShieldX } from 'lucide-react';
 
 const MONTHS = [
   'January',
@@ -46,9 +47,10 @@ const MONTHS = [
 ];
 const now = new Date();
 
-type Tab = 'overview' | 'generate' | 'record' | 'due' | 'audit';
+type Tab = 'overview' | 'approvals' | 'generate' | 'record' | 'due' | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'approvals', label: 'Payment Approvals' },
   { id: 'generate', label: 'Generate Fees' },
   { id: 'record', label: 'Record Payment' },
   { id: 'due', label: 'Due Report' },
@@ -1539,6 +1541,160 @@ function AuditLogTab() {
   );
 }
 
+// ── Payment Approvals Tab ──────────────────────────────────────────────────────
+// Student-submitted transaction IDs (portal_submit_payment) awaiting admin
+// review. Approving marks the fee paid; rejecting leaves it unpaid.
+function ApprovalsTab() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.rpc('admin_payment_approvals', { p_status: 'pending' });
+      setRows((data ?? []).map((r: any) => ({ ...r, student_name: sanitize(r.student_name ?? '') })));
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const review = async (id: string, approve: boolean) => {
+    setActionId(id);
+    try {
+      if (approve) {
+        const { data, error } = await supabase.rpc('admin_approve_payment', { p_approval_id: id });
+        if (error) {
+          toast.error('Approve failed: ' + error.message);
+          return;
+        }
+        const row = data?.[0];
+        toast.success(`Payment approved! Receipt: ${row?.receipt_no ?? ''}`);
+      } else {
+        const { error } = await supabase.rpc('admin_reject_payment', { p_approval_id: id });
+        if (error) {
+          toast.error('Reject failed: ' + error.message);
+          return;
+        }
+        toast.success('Payment request rejected');
+      }
+      await load();
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-white text-sm">Waiting for your approval</h3>
+          <p className="text-slate-500 text-xs mt-1">
+            Students submit their bKash/Nagad transaction IDs here; approve to record the payment.
+          </p>
+        </div>
+        <button onClick={load} disabled={loading} className="btn-outline text-xs py-1.5 px-3">
+          {loading ? <Loader2 size={12} className="animate-spin" /> : '↻'} Refresh
+        </button>
+      </div>
+
+      <div className="card overflow-hidden">
+        {loading && rows.length === 0 ? (
+          <div className="divide-y divide-navy-700/30">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-14 mx-4 my-2 bg-navy-700 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="text-center py-16">
+            <ShieldCheck size={32} className="text-emerald-500/70 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm font-medium">কোনো অনুমোদন-অপেক্ষা পেমেন্ট নেই</p>
+            <p className="text-slate-600 text-xs mt-1">
+              Submitted transaction IDs will appear here
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-navy-700/50">
+                  {['Student', 'Month', 'Amount', 'Method', 'Transaction', 'Submitted', ''].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={r.student_name || '?'} size="sm" />
+                        <div>
+                          <p className="text-white text-sm">{r.student_name}</p>
+                          <p className="font-mono text-sky-400 text-[10px]">{r.student_code}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300 text-sm">{r.month}</td>
+                    <td className="px-4 py-3 font-medium text-white">
+                      {formatCurrency(r.amount ?? 0)}
+                    </td>
+                    <td className="px-4 py-3 capitalize text-slate-300 text-sm">{r.method}</td>
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-emerald-400 text-xs">{r.transaction_id}</span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">
+                      {r.created_at ? formatDate(r.created_at) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          onClick={() => review(r.id, true)}
+                          disabled={actionId !== null}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs hover:bg-emerald-500/25 transition-all disabled:opacity-40"
+                        >
+                          {actionId === r.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <ShieldCheck size={12} />
+                          )}{' '}
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => review(r.id, false)}
+                          disabled={actionId !== null}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs hover:bg-red-500/20 transition-all disabled:opacity-40"
+                        >
+                          <ShieldX size={12} /> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function FeesPage() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -1579,6 +1735,7 @@ export default function FeesPage() {
       </div>
 
       {tab === 'overview' && <OverviewTab />}
+      {tab === 'approvals' && <ApprovalsTab />}
       {tab === 'generate' && <GenerateTab batches={batches} />}
       {tab === 'record' && <RecordPaymentTab />}
       {tab === 'due' && <DueReportTab batches={batches} />}
