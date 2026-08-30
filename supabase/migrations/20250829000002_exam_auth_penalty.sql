@@ -593,9 +593,9 @@ BEGIN
   END IF;
 
   -- #7 penalty math (strict, 10% of TOTAL):
-  -- 60-mark exam, 1 card -> 60*0.10=6 penalty.
-  IF (SELECT 10 * CEIL(60 * 0.10)) <> 6 THEN
-    RAISE EXCEPTION 'penalty math: 1 card on 60 total should be 6, got %', 10*CEIL(60*0.10);
+  -- 60-mark exam, 1 card -> 1 * CEIL(60*0.10) = 6 penalty.
+  IF (SELECT 1 * CEIL(60 * 0.10)) <> 6 THEN
+    RAISE EXCEPTION 'penalty math: 1 card on 60 total should be 6, got %', 1*CEIL(60*0.10);
   END IF;
   -- 60-mark, 10 cards -> 60 penalty (full wipe).
   IF (SELECT LEAST(10,10) * CEIL(60*0.10)) <> 60 THEN
