@@ -206,11 +206,18 @@ BEGIN
   SET status = 'approved', reviewed_at = now(), reviewed_by = v_admin
   WHERE id = p_approval_id;
 
-  -- Audit entry (same table the Fees page writes to).
+  -- Audit entry — same table + column shape as logFeeAudit() on the Fees page,
+  -- so the Audit Log tab renders Student / Month / Summary and before/after
+  -- instead of "—". Final amount comes from the fees row (already in v_meta).
   BEGIN
-    INSERT INTO fee_audit_logs (fee_id, action, admin_email, student_code)
-    VALUES (v_appr.fee_id, 'payment_recorded', v_admin,
-            (SELECT student_id FROM students WHERE id = v_appr.student_id));
+    INSERT INTO fee_audit_logs
+      (fee_id, action, admin_email, student_name, student_code, month, old_data, new_data)
+    SELECT v_appr.fee_id, 'payment_recorded', v_admin, s.name, s.student_id, f.month,
+           jsonb_build_object('status', f.status, 'note', f.note, 'amount', f.amount),
+           (v_meta::jsonb || jsonb_build_object('status', 'paid', 'amount', f.amount))::jsonb
+    FROM students s
+    JOIN fees f ON f.id = v_appr.fee_id
+    WHERE s.id = v_appr.student_id;
   EXCEPTION WHEN OTHERS THEN
     NULL; -- audit must never block the payment flow
   END;

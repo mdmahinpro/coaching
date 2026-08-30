@@ -3,7 +3,7 @@ import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchExams, fetchSubmissions } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
-import { formatDate, cn, sanitize } from '@/lib/utils';
+import { formatDate, cn, sanitize, isExamForBatch } from '@/lib/utils';
 import {
   ClipboardList,
   Clock,
@@ -52,16 +52,7 @@ function effectiveState(e: Exam): 'draft' | 'active' | 'paused' | 'ended' {
 }
 
 /** Client-side batch scoping (defense-in-depth): only show this student's exams. */
-function isForStudent(e: Exam, batchId?: string): boolean {
-  const target = e.batch_ids && e.batch_ids.length > 0 ? e.batch_ids : e.batch_id ? [e.batch_id] : null;
-  if (!target) {
-    return true; // batch_ids null → assigned to all batches
-  }
-  if (!batchId) {
-    return false; // student has no batch, exam targets specific batches
-  }
-  return target.includes(batchId);
-}
+const isForStudent = (e: Exam, batchId?: string): boolean => isExamForBatch(e, batchId);
 
 function useCountdown(target?: string) {
   const [remaining, setRemaining] = useState('');

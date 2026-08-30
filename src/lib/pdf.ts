@@ -437,8 +437,17 @@ function drawReceiptCanvas(r: ReceiptData, mark: HTMLImageElement | null): { can
   drawText(ctx, r.receiptNo, P + CW - 30, y + 42, 16, C.white, { align: 'right', weight: 700, baseline: 'top' });
   drawText(ctx, 'Date', P + CW - 30, y + 72, 11, C.muted, { align: 'right', weight: 600, baseline: 'top' });
   drawText(ctx, r.date, P + CW - 30, y + 86, 13, C.white, { align: 'right', weight: 600, baseline: 'top' });
-  roundRect(ctx, { x: P + CW - 30 - 122, y: y + 112, w: 122, h: 26, r: 13, fill: C.emerald });
-  drawText(ctx, 'PAID', P + CW - 30, y + 124, 13, C.white, { align: 'right', weight: 800, baseline: 'middle' });
+  // PAID badge — sized to its own text so the background always fits it exactly.
+  {
+    const paidText = 'PAID';
+    const paidSize = 14;
+    const paidH = 30;
+    const paidW = Math.round(measureText(paidText, paidSize, 800) + 36);
+    const paidX = P + CW - 30 - paidW;
+    const paidY = y + 112;
+    roundRect(ctx, { x: paidX, y: paidY, w: paidW, h: paidH, r: paidH / 2, fill: C.emerald });
+    drawText(ctx, paidText, paidX + paidW / 2, paidY + paidH / 2, paidSize, C.white, { align: 'center', weight: 800, baseline: 'middle' });
+  }
 
   y += headerH + 18;
   track('header', y - headerH - 18, headerH);

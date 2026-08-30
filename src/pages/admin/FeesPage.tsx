@@ -554,9 +554,10 @@ function GenerateTab({ batches }: { batches: any[] }) {
 }
 
 // ── Record Payment Tab ────────────────────────────────────────────────────────
-function RecordPaymentTab() {
+function RecordPaymentTab({ batches }: { batches: { id: string; name: string }[] }) {
   const { settings } = useSettingsStore();
   const [query, setQuery] = useState('');
+  const [batchFilter, setBatchFilter] = useState('all');
   const [results, setResults] = useState<any[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
@@ -577,32 +578,39 @@ function RecordPaymentTab() {
   const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!dq) {
+    // Search by name/ID within an optional batch, so an admin who only
+    // remembers the batch (not the name) can still find the student.
+    if (!dq && batchFilter === 'all') {
       setResults([]);
       setShowDropdown(false);
       return;
     }
-    supabase
+    let q = supabase
       .from('students')
       .select('id, name, student_id, phone, photo_url, batch:batches(id,name)')
-      .or(`name.ilike.%${dq}%,student_id.ilike.%${dq}%`)
-      .eq('status', 'active')
-      .limit(8)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((s: any) => ({
-            ...s,
-            name: sanitize(s.name),
-            batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
-          }));
-          setResults(cleaned);
-          setShowDropdown(true);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, [dq]);
+      .eq('status', 'active');
+    if (dq) {
+      q = q.or(`name.ilike.%${dq}%,student_id.ilike.%${dq}%`);
+    }
+    if (batchFilter !== 'all') {
+      q = q.eq('batch_id', batchFilter);
+    }
+    q = q.limit(8);
+    q.then(
+      ({ data }) => {
+        const cleaned = (data ?? []).map((s: any) => ({
+          ...s,
+          name: sanitize(s.name),
+          batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
+        }));
+        setResults(cleaned);
+        setShowDropdown(true);
+      },
+      (err: any) => {
+        handleSupabaseError(err);
+      }
+    );
+  }, [dq, batchFilter]);
 
   useEffect(() => {
     if (!selectedStudent) {
@@ -756,48 +764,68 @@ function RecordPaymentTab() {
       {/* Student search */}
       <div>
         <label className="text-xs text-slate-400 mb-1.5 block">Search Student</label>
-        <div className="relative" ref={dropRef}>
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            value={query}
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div className="relative" ref={dropRef}>
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelectedStudent(null);
+                setSelectedFee(null);
+                setSavedReceipt(null);
+              }}
+              className="input-field pl-9"
+              placeholder="Name or Student ID…"
+            />
+            <AnimatePresence>
+              {showDropdown && results.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="absolute top-full left-0 right-0 mt-1 card-glass border border-navy-600 z-20 max-h-52 overflow-y-auto"
+                >
+                  {results.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setSelectedStudent(s);
+                        setQuery(s.name);
+                        setShowDropdown(false);
+                        setSavedReceipt(null);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+                    >
+                      <Avatar name={s.name} size="sm" src={s.photo_url} />
+                      <div>
+                        <p className="text-white text-sm font-medium">{s.name}</p>
+                        <p className="font-mono text-sky-400 text-xs">{s.student_id}</p>
+                      </div>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <select
+            value={batchFilter}
             onChange={(e) => {
-              setQuery(e.target.value);
+              setBatchFilter(e.target.value);
               setSelectedStudent(null);
               setSelectedFee(null);
               setSavedReceipt(null);
             }}
-            className="input-field pl-9"
-            placeholder="Name or Student ID…"
-          />
-          <AnimatePresence>
-            {showDropdown && results.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                className="absolute top-full left-0 right-0 mt-1 card-glass border border-navy-600 z-20 max-h-52 overflow-y-auto"
-              >
-                {results.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      setSelectedStudent(s);
-                      setQuery(s.name);
-                      setShowDropdown(false);
-                      setSavedReceipt(null);
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
-                  >
-                    <Avatar name={s.name} size="sm" src={s.photo_url} />
-                    <div>
-                      <p className="text-white text-sm font-medium">{s.name}</p>
-                      <p className="font-mono text-sky-400 text-xs">{s.student_id}</p>
-                    </div>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+            className="input-field w-44"
+            title="Filter students by batch"
+          >
+            <option value="all">All Batches</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -1737,7 +1765,7 @@ export default function FeesPage() {
       {tab === 'overview' && <OverviewTab />}
       {tab === 'approvals' && <ApprovalsTab />}
       {tab === 'generate' && <GenerateTab batches={batches} />}
-      {tab === 'record' && <RecordPaymentTab />}
+      {tab === 'record' && <RecordPaymentTab batches={batches} />}
       {tab === 'due' && <DueReportTab batches={batches} />}
       {tab === 'audit' && <AuditLogTab />}
     </AdminLayout>

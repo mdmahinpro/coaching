@@ -36,3 +36,29 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2);
 }
+
+/**
+ * Client-side batch scoping for exams (defense-in-depth on top of
+ * portal_get_exams). `batch_ids` is authoritative when present; `batch_id`
+ * is the legacy single-batch fallback. NULL/empty on both = no target batch =
+ * the exam genuinely applies to all batches. A student with no batch gets
+ * nothing when an exam targets specific batches.
+ */
+export function isExamForBatch(
+  exam: { batch_ids?: string[] | null; batch_id?: string | null },
+  batchId?: string | null
+): boolean {
+  const target =
+    exam.batch_ids && exam.batch_ids.length > 0
+      ? exam.batch_ids
+      : exam.batch_id
+        ? [exam.batch_id]
+        : null;
+  if (!target) {
+    return true; // no target batch → assigned to all batches
+  }
+  if (!batchId) {
+    return false; // student has no batch, exam targets specific batches
+  }
+  return target.includes(batchId);
+}

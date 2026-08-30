@@ -3,7 +3,7 @@ import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchFees, fetchExams, fetchSubmissions, fetchNotices } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
-import { formatDate, formatCurrency, cn, sanitize } from '@/lib/utils';
+import { formatDate, formatCurrency, cn, sanitize, isExamForBatch } from '@/lib/utils';
 import { DollarSign, Bell, Zap, Trophy, ArrowRight, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -64,7 +64,7 @@ export default function PortalDashboardPage() {
             if (end !== null && now >= end) {
               return false;
             }
-            return e.status === 'active' || e.status === 'paused';
+            return isExamForBatch(e, student?.batch_id) && (e.status === 'active' || e.status === 'paused');
           })
         );
 
