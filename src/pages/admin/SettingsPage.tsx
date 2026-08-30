@@ -22,8 +22,12 @@ import {
   Lock as LockIcon,
   ClipboardList,
   Camera,
+  GraduationCap,
+  X,
+  Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { classLevelList } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { Avatar } from '@/components/shared/Avatar';
@@ -38,6 +42,71 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'admins', label: 'Admins', icon: Users },
 ];
+
+/**
+ * Chips + add-input editor for the comma-separated class-levels string
+ * (শ্রেণী). Remove a chip to delete it; type + Enter/Add to append one.
+ */
+function ClassLevelsEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [draft, setDraft] = useState('');
+  const levels = classLevelList(value);
+
+  const append = () => {
+    const next = draft.trim();
+    if (!next) {
+      return;
+    }
+    if (!levels.includes(next)) {
+      onChange([...levels, next].join(','));
+    }
+    setDraft('');
+  };
+
+  const remove = (target: string) => {
+    onChange(levels.filter((l) => l !== target).join(','));
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {levels.map((l) => (
+          <span
+            key={l}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/15 border border-violet-400/30 text-violet-200 text-xs"
+          >
+            {l}
+            <button
+              type="button"
+              onClick={() => remove(l)}
+              className="hover:text-red-400 transition-colors"
+              aria-label={`Remove ${l}`}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        {levels.length === 0 && <span className="text-slate-600 text-xs">কোনো শ্রেণী নেই</span>}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              append();
+            }
+          }}
+          className="input-field flex-1"
+          placeholder="নতুন শ্রেণী লিখুন (যেমন: Class 5, NU Admission)"
+        />
+        <button type="button" onClick={append} className="btn-outline text-sm px-4 shrink-0">
+          <Plus size={14} /> Add
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const { settings, updateSettings, saveToDB } = useSettingsStore();
@@ -555,6 +624,19 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-slate-600 text-xs">
                   Pre-fills the Create Exam form. Existing exams are never changed.
+                </p>
+              </div>
+              <div className="card p-5 space-y-4">
+                <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+                  <GraduationCap size={15} className="text-sky-400" /> Class Levels (শ্রেণী)
+                </h3>
+                <ClassLevelsEditor
+                  value={form.classLevels}
+                  onChange={(v) => set('classLevels', v)}
+                />
+                <p className="text-slate-600 text-xs">
+                  Used as the শ্রেণী dropdown on the admission form, the student form, and the
+                  portal. Each on its own line.
                 </p>
               </div>
             </>

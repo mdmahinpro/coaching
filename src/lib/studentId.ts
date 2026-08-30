@@ -16,6 +16,20 @@ export interface StudentIdParts {
 
 const DEFAULT_SHORT_NAME = 'TLY';
 
+/**
+ * Admission reference number (APP-XXXXXX). Shown to the student right after
+ * signup and used as their DEFAULT portal password once the admission is
+ * approved — see AdmissionsPage handleApprove. 6 unambiguous alphanumerics.
+ */
+export function generateReferenceNo(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789'; // no I/O to avoid confusion
+  let out = '';
+  for (let i = 0; i < 6; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `APP-${out}`;
+}
+
 export function currentYear2(): string {
   return new Date().getFullYear().toString().slice(-2);
 }

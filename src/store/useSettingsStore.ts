@@ -39,6 +39,9 @@ export interface Settings {
   // Per-gateway enable/disable for the portal fees page.
   bkashEnabled: boolean;
   nagadEnabled: boolean;
+  // Managed class-level list (শ্রেণী), comma-separated; every form renders a
+  // <select> from these and the admin can edit/add them in Settings.
+  classLevels: string;
 }
 
 interface SettingsState {
@@ -82,6 +85,8 @@ export const defaults: Settings = {
   defaultStrictMode: false,
   bkashEnabled: true,
   nagadEnabled: true,
+  classLevels:
+    'Class 6,Class 7,Class 8,JSC,Class 9,Class 10,SSC,Class 11,Class 12,HSC,IELTS,Admission Test',
 };
 
 /* ── key mapping: Settings field ↔ site_settings.key ── */
@@ -117,7 +122,12 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   defaultStrictMode: 'default_exam_strict_mode',
   bkashEnabled: 'bkash_enabled',
   nagadEnabled: 'nagad_enabled',
+  classLevels: 'class_levels',
 };
+
+// Re-exported from lib/utils: pure, unit-tested. See useSettingsStore for the
+// comma-separated class-levels setting (শ্রেণী) that every form renders from.
+export { classLevelList } from '@/lib/utils';
 
 /* Reverse map: db key → settings field */
 const DB_TO_FIELD = Object.fromEntries(

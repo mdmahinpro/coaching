@@ -38,6 +38,19 @@ export function getInitials(name: string): string {
 }
 
 /**
+ * Split the comma-separated class-levels setting (শ্রেণী) into a clean list
+ * for <option> rendering. Drops empties + whitespace. Same source used by the
+ * admission forms and the admin student modal, so class level is always one
+ * managed list (editable in Settings → Class Levels).
+ */
+export function classLevelList(classLevels: string): string[] {
+  return (classLevels ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
  * Keep the browser-tab favicon in sync with the active site logo so the two
  * always match. Replaces the <link rel="icon"> href (creating it if missing).
  */

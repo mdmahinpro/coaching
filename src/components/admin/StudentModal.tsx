@@ -6,7 +6,7 @@ import { X, Save, Upload, User, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { useSettingsStore } from '@/store/useSettingsStore';
+import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
 import { generateStudentId } from '@/lib/studentId';
 
 const schema = z.object({
@@ -346,20 +346,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                 <Field label="Class Level">
                   <select {...register('class_level')} className="input-field">
                     <option value="">Select class</option>
-                    {[
-                      'Class 6',
-                      'Class 7',
-                      'Class 8',
-                      'JSC',
-                      'Class 9',
-                      'Class 10',
-                      'SSC',
-                      'Class 11',
-                      'Class 12',
-                      'HSC',
-                      'IELTS',
-                      'Admission Test',
-                    ].map((c) => (
+                    {classLevelList(settings.classLevels).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>

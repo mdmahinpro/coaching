@@ -11,6 +11,8 @@ import { CheckCircle, ChevronRight, ChevronLeft, User, BookOpen, ClipboardCheck 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sanitize } from '@/lib/utils';
+import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
+import { generateReferenceNo } from '@/lib/studentId';
 
 const schema = z.object({
   name: z.string().min(2, 'নাম কমপক্ষে ২ অক্ষর হতে হবে'),
@@ -19,6 +21,8 @@ const schema = z.object({
   guardian_name: z.string().min(2, 'অভিভাবকের নাম দিন'),
   guardian_phone: z.string().min(10, 'অভিভাবকের ফোন দিন'),
   address: z.string().optional(),
+  class_level: z.string().optional(),
+  gender: z.string().optional(),
   batch_id: z.string().min(1, 'একটি ব্যাচ বেছে নিন'),
   message: z.string().optional(),
 });
@@ -41,6 +45,7 @@ function Field({ label, error, children }: { label: string; error?: string; chil
 }
 
 export default function AdmissionPage() {
+  const { settings } = useSettingsStore();
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [refNo, setRefNo] = useState('');
@@ -69,9 +74,13 @@ export default function AdmissionPage() {
 
   const onSubmit = async (data: F) => {
     try {
-      const { error } = await supabase.from('admission_requests').insert([{ ...data, status: 'pending' }]);
+      // Reference number persists with the application and becomes the
+      // DEFAULT portal password once an admin approves the admission.
+      const ref = generateReferenceNo();
+      const { error } = await supabase.from('admission_requests').insert([
+        { ...data, reference_no: ref, status: 'pending' },
+      ]);
       if (error) { toast.error('জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।'); return; }
-      const ref = 'APP-' + Math.random().toString(36).slice(2, 8).toUpperCase();
       setRefNo(ref);
       setSubmitted(true);
       toast.success('আবেদন সফলভাবে জমা হয়েছে!');
@@ -100,11 +109,15 @@ export default function AdmissionPage() {
             <p className="font-hind text-slate-400 mb-5 leading-relaxed">
               আমরা শীঘ্রই আপনার সাথে যোগাযোগ করব। ধন্যবাদ আবেদন করার জন্য।
             </p>
-            <div className="bg-navy-700/60 rounded-xl px-6 py-4 mb-6 inline-block">
+            <div className="bg-navy-700/60 rounded-xl px-6 py-4 mb-4 inline-block">
               <p className="text-slate-500 text-xs mb-1">আপনার রেফারেন্স নম্বর</p>
               <p className="font-inter font-bold text-sky-400 text-xl tracking-widest">{refNo}</p>
             </div>
-            <p className="text-slate-500 text-sm">এই নম্বরটি সংরক্ষণ করুন।</p>
+            <p className="text-slate-500 text-sm mb-1">এই নম্বরটি সংরক্ষণ করুন।</p>
+            <p className="text-slate-500 text-xs font-hind leading-relaxed">
+              ভর্তি অনুমোদিত হলে এই রেফারেন্স নম্বরই হবে আপনার পোর্টালের ডিফল্ট পাসওয়ার্ড (লগইন: ফোন
+              নম্বর + রেফারেন্স নম্বর)।
+            </p>
           </motion.div>
         </div>
         <Footer />
@@ -181,6 +194,24 @@ export default function AdmissionPage() {
                   <Field label="Guardian's Phone *" error={errors.guardian_phone?.message}>
                     <input {...register('guardian_phone')} className="input-field" placeholder="01XXXXXXXXX" />
                   </Field>
+                  <Field label="Class Level (শ্রেণী)">
+                    <select {...register('class_level')} className="input-field">
+                      <option value="">-- Select class --</option>
+                      {classLevelList(settings.classLevels).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Gender">
+                    <select {...register('gender')} className="input-field">
+                      <option value="">-- Select --</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </Field>
                   <Field label="Address">
                     <input {...register('address')} className="input-field" placeholder="Your address" />
                   </Field>
@@ -250,6 +281,8 @@ export default function AdmissionPage() {
                     { label: 'Phone', value: values.phone },
                     { label: "Guardian's Name", value: values.guardian_name },
                     { label: "Guardian's Phone", value: values.guardian_phone },
+                    { label: 'Class Level', value: values.class_level || '—' },
+                    { label: 'Gender', value: values.gender || '—' },
                     { label: 'Address', value: values.address || '—' },
                     { label: 'Batch', value: selectedBatch ? `${selectedBatch.name} (৳${selectedBatch.fee}/mo)` : '—' },
                     { label: 'Message', value: values.message || '—' },

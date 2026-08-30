@@ -34,6 +34,7 @@ interface Admission {
   batch_id?: string;
   address?: string;
   message?: string;
+  reference_no?: string;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   batch?: { name: string };
@@ -121,9 +122,12 @@ export default function AdmissionsPage() {
         shortName: settings.shortName,
         batchCode,
       });
-      // Password = last 6 digits of phone, or random 6-char fallback
+      // Default password = the admission reference number (APP-XXXXXX), which
+      // the student was shown at signup. Fall back to last 6 phone digits for
+      // legacy admissions that predate the reference column.
       const phone = (admission.phone ?? '').replace(/\D/g, '');
-      const password = phone.length >= 6 ? phone.slice(-6) : Math.random().toString(36).slice(-6);
+      const password =
+        admission.reference_no || (phone.length >= 6 ? phone.slice(-6) : Math.random().toString(36).slice(-6));
 
       // Create student record via RPC — password hashed server-side
       const { error: sErr } = await supabase.rpc('register_student', {
@@ -444,12 +448,18 @@ export default function AdmissionsPage() {
                     ['Batch', viewing.batch?.name ?? '—'],
                     ['Address', viewing.address ?? '—'],
                     ['Applied', formatDate(viewing.created_at)],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex gap-3 text-sm">
-                      <span className="text-slate-500 w-20 shrink-0">{k}</span>
-                      <span className="text-white">{v}</span>
-                    </div>
-                  ))}
+                    ...(viewing.reference_no
+                      ? ([['Reference (default password)', viewing.reference_no]] as [string, string][])
+                      : []),
+                  ].map(([k, v]) => {
+                    const isRef = k === 'Reference (default password)';
+                    return (
+                      <div key={k} className="flex gap-3 text-sm">
+                        <span className="text-slate-500 w-40 shrink-0">{k}</span>
+                        <span className={isRef ? 'font-mono text-sky-400' : 'text-white'}>{v}</span>
+                      </div>
+                    );
+                  })}
                   {viewing.message && (
                     <div className="pt-2 border-t border-navy-700/50">
                       <p className="text-slate-500 text-xs mb-1">Message</p>

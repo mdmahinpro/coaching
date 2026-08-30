@@ -4,23 +4,27 @@ import { motion } from 'framer-motion';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { useSettingsStore } from '@/store/useSettingsStore';
+import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
 import { Logo } from '@/components/shared/Logo';
 import { toast } from 'react-hot-toast';
 import { sanitize } from '@/lib/utils';
+import { generateReferenceNo } from '@/lib/studentId';
 
 export default function PortalSignupPage() {
   const { settings } = useSettingsStore();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [refNo, setRefNo] = useState('');
   const [form, setForm] = useState({
     name: '',
     guardian_name: '',
+    guardian_phone: '',
     phone: '',
     email: '',
     address: '',
     class_level: '',
+    gender: '',
     batch_id: '',
   });
 
@@ -54,15 +58,21 @@ export default function PortalSignupPage() {
     }
     setLoading(true);
     try {
+      // Reference number becomes the student's default portal password on
+      // approval — generate it here and persist it so approval can use it.
+      const reference = generateReferenceNo();
       const { error } = await supabase.from('admission_requests').insert([
         {
           name: form.name,
           guardian_name: form.guardian_name || null,
+          guardian_phone: form.guardian_phone || null,
           phone: form.phone,
           email: form.email || null,
           address: form.address || null,
           class_level: form.class_level || null,
+          gender: form.gender || null,
           batch_id: form.batch_id || null,
+          reference_no: reference,
           status: 'pending',
         },
       ]);
@@ -70,6 +80,7 @@ export default function PortalSignupPage() {
         toast.error('আবেদন করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
         return;
       }
+      setRefNo(reference);
       setDone(true);
     } catch (err) {
       handleSupabaseError(err);
@@ -88,9 +99,13 @@ export default function PortalSignupPage() {
         >
           <CheckCircle2 size={48} className="text-emerald-400 mx-auto mb-4" />
           <h2 className="font-inter font-black text-xl text-white mb-3">আবেদন সফল!</h2>
+          <div className="bg-navy-700/60 rounded-xl px-6 py-4 mb-4">
+            <p className="text-slate-500 text-xs mb-1">আপনার রেফারেন্স নম্বর</p>
+            <p className="font-inter font-bold text-sky-400 text-xl tracking-widest">{refNo}</p>
+          </div>
           <p className="text-slate-400 text-sm font-hind leading-relaxed mb-6">
-            আপনার আবেদন সফলভাবে জমা হয়েছে। অনুমোদনের পর আপনার ফোন নম্বরে SMS পাবেন এবং লগইন করতে
-            পারবেন।
+            অনুমোদনের পর এই রেফারেন্স নম্বর দিয়েই পোর্টালে লগইন করতে পারবেন (ফোন নম্বর + রেফারেন্স
+            নম্বর)।
           </p>
           <Link to="/portal/login" className="btn-primary w-full justify-center">
             লগইন পেজে যান
@@ -137,13 +152,23 @@ export default function PortalSignupPage() {
                   required
                 />
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">অভিভাবকের নাম</label>
                 <input
                   value={form.guardian_name}
                   onChange={(e) => set('guardian_name', e.target.value)}
                   className="input-field"
                   placeholder="অভিভাবকের নাম"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">অভিভাবকের ফোন</label>
+                <input
+                  value={form.guardian_phone}
+                  onChange={(e) => set('guardian_phone', e.target.value)}
+                  className="input-field"
+                  placeholder="01XXXXXXXXX"
+                  type="tel"
                 />
               </div>
               <div>
@@ -159,12 +184,31 @@ export default function PortalSignupPage() {
               </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">শ্রেণী</label>
-                <input
+                <select
                   value={form.class_level}
                   onChange={(e) => set('class_level', e.target.value)}
                   className="input-field"
-                  placeholder="e.g. SSC, Class 9"
-                />
+                >
+                  <option value="">শ্রেণী বাছাই করুন…</option>
+                  {classLevelList(settings.classLevels).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">লিঙ্গ</label>
+                <select
+                  value={form.gender}
+                  onChange={(e) => set('gender', e.target.value)}
+                  className="input-field"
+                >
+                  <option value="">লিঙ্গ বাছাই করুন…</option>
+                  <option value="male">পুরুষ</option>
+                  <option value="female">মহিলা</option>
+                  <option value="other">অন্যান্য</option>
+                </select>
               </div>
               <div className="col-span-2">
                 <label className="text-xs text-slate-400 mb-1.5 block">ইমেইল (ঐচ্ছিক)</label>
