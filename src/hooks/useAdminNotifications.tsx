@@ -5,7 +5,6 @@ import { UserPlus, CreditCard } from 'lucide-react';
 import { useNotificationStore } from '@/store/useNotificationStore';
 import {
   fetchNotificationSnapshot,
-  diffNewItems,
   loadSeenIds,
   saveSeenIds,
   pruneSeen,
@@ -20,16 +19,23 @@ const MAX_TOASTS_PER_TICK = 3;
 /**
  * Admin notification engine — single instance mounted at the App root for
  * admins only (see AdminNotificationMount in App.tsx). Polls the pending
- * admission + payment-approval queues, diffs against the last feed, fires
- * react-hot-toast popups for NEW items that aren't already seen, and keeps
- * the badge counts up to date. Admin's own approvals remove items from the
- * feed — so they never toast back to themselves.
+ * admission + payment-approval queues, fires react-hot-toast popups for NEW
+ * items, and keeps the badge counts up to date.
+ *
+ * Read/unread is tracked by the persisted seen-set (localStorage): an item
+ * stays UNREAD in the badge until the admin explicitly opens it (markRead /
+ * markAllRead in the bell). A separate in-memory set guards against re-toasting,
+ * so toasting never marks an item read. Admin's own approvals remove items
+ * from the feed — so they never toast back to themselves.
  */
 export function useAdminNotifications(email: string | null) {
   const navigate = useNavigate();
   const setSeenKey = useNotificationStore((s) => s.setSeenKey);
   const setFeed = useNotificationStore((s) => s.setFeed);
   const keysRef = useRef<string | null>(null);
+  // Session-only: ids already toasted once. Deliberately NOT written to the
+  // seen-set / localStorage, so marking-something-toast does not mark it read.
+  const toastedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!email) {
@@ -74,24 +80,31 @@ export function useAdminNotifications(email: string | null) {
       const silent = opts?.silent ?? false;
       try {
         const snapshot = await fetchNotificationSnapshot();
-        const prev = useNotificationStore.getState().items;
-        const fresh = diffNewItems(prev, snapshot);
 
-        const seenSet = new Set(keysRef.current ? loadSeenIds(keysRef.current) : []);
+        // persisted seen-set = items the admin has actually opened. Anything not
+        // in it is UNREAD and must stay unread until the admin opens it.
+        const stored = keysRef.current ? loadSeenIds(keysRef.current) : [];
+        const seenSet = new Set(stored);
+        const unread = snapshot.filter((n) => !seenSet.has(n.id));
+
+        // Toast only genuinely-new, unseen items — guarded by the in-memory set
+        // (NOT persisted) so we never re-toast AND never mark an item read.
+        const toastable = unread.filter((n) => !toastedRef.current.has(n.id));
         const visible = typeof document !== 'undefined' && document.visibilityState === 'visible';
         if (!silent && visible) {
-          fresh
-            .filter((n) => !seenSet.has(n.id))
-            .slice(0, MAX_TOASTS_PER_TICK)
-            .forEach(showToast);
+          toastable.slice(0, MAX_TOASTS_PER_TICK).forEach((n) => {
+            toastedRef.current.add(n.id);
+            showToast(n);
+          });
         }
-        // Mark the fresh ones seen NOW so a second poll (or refocus) can't toast
-        // them again; then persist the whole pruned seen-set.
-        const nextSeen = [...new Set([...seenSet, ...fresh.map((n) => n.id)])];
+
+        // Persist the SEEN-SET unchanged (pruned to the active feed). Unread
+        // items are intentionally NOT added here, so they remain unread until
+        // the admin opens them (markRead / markAllRead).
         if (keysRef.current) {
-          saveSeenIds(keysRef.current, pruneSeen(nextSeen, snapshot.map((n) => n.id)));
+          saveSeenIds(keysRef.current, pruneSeen(stored, snapshot.map((n) => n.id)));
         }
-        setFeed(snapshot, nextSeen);
+        setFeed(snapshot, stored);
       } catch {
         // The bell must never crash the admin UI — swallow snapshot failures.
       }
