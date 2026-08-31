@@ -925,6 +925,23 @@ export default function SettingsPage() {
                 </div>
                 <span className="text-sm text-slate-300">Auto-calculate from database</span>
               </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div
+                  onClick={() => set('showHomeStats', !form.showHomeStats)}
+                  className={cn(
+                    'w-10 h-6 rounded-full transition-colors relative',
+                    form.showHomeStats ? 'bg-sky-500' : 'bg-white/10'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-all',
+                      form.showHomeStats ? 'left-5' : 'left-1'
+                    )}
+                  />
+                </div>
+                <span className="text-sm text-slate-300">Show homepage stats / counters</span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Students Count">
                   <input

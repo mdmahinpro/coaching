@@ -33,7 +33,7 @@ export function BatchCard({ batch, index = 0 }: Props) {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.08, duration: 0.5 }}
-      className="group card p-5 hover:border-sky-400/30 hover:shadow-sky-500/10 hover:shadow-xl transition-all duration-300 border-l-2 border-l-sky-500/40 hover:border-l-sky-400 flex flex-col"
+      className="group card p-5 hover:border-sky-400/30 hover:shadow-sky-500/10 hover:shadow-xl transition-all duration-300 border-l-2 border-l-sky-500/40 hover:border-l-sky-400 flex flex-col bg-gradient-to-br from-navy-700/60 via-navy-800/40 to-navy-800/60 backdrop-blur border border-white/10"
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">

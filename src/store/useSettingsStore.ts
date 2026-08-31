@@ -26,6 +26,9 @@ export interface Settings {
   statBatches: number;
   statSuccessRate: number;
   statAutoFromDb: boolean;
+  // Show/hide the homepage hero stats row (the "current batch students total"
+  // counter block). When false the whole row is hidden.
+  showHomeStats: boolean;
   socialFacebook: string;
   socialYoutube: string;
   socialInstagram: string;
@@ -74,6 +77,7 @@ export const defaults: Settings = {
   statBatches: 0,
   statSuccessRate: 95,
   statAutoFromDb: true,
+  showHomeStats: true,
   socialFacebook: '',
   socialYoutube: '',
   socialInstagram: '',
@@ -112,6 +116,7 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   statBatches: 'stat_batches',
   statSuccessRate: 'stat_success_rate',
   statAutoFromDb: 'stat_auto_from_db',
+  showHomeStats: 'show_home_stats',
   socialFacebook: 'social_facebook',
   socialYoutube: 'social_youtube',
   socialInstagram: 'social_instagram',
@@ -147,6 +152,7 @@ const NUMBER_FIELDS = new Set<keyof Settings>([
 const BOOL_FIELDS = new Set<keyof Settings>([
   'admissionOpen',
   'statAutoFromDb',
+  'showHomeStats',
   'defaultStrictMode',
   'bkashEnabled',
   'nagadEnabled',

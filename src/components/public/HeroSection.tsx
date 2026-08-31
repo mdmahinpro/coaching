@@ -3,8 +3,12 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Users, BookOpen, Award, TrendingUp } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { Logo } from '@/components/shared/Logo';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useIntersection } from '@/hooks/useIntersection';
+import { usePoll } from '@/hooks/useRealtimePoll';
+import { resolveHomeStats, type HomeStatsCounts } from '@/lib/homeStats';
+import { supabase } from '@/lib/supabase';
+import { handleSupabaseError } from '@/utils/errorHandler';
 
 function useCountUp(target: number, duration = 1800, active = false) {
   const [count, setCount] = useState(0);
@@ -22,13 +26,6 @@ function useCountUp(target: number, duration = 1800, active = false) {
   return count;
 }
 
-const stats = [
-  { icon: <Users size={22} />, value: 1200, suffix: '+', label: 'শিক্ষার্থী', color: 'text-sky-400' },
-  { icon: <BookOpen size={22} />, value: 24, suffix: '+', label: 'কোর্স', color: 'text-violet-400' },
-  { icon: <Award size={22} />, value: 12, suffix: '+', label: 'শিক্ষক', color: 'text-emerald-400' },
-  { icon: <TrendingUp size={22} />, value: 95, suffix: '%', label: 'সাফল্য', color: 'text-amber-400' },
-];
-
 const codeLines = [
   { label: 'SSC English', color: '#38bdf8', note: '// morning batch' },
   { label: 'HSC Physics', color: '#a78bfa', note: '// evening batch' },
@@ -41,11 +38,58 @@ export function HeroSection() {
   const { settings } = useSettingsStore();
   const { ref: statsRef, isVisible: statsVisible } = useIntersection({ threshold: 0.3 });
 
+  // Live DB counts for the hero stats — polled when "auto-calculate from
+  // database" is on (students approved+active, active teachers, active batches).
+  const autoFromDb = settings.statAutoFromDb;
+  const countFetcher = useCallback(async (): Promise<HomeStatsCounts | null> => {
+    if (!useSettingsStore.getState().settings.statAutoFromDb) {
+      return null; // skip polling when the admin disabled auto-from-DB
+    }
+    const [s, t, b] = await Promise.all([
+      supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_approved', true)
+        .eq('status', 'active'),
+      supabase
+        .from('teachers')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true),
+      supabase
+        .from('batches')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true),
+    ]);
+    if (s.error) {
+      handleSupabaseError(s.error);
+      return null;
+    }
+    if (t.error) {
+      handleSupabaseError(t.error);
+      return null;
+    }
+    if (b.error) {
+      handleSupabaseError(b.error);
+      return null;
+    }
+    return { students: s.count ?? 0, teachers: t.count ?? 0, batches: b.count ?? 0 };
+  }, []);
+  const dbCounts = usePoll<HomeStatsCounts | null>(countFetcher);
+
+  const resolved = resolveHomeStats(autoFromDb ? dbCounts : null, autoFromDb, settings);
+
+  const stats = [
+    { icon: <Users size={22} />, value: resolved.students, suffix: '+', label: 'শিক্ষার্থী', color: 'text-sky-400' },
+    { icon: <BookOpen size={22} />, value: resolved.batches, suffix: '+', label: 'কোর্স', color: 'text-violet-400' },
+    { icon: <Award size={22} />, value: resolved.teachers, suffix: '+', label: 'শিক্ষক', color: 'text-emerald-400' },
+    { icon: <TrendingUp size={22} />, value: resolved.successRate, suffix: '%', label: 'সাফল্য', color: 'text-amber-400' },
+  ];
+
   const counts = [
-    useCountUp(1200, 1600, statsVisible),
-    useCountUp(24, 1200, statsVisible),
-    useCountUp(12, 1000, statsVisible),
-    useCountUp(95, 1400, statsVisible),
+    useCountUp(resolved.students, 1600, statsVisible && settings.showHomeStats),
+    useCountUp(resolved.batches, 1200, statsVisible && settings.showHomeStats),
+    useCountUp(resolved.teachers, 1000, statsVisible && settings.showHomeStats),
+    useCountUp(resolved.successRate, 1400, statsVisible && settings.showHomeStats),
   ];
 
   return (
@@ -114,17 +158,19 @@ export function HeroSection() {
               </Link>
             </div>
 
-            {/* Stats row */}
-            <div ref={statsRef as React.Ref<HTMLDivElement>} className="grid grid-cols-4 gap-4">
-              {stats.map((s, i) => (
-                <div key={s.label} className="text-center">
-                  <div className={`font-inter font-black text-2xl sm:text-3xl ${s.color} mb-0.5`}>
-                    {counts[i].toLocaleString()}{s.suffix}
+            {/* Stats row — shown only when the admin enables it */}
+            {settings.showHomeStats && (
+              <div ref={statsRef as React.Ref<HTMLDivElement>} className="grid grid-cols-4 gap-4">
+                {stats.map((s, i) => (
+                  <div key={s.label} className="text-center">
+                    <div className={`font-inter font-black text-2xl sm:text-3xl ${s.color} mb-0.5`}>
+                      {counts[i].toLocaleString()}{s.suffix}
+                    </div>
+                    <div className="font-hind text-slate-500 text-xs sm:text-sm">{s.label}</div>
                   </div>
-                  <div className="font-hind text-slate-500 text-xs sm:text-sm">{s.label}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </motion.div>
 
           {/* Right: decorative code card */}

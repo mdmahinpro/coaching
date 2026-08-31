@@ -4,10 +4,11 @@ import { HeroSection } from '@/components/public/HeroSection';
 import { BatchCard } from '@/components/public/BatchCard';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';
 import { Avatar } from '@/components/shared/Avatar';
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { sanitize } from '@/lib/utils';
+import { usePoll } from '@/hooks/useRealtimePoll';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -35,33 +36,60 @@ export default function HomePage() {
   const [teachers, setTeachers] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
 
-  useEffect(() => {
-    supabase.from('batches').select('*').eq('is_active', true).limit(6)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((b: any) => ({
+  // Polled "realtime" fetchers — run immediately, then every interval and on
+  // window focus, so batch occupancy, the notice ticker and teachers stay live.
+  const fetchBatches = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('batches').select('*').eq('is_active', true).limit(6);
+      setBatches(
+        (data ?? []).map((b: any) => ({
           ...b, name: sanitize(b.name),
           // teacher is a text column (teacher name string), not a relation object
           teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
-        }));
-        setBatches(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-    // Explicit column list, not `*`: anon holds column-level SELECT on the
-    // public teacher card fields only. salary, phone and email are revoked,
-    // and `*` would fail the whole query with 42501.
-    supabase.from('teachers').select('id,name,subject,qualification,bio,photo_url,is_active')
-      .eq('is_active', true).limit(4)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((t: any) => ({
-          ...t, name: sanitize(t.name), subject: t.subject ? sanitize(t.subject) : t.subject,
-        }));
-        setTeachers(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-    supabase.from('notices').select('title').eq('is_published', true).order('created_at', { ascending: false }).limit(8)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((n: any) => ({ ...n, title: sanitize(n.title) }));
-        setNotices(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
+        }))
+      );
+    } catch (err) {
+      handleSupabaseError(err);
+    }
   }, []);
+
+  const fetchTeachers = useCallback(async () => {
+    try {
+      // Explicit column list, not `*`: anon holds column-level SELECT on the
+      // public teacher card fields only. salary, phone and email are revoked,
+      // and `*` would fail the whole query with 42501.
+      const { data } = await supabase
+        .from('teachers')
+        .select('id,name,subject,qualification,bio,photo_url,is_active')
+        .eq('is_active', true)
+        .limit(4);
+      setTeachers(
+        (data ?? []).map((t: any) => ({
+          ...t, name: sanitize(t.name), subject: t.subject ? sanitize(t.subject) : t.subject,
+        }))
+      );
+    } catch (err) {
+      handleSupabaseError(err);
+    }
+  }, []);
+
+  const fetchNotices = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('notices')
+        .select('title')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(8);
+      setNotices((data ?? []).map((n: any) => ({ ...n, title: sanitize(n.title) })));
+    } catch (err) {
+      handleSupabaseError(err);
+    }
+  }, []);
+
+  usePoll(fetchBatches);
+  usePoll(fetchTeachers);
+  usePoll(fetchNotices);
 
   const tickerItems = notices.length > 0
     ? [...notices, ...notices].map(n => n.title)

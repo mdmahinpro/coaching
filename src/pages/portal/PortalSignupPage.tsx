@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, CheckCircle2 } from 'lucide-react';
@@ -9,6 +9,7 @@ import { Logo } from '@/components/shared/Logo';
 import { toast } from 'react-hot-toast';
 import { sanitize } from '@/lib/utils';
 import { generateReferenceNo } from '@/lib/studentId';
+import { usePoll } from '@/hooks/useRealtimePoll';
 
 export default function PortalSignupPage() {
   const { settings } = useSettingsStore();
@@ -28,25 +29,24 @@ export default function PortalSignupPage() {
     batch_id: '',
   });
 
-  useEffect(() => {
-    supabase
-      .from('batches')
-      .select('id,name,subject')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((b: any) => ({
-            ...b,
-            name: sanitize(b.name),
-            subject: b.subject ? sanitize(b.subject) : b.subject,
-          }));
-          setBatches(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
+  const fetchBatches = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('batches')
+        .select('id,name,subject')
+        .eq('is_active', true);
+      setBatches(
+        (data ?? []).map((b: any) => ({
+          ...b,
+          name: sanitize(b.name),
+          subject: b.subject ? sanitize(b.subject) : b.subject,
+        }))
       );
+    } catch (err) {
+      handleSupabaseError(err);
+    }
   }, []);
+  usePoll(fetchBatches);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
