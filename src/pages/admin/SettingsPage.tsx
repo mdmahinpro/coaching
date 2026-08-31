@@ -25,6 +25,8 @@ import {
   GraduationCap,
   X,
   Plus,
+  Upload,
+  ImagePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { classLevelList } from '@/store/useSettingsStore';
@@ -42,6 +44,68 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'admins', label: 'Admins', icon: Users },
 ];
+
+/**
+ * Upload button + preview for a site image (logo / banner). Uploads to the
+ * shared avatars bucket and writes the public URL back via onChange; a URL
+ * input remains for manual entry.
+ */
+function SiteImageUpload({
+  label,
+  preview,
+  uploading,
+  onUpload,
+  currentUrl,
+  onChange,
+  hint,
+}: {
+  label: string;
+  preview?: string;
+  uploading: boolean;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  currentUrl: string;
+  onChange: (v: string) => void;
+  hint: string;
+}) {
+  return (
+    <div>
+      <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>
+      <div className="flex items-start gap-4">
+        <div className="w-24 h-16 rounded-xl border border-white/10 bg-navy-800/50 flex items-center justify-center overflow-hidden shrink-0">
+          {preview ? (
+            <img
+              src={preview}
+              alt={label}
+              className={cn('object-cover w-full h-full', label === 'Logo' && 'object-contain bg-navy-900/70 p-1')}
+            />
+          ) : (
+            <ImagePlus size={20} className="text-slate-600" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <label htmlFor={`site-${label.toLowerCase()}`} className="btn-outline text-xs py-2 px-3 cursor-pointer inline-flex items-center gap-1.5">
+            {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+            {uploading ? 'Uploading…' : 'Upload Image'}
+          </label>
+          <input
+            id={`site-${label.toLowerCase()}`}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onUpload}
+          />
+          <p className="text-slate-600 text-xs mt-1.5">{hint}</p>
+        </div>
+      </div>
+      <input
+        value={currentUrl}
+        onChange={(e) => onChange(e.target.value)}
+        className="input-field mt-2 font-mono text-xs"
+        placeholder="https://… (or paste a URL)"
+      />
+    </div>
+  );
+}
 
 /**
  * Chips + add-input editor for the comma-separated class-levels string
@@ -136,6 +200,8 @@ export default function SettingsPage() {
   // Admin profile picture
   const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  // Logo / banner upload
+  const [uploadingImg, setUploadingImg] = useState<string | null>(null); // 'logo' | 'banner' | null
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -368,6 +434,41 @@ export default function SettingsPage() {
     }
   };
 
+  /** Upload a site logo or banner to the shared avatars bucket → public URL. */
+  const handleSiteImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    kind: 'logo' | 'banner'
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5 MB');
+      return;
+    }
+    setUploadingImg(kind);
+    try {
+      const blob = file.type === 'image/svg+xml' ? file : await compressImage(file);
+      const ext = file.type === 'image/svg+xml' ? 'svg' : 'jpg';
+      const path = `site/${kind}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, blob, { upsert: true, contentType: file.type || 'image/jpeg' });
+      if (upErr) {
+        throw upErr;
+      }
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', data.publicUrl);
+      toast.success(kind === 'logo' ? 'Logo set — now save settings' : 'Banner set — now save settings');
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setUploadingImg(null);
+      e.target.value = '';
+    }
+  };
+
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAdminEmail) {
@@ -541,22 +642,24 @@ export default function SettingsPage() {
                     placeholder="দক্ষ শিক্ষক, আধুনিক পদ্ধতি"
                   />
                 </Field>
-                <Field label="Logo URL">
-                  <input
-                    value={form.logoUrl}
-                    onChange={(e) => set('logoUrl', e.target.value)}
-                    className="input-field"
-                    placeholder="https://…"
-                  />
-                </Field>
-                <Field label="Banner URL">
-                  <input
-                    value={form.bannerUrl}
-                    onChange={(e) => set('bannerUrl', e.target.value)}
-                    className="input-field"
-                    placeholder="https://…"
-                  />
-                </Field>
+                <SiteImageUpload
+                  label="Logo"
+                  preview={form.logoUrl}
+                  uploading={uploadingImg === 'logo'}
+                  onUpload={(e) => handleSiteImageUpload(e, 'logo')}
+                  currentUrl={form.logoUrl}
+                  onChange={(v) => set('logoUrl', v)}
+                  hint="Used in the site navbars, login pages, PDFs, and browser-tab icon."
+                />
+                <SiteImageUpload
+                  label="Banner"
+                  preview={form.bannerUrl}
+                  uploading={uploadingImg === 'banner'}
+                  onUpload={(e) => handleSiteImageUpload(e, 'banner')}
+                  currentUrl={form.bannerUrl}
+                  onChange={(v) => set('bannerUrl', v)}
+                  hint="Homepage hero background (optional)."
+                />
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div
                     onClick={() => set('admissionOpen', !form.admissionOpen)}

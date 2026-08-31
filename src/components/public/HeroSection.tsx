@@ -50,6 +50,18 @@ export function HeroSection() {
 
   return (
     <section className="relative min-h-screen flex items-center pt-16 overflow-hidden bg-navy-900">
+      {/* Custom banner background (optional — set in Settings → Institute) */}
+      {settings.bannerUrl && (
+        <>
+          <img
+            src={settings.bannerUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          />
+          <div className="absolute inset-0 pointer-events-none bg-navy-900/70" />
+        </>
+      )}
       {/* Radial glow bg */}
       <div
         className="absolute inset-0 pointer-events-none"
