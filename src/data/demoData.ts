@@ -187,88 +187,51 @@ export async function loadDemoData(): Promise<void> {
   const [b1, b2, b3] = batches;
 
   // ── 3. Students ──────────────────────────────────────────────────────────
-  const { data: students, error: sErr } = await supabase
-    .from('students')
-    .insert([
-      {
-        name: 'আরিফ হোসেন',
-        student_id: 'CF250001',
-        phone: '01811000001',
-        email: 'arif@demo.com',
-        guardian_name: 'মো. হোসেন',
-        guardian_phone: '01911000001',
-        gender: 'male',
-        class_level: 'Class 9',
-        batch_id: b1.id,
-        address: 'ঢাকা, বাংলাদেশ',
-        status: 'active',
-        is_approved: true,
-        password: 'demo1234',
-      },
-      {
-        name: 'সুমাইয়া খান',
-        student_id: 'CF250002',
-        phone: '01811000002',
-        email: 'sumaiya@demo.com',
-        guardian_name: 'মো. খান',
-        guardian_phone: '01911000002',
-        gender: 'female',
-        class_level: 'Class 9',
-        batch_id: b1.id,
-        address: 'চট্টগ্রাম, বাংলাদেশ',
-        status: 'active',
-        is_approved: true,
-        password: 'demo1234',
-      },
-      {
-        name: 'রাহুল দাস',
-        student_id: 'CF250003',
-        phone: '01811000003',
-        email: 'rahul@demo.com',
-        guardian_name: 'সুনীল দাস',
-        guardian_phone: '01911000003',
-        gender: 'male',
-        class_level: 'Class 11',
-        batch_id: b2.id,
-        address: 'সিলেট, বাংলাদেশ',
-        status: 'active',
-        is_approved: true,
-        password: 'demo1234',
-      },
-      {
-        name: 'নাদিয়া ইসলাম',
-        student_id: 'CF250004',
-        phone: '01811000004',
-        email: 'nadia@demo.com',
-        guardian_name: 'মো. ইসলাম',
-        guardian_phone: '01911000004',
-        gender: 'female',
-        class_level: 'Class 11',
-        batch_id: b2.id,
-        address: 'রাজশাহী, বাংলাদেশ',
-        status: 'active',
-        is_approved: true,
-        password: 'demo1234',
-      },
-      {
-        name: 'তানভীর আহমেদ',
-        student_id: 'CF250005',
-        phone: '01811000005',
-        email: 'tanvir@demo.com',
-        guardian_name: 'মো. আহমেদ',
-        guardian_phone: '01911000005',
-        gender: 'male',
-        class_level: 'Class 8',
-        batch_id: b3.id,
-        address: 'খুলনা, বাংলাদেশ',
-        status: 'active',
-        is_approved: true,
-        password: 'demo1234',
-      },
-    ])
-    .select('id, name, batch_id');
-  if (sErr || !students) {
-    throw new Error(sErr?.message ?? 'Students insert failed');
+  // Route each through register_student (SECURITY DEFINER, admin-gated) so the
+  // password is bcrypt-hashed server-side — a raw `students` INSERT stores the
+  // literal password and verify_student_login can then never match it. The demo
+  // loader runs from the admin dashboard, so the is_admin() guard is satisfied.
+  const DEMO_STUDENTS = [
+    { name: 'আরিফ হোসেন', student_id: 'CF250001', phone: '01811000001', email: 'arif@demo.com', guardian_name: 'মো. হোসেন', guardian_phone: '01911000001', gender: 'male', class_level: 'Class 9', batch_id: b1.id, address: 'ঢাকা, বাংলাদেশ', password: 'demo1234' },
+    { name: 'সুমাইয়া খান', student_id: 'CF250002', phone: '01811000002', email: 'sumaiya@demo.com', guardian_name: 'মো. খান', guardian_phone: '01911000002', gender: 'female', class_level: 'Class 9', batch_id: b1.id, address: 'চট্টগ্রাম, বাংলাদেশ', password: 'demo1234' },
+    { name: 'রাহুল দাস', student_id: 'CF250003', phone: '01811000003', email: 'rahul@demo.com', guardian_name: 'সুনীল দাস', guardian_phone: '01911000003', gender: 'male', class_level: 'Class 11', batch_id: b2.id, address: 'সিলেট, বাংলাদেশ', password: 'demo1234' },
+    { name: 'নাদিয়া ইসলাম', student_id: 'CF250004', phone: '01811000004', email: 'nadia@demo.com', guardian_name: 'মো. ইসলাম', guardian_phone: '01911000004', gender: 'female', class_level: 'Class 11', batch_id: b2.id, address: 'রাজশাহী, বাংলাদেশ', password: 'demo1234' },
+    { name: 'তানভীর আহমেদ', student_id: 'CF250005', phone: '01811000005', email: 'tanvir@demo.com', guardian_name: 'মো. আহমেদ', guardian_phone: '01911000005', gender: 'male', class_level: 'Class 8', batch_id: b3.id, address: 'খুলনা, বাংলাদেশ', password: 'demo1234' },
+  ];
+
+  const students: { id: string; name: string; batch_id: string }[] = [];
+  for (const s of DEMO_STUDENTS) {
+    const { data, error: regErr } = await supabase
+      .rpc('register_student', {
+        p_name: s.name,
+        p_student_id: s.student_id,
+        p_phone: s.phone,
+        p_email: s.email,
+        p_guardian_name: s.guardian_name,
+        p_guardian_phone: s.guardian_phone,
+        p_gender: s.gender,
+        p_class_level: s.class_level,
+        p_batch_id: s.batch_id,
+        p_address: s.address,
+        p_password: s.password,
+        p_status: 'active',
+        p_is_approved: true,
+      });
+    if (regErr) {
+      throw new Error(regErr.message);
+    }
+    const row = (data as any[] | null)?.[0];
+    if (!row?.id) {
+      throw new Error('register_student returned no student for ' + s.name);
+    }
+    students.push({
+      id: row.id,
+      name: s.name,
+      batch_id: s.batch_id,
+    });
+  }
+  if (!students.length) {
+    throw new Error('Students insert failed');
   }
 
   // ── 4. Fees — 2 months each ───────────────────────────────────────────────
