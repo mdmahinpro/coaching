@@ -126,7 +126,7 @@ export default function PortalSignupPage() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md relative"
       >
-        <div className="card-glass p-7">
+        <div className="card-glass interactive-card p-7">
           <div className="text-center mb-6">
             <Logo className="w-12 h-12 rounded-xl mx-auto mb-3" />
             <h1 className="font-inter font-black text-xl text-white">ভর্তি আবেদন</h1>

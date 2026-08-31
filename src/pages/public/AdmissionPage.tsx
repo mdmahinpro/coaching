@@ -108,7 +108,7 @@ export default function AdmissionPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="card-glass p-10 text-center"
+            className="card-glass interactive-card p-10 text-center"
           >
             <div className="w-20 h-20 rounded-full bg-emerald-400/15 border border-emerald-400/20 flex items-center justify-center mx-auto mb-5">
               <CheckCircle size={40} className="text-emerald-400" />
@@ -181,7 +181,7 @@ export default function AdmissionPage() {
                 initial={{ opacity: 0, x: 30 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -30 }}
-                className="card-glass p-6 space-y-4"
+                className="card-glass interactive-card p-6 space-y-4"
               >
                 <h3 className="font-inter font-semibold text-white mb-1 flex items-center gap-2">
                   <User size={17} className="text-sky-400" /> Personal Information
@@ -239,7 +239,7 @@ export default function AdmissionPage() {
                 initial={{ opacity: 0, x: 30 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -30 }}
-                className="card-glass p-6 space-y-4"
+                className="card-glass interactive-card p-6 space-y-4"
               >
                 <h3 className="font-inter font-semibold text-white mb-1 flex items-center gap-2">
                   <BookOpen size={17} className="text-sky-400" /> Select Batch
@@ -276,7 +276,7 @@ export default function AdmissionPage() {
                 initial={{ opacity: 0, x: 30 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -30 }}
-                className="card-glass p-6 space-y-5"
+                className="card-glass interactive-card p-6 space-y-5"
               >
                 <h3 className="font-inter font-semibold text-white mb-1 flex items-center gap-2">
                   <ClipboardCheck size={17} className="text-sky-400" /> Review & Submit
