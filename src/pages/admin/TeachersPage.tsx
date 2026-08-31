@@ -259,7 +259,7 @@ export default function TeachersPage() {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <Avatar name={t.name} size="md" src={t.photo_url} />
+                    <Avatar name={t.name} size="md" src={t.photo_url} seed={t.id} />
                     <div>
                       <h3 className="font-semibold text-white text-sm">{t.name}</h3>
                       {t.subject && <span className="badge-violet text-xs">{t.subject}</span>}

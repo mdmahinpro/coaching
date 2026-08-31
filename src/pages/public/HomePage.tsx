@@ -190,7 +190,7 @@ export default function HomePage() {
                 className="card-glass p-6 text-center hover:border-violet-400/20 transition-all"
               >
                 <div className="flex justify-center mb-4">
-                  <Avatar name={t.name} size="lg" />
+                  <Avatar name={t.name} size="lg" src={t.photo_url} seed={t.id} />
                 </div>
                 <h3 className="font-inter font-semibold text-white mb-1">{t.name}</h3>
                 <span className="badge-violet mb-2 text-xs">{t.subject}</span>
@@ -227,7 +227,7 @@ export default function HomePage() {
                 </div>
                 <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3 border-t border-white/5 pt-4">
-                  <Avatar name={t.name} size="sm" />
+                  <Avatar name={t.name} size="sm" fallbackToInitials />
                   <div>
                     <p className="font-semibold text-white text-sm">{t.name}</p>
                     <p className="text-slate-500 text-xs">{t.grade}</p>

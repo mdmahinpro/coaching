@@ -413,7 +413,7 @@ export default function StudentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <Avatar name={s.name} size="sm" src={s.photo_url} />
+                        <Avatar name={s.name} size="sm" src={s.photo_url} seed={s.id} />
                         <div>
                           <p className="font-medium text-white text-sm">{s.name}</p>
                           <p className="text-slate-500 text-xs truncate max-w-[140px]">
@@ -496,7 +496,7 @@ export default function StudentsPage() {
                 className="card p-4"
               >
                 <div className="flex items-start gap-3 mb-3">
-                  <Avatar name={s.name} size="md" src={s.photo_url} />
+                  <Avatar name={s.name} size="md" src={s.photo_url} seed={s.id} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <p className="font-semibold text-white truncate">{s.name}</p>
