@@ -26,9 +26,9 @@ const whyUs = [
 ];
 
 const testimonials = [
-  { name: 'রাহিম উদ্দিন', grade: 'SSC 2024 — GPA 5.00', text: 'এই কোচিং সেন্টারের সহায়তায় আমি SSC-তে A+ পেয়েছি। স্যারদের পড়ানোর পদ্ধতি অসাধারণ ছিল।' },
-  { name: 'সুমাইয়া বেগম', grade: 'HSC 2024 — GPA 4.83', text: 'নিয়মিত মডেল টেস্ট ও স্যারদের গাইডেন্স আমাকে ভালো ফলাফল করতে সাহায্য করেছে।' },
-  { name: 'করিম হোসেন', grade: 'IELTS 7.5 Band', text: 'IELTS প্রস্তুতির জন্য এটি সেরা জায়গা। Speaking ও Writing এ অনেক উপকার হয়েছে।' },
+  { name: 'রাহিম উদ্দিন', grade: 'SSC 2024 — GPA 5.00', gender: 'male', text: 'এই কোচিং সেন্টারের সহায়তায় আমি SSC-তে A+ পেয়েছি। স্যারদের পড়ানোর পদ্ধতি অসাধারণ ছিল।' },
+  { name: 'সুমাইয়া বেগম', grade: 'HSC 2024 — GPA 4.83', gender: 'female', text: 'নিয়মিত মডেল টেস্ট ও স্যারদের গাইডেন্স আমাকে ভালো ফলাফল করতে সাহায্য করেছে।' },
+  { name: 'করিম হোসেন', grade: 'IELTS 7.5 Band', gender: 'male', text: 'IELTS প্রস্তুতির জন্য এটি সেরা জায়গা। Speaking ও Writing এ অনেক উপকার হয়েছে।' },
 ];
 
 export default function HomePage() {
@@ -227,7 +227,7 @@ export default function HomePage() {
                 </div>
                 <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">&quot;{t.text}&quot;</p>
                 <div className="flex items-center gap-3 border-t border-white/5 pt-4">
-                  <Avatar name={t.name} size="sm" fallbackToInitials />
+                  <Avatar name={t.name} size="sm" seed={t.name} gender={t.gender as 'male' | 'female'} />
                   <div>
                     <p className="font-semibold text-white text-sm">{t.name}</p>
                     <p className="text-slate-500 text-xs">{t.grade}</p>
