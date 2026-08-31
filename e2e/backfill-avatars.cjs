@@ -55,26 +55,31 @@ function seededAvatarUrl(seed, gender) {
       return { done, fail };
     };
 
-    const te = await supabase.from('teachers').select('id,name,photo_url,is_active');
-    const st = await supabase.from('students').select('id,name,photo_url,gender,is_approved,status');
-    const tEmpty = (te.data || []).filter(x => !x.photo_url);
-    const sEmpty = (st.data || []).filter(x => !x.photo_url);
+    // Every row that is NOT already a seeded randomuser headshot (i.e. empty
+    // OR an existing uploaded/reviewed avatar) gets replaced with the seeded
+    // headshot — uniform AI-headshot avatars across every teacher and student.
+    const isSeeded = (u) => !!u && /randomuser\.me\/api\/portraits\//.test(u);
+    const te = await supabase.from('teachers').select('id,name,photo_url');
+    const st = await supabase.from('students').select('id,name,photo_url,gender');
+    const tNeed = (te.data || []).filter(x => !isSeeded(x.photo_url));
+    const sNeed = (st.data || []).filter(x => !isSeeded(x.photo_url));
 
-    const tFill = await fill('teachers', tEmpty);
-    const sFill = await fill('students', sEmpty);
+    const tFill = await fill('teachers', tNeed);
+    const sFill = await fill('students', sNeed);
 
-    // Verify: re-read & count remaining empties.
+    // Verify: re-read & count non-seeded after.
     const te2 = await supabase.from('teachers').select('id,photo_url');
     const st2 = await supabase.from('students').select('id,photo_url');
+    const notSeeded = (rows) => rows.filter(x => !(x.photo_url && /randomuser\.me\/api\/portraits\//.test(x.photo_url))).length;
     return {
-      teachers: { total: (te.data||[]).length, emptyBefore: tEmpty.length, ...tFill, emptyAfter: (te2.data||[]).filter(x=>!x.photo_url).length },
-      students: { total: (st.data||[]).length, emptyBefore: sEmpty.length, ...sFill, emptyAfter: (st2.data||[]).filter(x=>!x.photo_url).length },
-      sampleTeacher: tEmpty[0] ? { name: tEmpty[0].name, url: av(tEmpty[0].id, tEmpty[0].gender||null) } : null,
+      teachers: { total: (te.data||[]).length, replaced: tFill.done, nonSeededAfter: notSeeded(te2.data||[]), fail: tFill.fail },
+      students: { total: (st.data||[]).length, replaced: sFill.done, nonSeededAfter: notSeeded(st2.data||[]), fail: sFill.fail },
+      sampleTeacher: tNeed[0] ? { name: tNeed[0].name, url: av(tNeed[0].id) } : null,
       tErr: te.error && te.error.message,
     };
   });
   console.log(JSON.stringify(out, null, 2));
   await b.close();
-  const allFilled = out && out.teachers.emptyAfter === 0 && out.students.emptyAfter === 0;
+  const allFilled = out && out.teachers.nonSeededAfter === 0 && out.students.nonSeededAfter === 0;
   if (!allFilled) process.exit(1);
 })();
