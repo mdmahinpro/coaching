@@ -1,8 +1,9 @@
 import { Clock, Users, BookOpen, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { formatBatchSchedule, type BatchScheduleLike } from '@/lib/schedule';
 
-interface Batch {
+interface Batch extends BatchScheduleLike {
   id: string;
   name: string;
   subject: string;
@@ -56,7 +57,7 @@ export function BatchCard({ batch, index = 0 }: Props) {
       <div className="space-y-2 text-sm text-slate-400 mb-4 flex-1">
         <div className="flex items-center gap-2">
           <Clock size={13} className="text-slate-500 shrink-0" />
-          <span>{batch.schedule}</span>
+          <span>{formatBatchSchedule(batch)}</span>
         </div>
         <div className="flex items-center gap-2">
           <Users size={13} className="text-slate-500 shrink-0" />

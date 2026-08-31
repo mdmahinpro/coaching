@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatCurrency, cn, sanitize } from '@/lib/utils';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { formatBatchSchedule } from '@/lib/schedule';
 
 interface Batch {
   id: string;
@@ -34,6 +35,8 @@ interface Batch {
   // DB column is `start_time` (TEXT, e.g. "07:00"); schedule_time was a
   // legacy form alias that never existed on the table.
   start_time?: string;
+  // DB column `end_time` (TEXT) — class finish time, shown beside start_time.
+  end_time?: string;
   capacity: number;
   enrolled_count?: number;
   monthly_fee?: number;
@@ -216,6 +219,7 @@ export default function BatchesPage() {
         code: editing.code ? editing.code.trim().toUpperCase().slice(0, 6) : null,
         schedule_days: editing.schedule_days ?? [],
         start_time: editing.schedule_time ?? null,
+        end_time: editing.end_time ?? null,
         capacity: editing.capacity ?? 30,
         max_seats: editing.capacity ?? 30,
         monthly_fee: editing.monthly_fee ?? 1500,
@@ -308,7 +312,6 @@ export default function BatchesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {batches.map((b) => {
               const pct = getCapPct(b);
-              const days = Array.isArray(b.schedule_days) ? b.schedule_days : [];
               return (
                 <motion.div
                   key={b.id}
@@ -367,13 +370,15 @@ export default function BatchesPage() {
                         ))}
                       </div>
                     )}
-                    {(days.length > 0 || b.start_time || b.schedule_time) && (
-                      <div className="flex items-center gap-1.5">
-                        <Clock size={11} className="text-sky-400" />
-                        {days.length > 0 ? days.join('/') : ''}
-                        {(b.start_time ?? b.schedule_time) ? ` · ${b.start_time ?? b.schedule_time}` : ''}
-                      </div>
-                    )}
+                    {(() => {
+                      const sched = formatBatchSchedule(b);
+                      return sched ? (
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={11} className="text-sky-400" />
+                          {sched}
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="flex items-center gap-1.5">
                       <DollarSign size={11} className="text-emerald-400" />
                       {formatCurrency(b.monthly_fee ?? b.fee ?? 0)}/month
@@ -600,6 +605,15 @@ export default function BatchesPage() {
                       type="time"
                       value={editing.schedule_time ?? ''}
                       onChange={(e) => setEditing((p) => ({ ...p, schedule_time: e.target.value }))}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">End Time</label>
+                    <input
+                      type="time"
+                      value={editing.end_time ?? ''}
+                      onChange={(e) => setEditing((p) => ({ ...p, end_time: e.target.value }))}
                       className="input-field"
                     />
                   </div>
