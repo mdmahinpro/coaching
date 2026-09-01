@@ -130,7 +130,48 @@ Browser E2E harnesses live in `e2e/` and are documented in `e2e/README.md`
 
 ---
 
-## 7. Data & security notes
+## 7. Existing data & demo data (important)
+
+At handover the database already contains real records (batches, teachers,
+students, fees, exams, notices) plus some **demo/seed data** that was used for
+testing. Decide what to keep before going live.
+
+### Existing (real) data — keep as-is
+- All batches, teachers, students, fees, exams, notices and settings stay
+  exactly as they are. Nothing has to be deleted or migrated manually.
+- The two SQL migrations in §5 only **add** capabilities (login fix, batch end
+  time); they do not touch existing rows.
+
+### Demo/seed data — cleanup recommended before real use
+Rows look like this and can be safely removed from the **ADMIN PANEL** (no SQL
+needed for most of them):
+
+| Kind | What to look for | How to remove |
+|---|---|---|
+| Students | student IDs starting `CF25…` or names like "আরিফ হোসেন", phone `01811…` | Admin → Students → delete |
+| Teachers | email ending `@demo.com` (e.g. `rafiq@demo.com`) | Admin → Teachers → delete |
+| Batches | names `SSC-2025 গণিত`, `HSC-2025 ইংরেজি`, `Class 8 বিজ্ঞান` | Admin → Batches → delete |
+| Exams | titles containing `Demo`, or pasted mock exams | Admin → Exams → delete |
+| Fees / payments | rows tied to the demo students above | remove together with the student |
+| Notices | Demo announcement posts | Admin → Notices → delete |
+
+> Keep the **demo data button** ("Load demo data" on the admin dashboard) in
+> mind: it re-inserts demo rows. Do **not** press it after going live unless
+> you want a fresh demo sandbox. (It is disabled in production builds.)
+
+### If you want an empty slate
+1. Delete the demo rows from the admin panel (above).
+2. Update **Admin → Settings → Institute** contact/branding to the real center.
+3. Keep the migrations in §5 applied.
+
+### Backups
+Before making any changes (even admin-panel deletes), take a Supabase
+**Project → Database → Backups** snapshot so anything removed can be restored.
+Deletions from the admin panel are permanent and are not logged by the app.
+
+---
+
+## 8. Data & security notes
 
 - Admin accounts are defined server-side (`admin_users`), not by the app UI
   alone — the "Admins" settings tab uses that roster.
