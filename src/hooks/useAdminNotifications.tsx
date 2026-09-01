@@ -51,6 +51,9 @@ export function useAdminNotifications(email: string | null) {
         (t) => (
           <button
             onClick={() => {
+              // Accepting the toast (clicking it) acknowledges the item so it
+              // is treated as read and the popup is removed.
+              useNotificationStore.getState().markRead([item.id]);
               navigate(item.link);
               toast.dismiss(t.id);
             }}
@@ -72,7 +75,9 @@ export function useAdminNotifications(email: string | null) {
             </span>
           </button>
         ),
-        { id: `notif-${item.id}`, duration: 8000 }
+        // Keep each notification on screen until the admin interacts with it
+        // (clicks to open, or marks read from the bell) instead of auto-dismissing.
+        { id: `notif-${item.id}`, duration: Infinity }
       );
     };
 

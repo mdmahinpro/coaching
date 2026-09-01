@@ -23,6 +23,9 @@ export function AdminNotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click and Escape — listeners attach only while open.
+  // NOTE: opening the dropdown does NOT mark anything read. A notification
+  // stays unread until the admin explicitly opens that specific item (or
+  // presses "Mark all read") — that's what keeps it "until opened".
   useEffect(() => {
     if (!open) {
       return;
@@ -39,15 +42,11 @@ export function AdminNotificationBell() {
     };
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKey);
-    // Opening the dropdown marks everything read (standard badge UX), slightly
-    // deferred so the user sees the unread state on the way in.
-    const t = window.setTimeout(() => markAllRead(), 300);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKey);
-      window.clearTimeout(t);
     };
-  }, [open, markAllRead]);
+  }, [open]);
 
   return (
     <div className="relative" ref={ref}>
