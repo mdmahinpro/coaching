@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { Phone, Mail, MapPin, Facebook, MessageCircle } from 'lucide-react';
+import { Phone, Mail, MapPin, Facebook, MessageCircle, Youtube, Instagram } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { Logo } from '@/components/shared/Logo';
 
 export function Footer() {
   const { settings } = useSettingsStore();
   const year = new Date().getFullYear();
+  const waNumber = (settings.centerWhatsapp || settings.centerPhone || '').replace(/[^0-9]/g, '');
 
   return (
     <footer className="bg-navy-900 border-t border-navy-700/50 mt-20">
@@ -19,22 +20,52 @@ export function Footer() {
           <p className="text-slate-400 text-sm leading-relaxed max-w-xs mb-6">
             মানসম্পন্ন শিক্ষা ও ব্যক্তিগতকৃত গাইডেন্সের মাধ্যমে শিক্ষার্থীদের উজ্জ্বল ভবিষ্যৎ গড়তে আমরা প্রতিশ্রুতিবদ্ধ।
           </p>
-          {/* Social icons */}
+          {/* Social icons — configured in Settings → Social */}
           <div className="flex items-center gap-3">
-            <a
-              href="#"
-              aria-label="Facebook"
-              className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-sky-400 hover:border-sky-400/30 hover:bg-sky-400/10 transition-all"
-            >
-              <Facebook size={16} />
-            </a>
-            <a
-              href={settings.centerPhone ? `https://wa.me/88${settings.centerPhone.replace(/-/g, '')}` : '#'}
-              aria-label="WhatsApp"
-              className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-emerald-400 hover:border-emerald-400/30 hover:bg-emerald-400/10 transition-all"
-            >
-              <MessageCircle size={16} />
-            </a>
+            {settings.socialFacebook && (
+              <a
+                href={settings.socialFacebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-sky-400 hover:border-sky-400/30 hover:bg-sky-400/10 transition-all"
+              >
+                <Facebook size={16} />
+              </a>
+            )}
+            {settings.socialYoutube && (
+              <a
+                href={settings.socialYoutube}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="YouTube"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10 transition-all"
+              >
+                <Youtube size={16} />
+              </a>
+            )}
+            {settings.socialInstagram && (
+              <a
+                href={settings.socialInstagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-fuchsia-400 hover:border-fuchsia-400/30 hover:bg-fuchsia-400/10 transition-all"
+              >
+                <Instagram size={16} />
+              </a>
+            )}
+            {waNumber && (
+              <a
+                href={`https://wa.me/${waNumber}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="WhatsApp"
+                className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-emerald-400 hover:border-emerald-400/30 hover:bg-emerald-400/10 transition-all"
+              >
+                <MessageCircle size={16} />
+              </a>
+            )}
           </div>
         </div>
 

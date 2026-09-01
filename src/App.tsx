@@ -296,6 +296,13 @@ function App() {
   useEffect(() => {
     applyFavicon(settings.logoUrl || DEFAULT_LOGO);
   }, [settings.logoUrl]);
+  // Document title follows the admin-configured brand (center name + tagline)
+  // so the browser tab matches the institute — no code change needed.
+  useEffect(() => {
+    const base = settings.centerName || 'Coaching Center';
+    const tag = settings.centerTagline ? ` — ${settings.centerTagline}` : '';
+    document.title = `${base}${tag}`;
+  }, [settings.centerName, settings.centerTagline]);
   const base = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
   return (
     <ErrorBoundary>

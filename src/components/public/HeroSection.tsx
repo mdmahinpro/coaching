@@ -136,16 +136,24 @@ export function HeroSection() {
               <span className="badge-blue">ভর্তি চলছে ২০২৫</span>
             </motion.div>
 
-            {/* Heading */}
+            {/* Heading — admin-editable via Settings → Institute (heroTitle). */}
             <h1 className="font-inter font-black text-4xl sm:text-5xl lg:text-6xl xl:text-7xl text-white mb-5 leading-[1.1]">
-              Build Your<br />
-              <span className="text-gradient">Future</span>
-              <span className="text-white"> With Us</span>
+              {settings.heroTitle ? (
+                settings.heroTitle
+              ) : (
+                <>
+                  Build Your<br />
+                  <span className="text-gradient">Future</span>
+                  <span className="text-white"> With Us</span>
+                </>
+              )}
             </h1>
 
-            {/* Subtext */}
+            {/* Subtext — admin-editable via Settings → Institute (heroSubtitle). */}
             <p className="font-hind text-slate-400 text-lg md:text-xl leading-relaxed mb-10 max-w-lg">
-              {settings.centerName} — মানসম্পন্ন শিক্ষা ও অভিজ্ঞ শিক্ষকদের গাইডেন্সে তোমার স্বপ্নের গন্তব্যে পৌঁছাও।
+              {settings.heroSubtitle
+                ? settings.heroSubtitle
+                : `${settings.centerName} — মানসম্পন্ন শিক্ষা ও অভিজ্ঞ শিক্ষকদের গাইডেন্সে তোমার স্বপ্নের গন্তব্যে পৌঁছাও।`}
             </p>
 
             {/* Buttons */}

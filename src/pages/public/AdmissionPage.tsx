@@ -9,6 +9,7 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 import toast from 'react-hot-toast';
 import { CheckCircle, ChevronRight, ChevronLeft, User, BookOpen, ClipboardCheck } from 'lucide-react';
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sanitize } from '@/lib/utils';
 import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
@@ -126,6 +127,35 @@ export default function AdmissionPage() {
               ভর্তি অনুমোদিত হলে এই রেফারেন্স নম্বরই হবে আপনার পোর্টালের ডিফল্ট পাসওয়ার্ড (লগইন: ফোন
               নম্বর + রেফারেন্স নম্বর)।
             </p>
+          </motion.div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Admission closed? Respect the admin's Settings → Institute toggle.
+  if (settings.admissionOpen === false) {
+    return (
+      <div className="min-h-screen bg-navy-900">
+        <PublicNavbar />
+        <div className="pt-24 max-w-xl mx-auto px-4 pb-20">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="card-glass interactive-card p-10 text-center"
+          >
+            <div className="w-16 h-16 rounded-full bg-amber-400/15 border border-amber-400/25 flex items-center justify-center mx-auto mb-5">
+              <BookOpen size={28} className="text-amber-400" />
+            </div>
+            <h1 className="font-inter font-bold text-2xl text-white mb-2">ভর্তি চলাকালীন নয়</h1>
+            <p className="font-hind text-slate-400 leading-relaxed mb-6">
+              এই মুহূর্তে নতুন ভর্তি আবেদন গ্রহণ করা হচ্ছে না। পরবর্তী ভর্তির ঘোষণার জন্য আমাদের সাথে
+              থাকুন।
+            </p>
+            <Link to="/" className="btn-primary w-full justify-center">
+              হোমে ফিরে যান
+            </Link>
           </motion.div>
         </div>
         <Footer />
