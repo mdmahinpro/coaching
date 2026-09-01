@@ -5,6 +5,7 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { formatDate, cn, sanitize } from '@/lib/utils';
+import { resolveAnswer } from '@/lib/examReview';
 import {
   Trophy,
   Award,
@@ -370,6 +371,7 @@ export default function PortalResultsPage() {
                     const studentAns = parsedAnswers[q.id]?.toUpperCase();
                     const correctOpt = q.correct_option.toUpperCase();
                     const isCorrect = !!studentAns && studentAns === correctOpt;
+                    const ans = resolveAnswer(q, parsedAnswers, i);
                     const opts: Record<string, string> = {
                       A: q.option_a,
                       B: q.option_b,
@@ -419,9 +421,36 @@ export default function PortalResultsPage() {
                               );
                             })}
                         </div>
-                        {!studentAns && (
-                          <p className="text-slate-500 text-xs mt-1 font-hind">উত্তর দেননি</p>
-                        )}
+                        {/* Concise letter + text summary so the result is clear at a glance. */}
+                        <div className="flex items-center gap-3 text-xs flex-wrap mt-2">
+                          {ans.unanswered ? (
+                            <span className="text-slate-500 font-hind">উত্তর দেননি</span>
+                          ) : (
+                            <span
+                              className={cn(
+                                'flex items-center gap-1 font-hind',
+                                ans.isRight ? 'text-emerald-400' : 'text-red-400'
+                              )}
+                            >
+                              Selected: <strong>{ans.selectedLetter}</strong>
+                              {ans.selectedText ? (
+                                <em className="not-italic">— {ans.selectedText}</em>
+                              ) : null}
+                            </span>
+                          )}
+                          {ans.correctText && (
+                            <span className="text-emerald-400 font-hind">
+                              Correct: <strong>{ans.correctLetter}</strong>
+                              <em className="not-italic"> — {ans.correctText}</em>
+                            </span>
+                          )}
+                        </div>
+                        {ans.explanation ? (
+                          <p className="text-slate-400 text-xs mt-1.5 font-hind">
+                            <span className="text-sky-400 font-medium">Explanation:</span>{' '}
+                            {ans.explanation}
+                          </p>
+                        ) : null}
                       </div>
                     );
                   })

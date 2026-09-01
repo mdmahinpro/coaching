@@ -7,6 +7,7 @@ import { Trophy, Download, BarChart2, X, CheckCircle2, XCircle, Loader2 } from '
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { resolveAnswer } from '@/lib/examReview';
 
 interface Submission {
   id: string;
@@ -395,17 +396,15 @@ export default function ResultsPage() {
                             return {};
                           }
                         })();
-                  const studentAns = answers[q.id] ?? answers[String(i)] ?? null;
-                  const correct = q.correct_option?.toUpperCase();
-                  const isRight = (studentAns?.toUpperCase() ?? '') === correct;
+                  const ans = resolveAnswer(q, answers, i);
                   return (
                     <div
                       key={q.id}
                       className={cn(
                         'card p-3 border',
-                        isRight
+                        ans.isRight
                           ? 'border-emerald-400/20'
-                          : studentAns
+                          : ans.selectedLetter
                             ? 'border-red-400/20'
                             : 'border-white/5'
                       )}
@@ -415,25 +414,32 @@ export default function ResultsPage() {
                       </p>
                       <p className="text-white text-sm mb-2 font-hind">{q.question_text}</p>
                       <div className="flex items-center gap-3 text-xs flex-wrap">
-                        {studentAns ? (
+                        {ans.unanswered ? (
+                          <span className="text-slate-500">Unanswered</span>
+                        ) : (
                           <span
                             className={cn(
                               'flex items-center gap-1',
-                              isRight ? 'text-emerald-400' : 'text-red-400'
+                              ans.isRight ? 'text-emerald-400' : 'text-red-400'
                             )}
                           >
-                            {isRight ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                            Selected: <strong>{studentAns}</strong>
+                            {ans.isRight ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                            Selected: <strong>{ans.selectedLetter}</strong>
+                            {ans.selectedText ? <em className="not-italic">— {ans.selectedText}</em> : null}
                           </span>
-                        ) : (
-                          <span className="text-slate-500">Unanswered</span>
                         )}
-                        {!isRight && correct && (
+                        {ans.correctText && (
                           <span className="text-emerald-400">
-                            Correct: <strong>{correct}</strong>
+                            Correct: <strong>{ans.correctLetter}</strong>
+                            <em className="not-italic"> — {ans.correctText}</em>
                           </span>
                         )}
                       </div>
+                      {ans.explanation ? (
+                        <p className="text-slate-400 text-xs mt-2 font-hind border-t border-white/5 pt-2">
+                          <span className="text-sky-400 font-medium">Explanation:</span> {ans.explanation}
+                        </p>
+                      ) : null}
                     </div>
                   );
                 })}
