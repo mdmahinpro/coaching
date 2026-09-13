@@ -53,9 +53,14 @@ export default function NoticeBoardPage() {
       });
   }, []);
 
+  const getCategory = (notice: any) => {
+    const value = String(notice.type ?? notice.category ?? 'general').toLowerCase();
+    return value === 'fee' ? 'fees' : value;
+  };
+
   const filtered = filter === 'all'
     ? notices
-    : notices.filter(n => (n.category ?? 'general').toLowerCase() === filter);
+    : notices.filter((n) => getCategory(n) === filter);
 
   return (
     <div className="min-h-screen bg-navy-900">
@@ -92,7 +97,7 @@ export default function NoticeBoardPage() {
         ) : (
           <div className="space-y-4">
             {filtered.map((n, i) => {
-              const cat = (n.category ?? 'general').toLowerCase();
+               const cat = getCategory(n);
               const style = categoryStyles[cat] ?? categoryStyles.general;
               const isUrgent = cat === 'urgent';
 

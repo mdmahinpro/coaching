@@ -352,15 +352,19 @@ function GenerateTab({ batches }: { batches: any[] }) {
     setResult(null);
 
     try {
-      // Fetch students
-      let sq = supabase.from('students').select('id, name, batch_id, status');
+      // Fetch students — include is_approved so only approved, active students
+      // receive monthly fees (unapproved applications must not get bills).
+      let sq = supabase.from('students').select('id, name, batch_id, status, is_approved');
       if (batchId !== 'all') {
         sq = sq.eq('batch_id', batchId);
       }
       const { data: allStudents } = await sq;
 
       const suspended = (allStudents ?? []).filter((s) => s.status === 'suspended');
-      const active = (allStudents ?? []).filter((s) => s.status === 'active');
+      const active = (allStudents ?? []).filter(
+        (s) => s.status === 'active' && s.is_approved === true
+      );
+      const unassignedActive = active.filter((s) => !s.batch_id);
 
       // Fetch existing fee records for this month — filter by student_id only, not batch_id,
       // so students who changed batches don't get duplicate fees generated.
@@ -396,7 +400,9 @@ function GenerateTab({ batches }: { batches: any[] }) {
           toCreate.map((s) => ({
             student_id: s.id,
             batch_id: s.batch_id ?? null,
-            amount: s.batch_id ? (batchFeeMap[s.batch_id] ?? 1500) : 1500,
+            // A monthly fee is defined by the assigned batch. Never invent a
+            // fallback amount for an unassigned student.
+            amount: batchFeeMap[s.batch_id],
             month: monthStr,
             status: 'pending',
             due_date: due.toISOString().slice(0, 10),
@@ -424,7 +430,7 @@ function GenerateTab({ batches }: { batches: any[] }) {
       setResult({
         created,
         skippedExisting: active.length - toCreate.length,
-        skippedSuspended: suspended.length,
+        skippedSuspended: suspended.length + unassignedActive.length,
       });
       setGenerating(false);
       toast.success(`Generated ${created} fee records!`);

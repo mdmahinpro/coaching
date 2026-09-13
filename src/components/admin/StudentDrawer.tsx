@@ -21,6 +21,7 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 import { Avatar } from '@/components/shared/Avatar';
 import { SuspendModal } from './SuspendModal';
 import { formatDate, formatCurrency, cn, sanitize } from '@/lib/utils';
+import { sendSMS, SMS_TEMPLATES } from '@/lib/sms';
 import toast from 'react-hot-toast';
 
 interface Student {
@@ -74,6 +75,10 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   const [showPw, setShowPw] = useState(false);
   const [newPw, setNewPw] = useState('');
   const [savingPw, setSavingPw] = useState(false);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsLogs, setSmsLogs] = useState<any[]>([]);
+  const [smsLogLoading, setSmsLogLoading] = useState(false);
 
   useEffect(() => {
     if (student) {
@@ -142,6 +147,68 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
         setExamsLoading(false);
       });
   }, [student?.id, tab]);
+
+  // Load this student's SMS history when the SMS tab is opened.
+  useEffect(() => {
+    if (!student || tab !== 'sms') {
+      return;
+    }
+    setSmsLogLoading(true);
+    Promise.resolve(
+      supabase
+        .from('sms_logs')
+        .select('*')
+        .eq('phone', student.phone)
+        .order('created_at', { ascending: false })
+        .limit(20)
+    )
+      .then(
+        ({ data }) => setSmsLogs(data ?? []),
+        (err: any) => handleSupabaseError(err)
+      )
+      .finally(() => setSmsLogLoading(false));
+  }, [student?.id, tab, student?.phone]);
+
+  const handleSendSms = async () => {
+    if (!student) {
+      return;
+    }
+    if (!smsMessage.trim()) {
+      toast.error('Enter a message first');
+      return;
+    }
+    setSmsSending(true);
+    try {
+      const res = await sendSMS(student.phone, smsMessage, 'custom');
+      if (res.sent > 0) {
+        toast.success('SMS sent');
+        setSmsMessage('');
+        // Refresh log
+        const { data, error } = await supabase
+          .from('sms_logs')
+          .select('*')
+          .eq('phone', student.phone)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (!error && data) {
+          setSmsLogs(data);
+        }
+      } else {
+        toast.error(res.raw ? 'SMS failed' : 'SMS queued/failed — check server SMS key');
+      }
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setSmsSending(false);
+    }
+  };
+
+  const insertSmsTemplate = (key: string) => {
+    const t = SMS_TEMPLATES[key];
+    if (t) {
+      setSmsMessage(t.body);
+    }
+  };
 
   const handleResetPassword = async () => {
     if (!student || !newPw.trim()) {
@@ -540,15 +607,95 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
 
                 {/* SMS Log Tab */}
                 {tab === 'sms' ? (
-                  <div className="p-5">
-                    <div className="text-center py-12">
-                      <div className="w-12 h-12 rounded-full bg-navy-700 flex items-center justify-center mx-auto mb-3">
-                        <MessageSquare size={22} className="text-slate-500" />
-                      </div>
-                      <p className="text-slate-500 text-sm">SMS log will appear here</p>
-                      <p className="text-slate-600 text-xs mt-1">
-                        Configure SMS in Admin → Settings
-                      </p>
+                  <div className="p-5 space-y-4">
+                    <div className="card p-4">
+                      <h3 className="font-semibold text-white text-sm mb-3 flex items-center gap-2">
+                        <MessageSquare size={15} className="text-sky-400" /> Send SMS to{' '}
+                        {student?.name}
+                      </h3>
+                      {!student?.phone ? (
+                        <p className="text-slate-500 text-xs">This student has no phone number.</p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-500 mb-2">
+                            To:{' '}
+                            <span className="font-mono text-sky-400">{student.phone}</span>
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {Object.entries(SMS_TEMPLATES).map(([key, t]) => (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => insertSmsTemplate(key)}
+                                className="px-2 py-1 rounded bg-violet-500/15 border border-violet-500/25 text-violet-300 text-[11px] hover:bg-violet-500/25"
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={smsMessage}
+                            onChange={(e) => setSmsMessage(e.target.value)}
+                            className="input-field font-hind text-sm"
+                            rows={3}
+                            placeholder="Type your message…"
+                          />
+                          <button
+                            onClick={handleSendSms}
+                            disabled={smsSending || !smsMessage.trim()}
+                            className="btn-primary w-full justify-center mt-3 text-sm"
+                          >
+                            {smsSending ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" /> Sending…
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare size={14} /> Send SMS
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs text-slate-400 mb-2 uppercase tracking-wider">
+                        Recent SMS to this student
+                      </h4>
+                      {smsLogLoading ? (
+                        <div className="space-y-2">
+                          {Array.from({ length: 2 }).map((_, i) => (
+                            <div key={i} className="h-10 bg-navy-700 rounded animate-pulse" />
+                          ))}
+                        </div>
+                      ) : smsLogs.length === 0 ? (
+                        <p className="text-slate-600 text-xs">No SMS records for this student yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {smsLogs.map((l) => (
+                            <div key={l.id} className="card p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span
+                                  className={
+                                    l.status === 'sent'
+                                      ? 'badge-green text-[10px]'
+                                      : l.status === 'pending'
+                                        ? 'badge-yellow text-[10px]'
+                                        : 'badge-red text-[10px]'
+                                  }
+                                >
+                                  {l.status}
+                                </span>
+                                <span className="text-slate-600 text-[10px]">
+                                  {l.created_at ? formatDate(l.created_at) : ''}
+                                </span>
+                              </div>
+                              <p className="text-slate-300 text-xs break-words">{l.message}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : null}

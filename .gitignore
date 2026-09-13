@@ -11,6 +11,8 @@ stats.html
 .env.local
 .env.*.local
 .env
+# Isolated E2E credentials for the approved disposable project (local only)
+e2e/isolated-creds.json
 
 # IDE
 .idea/
@@ -55,6 +57,13 @@ backup_*.sql
 # Browser E2E — local credential file, never commit
 e2e/admin-creds.json
 e2e/downloads/
+e2e/live-url.txt
 
 # Supabase CLI working state (project link + version probe) — machine-local
 supabase/.temp/
+
+# Local agent-manager state — not project source
+.kilo/
+
+# Disposable-provisioning diagnostic reports — machine-local
+provisioning-reports/

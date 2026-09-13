@@ -92,12 +92,12 @@ export const SMS_TEMPLATES: Record<string, { label: string; key: string; body: s
   FEE_REMINDER: {
     key: 'FEE_REMINDER',
     label: 'Fee Reminder',
-    body: 'প্রিয় {নাম}, {মাস} মাসের ৳{পরিমাণ} ফি বাকি। পরিশোধ করুন। - {ইনস্টিটিউট}',
+    body: 'প্রিয় {নাম}, {মাস} মাসের ৳{পরিমাণ} ফি বাকি। অনুগ্রহ করে পরিশোধ করুন। — {ইনস্টিটিউট}',
   },
   FEE_PAID: {
     key: 'FEE_PAID',
     label: 'Fee Paid',
-    body: 'প্রিয় {নাম}, ৳{পরিমাণ} ফি গ্রহণ। রশিদ: {রশিদ_নং}। ধন্যবাদ। - {ইনস্টিটিউট}',
+    body: 'প্রিয় {নাম}, ৳{পরিমাণ} ফি গ্রহণ করা হয়েছে। রশিদ: {রশিদ_নং}। ধন্যবাদ। — {ইনস্টিটিউট}',
   },
   EXAM_NOTICE: {
     key: 'EXAM_NOTICE',

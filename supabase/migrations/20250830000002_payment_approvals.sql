@@ -226,21 +226,16 @@ BEGIN
   SET status = 'approved', reviewed_at = now(), reviewed_by = v_admin
   WHERE id = p_approval_id;
 
-  -- Audit entry — same table + column shape as logFeeAudit() on the Fees page,
-  -- so the Audit Log tab renders Student / Month / Summary and before/after
-  -- instead of "—". Uses the pre-payment snapshot for old_data (NOT the
-  -- post-update fee row, which would wrongly report status='paid' as "before").
-  BEGIN
-    INSERT INTO fee_audit_logs
-      (fee_id, action, admin_email, student_name, student_code, month, old_data, new_data)
-    VALUES (
-      v_appr.fee_id, 'payment_recorded', v_admin, v_stu_name, v_stu_code, v_month,
-      v_old,
-      (v_meta::jsonb || jsonb_build_object('status', 'paid', 'amount', v_amount))::jsonb
-    );
-  EXCEPTION WHEN OTHERS THEN
-    NULL; -- audit must never block the payment flow
-  END;
+  -- Audit entry is part of the same transaction. If it cannot be written,
+  -- payment state and approval state roll back instead of creating an
+  -- untraceable financial mutation.
+  INSERT INTO fee_audit_logs
+    (fee_id, action, admin_email, student_name, student_code, month, old_data, new_data)
+  VALUES (
+    v_appr.fee_id, 'payment_recorded', v_admin, v_stu_name, v_stu_code, v_month,
+    v_old,
+    (v_meta::jsonb || jsonb_build_object('status', 'paid', 'amount', v_amount))::jsonb
+  );
 
   RETURN QUERY SELECT v_receipt, (SELECT f.amount FROM fees f WHERE f.id = v_appr.fee_id);
 END;

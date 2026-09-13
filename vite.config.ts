@@ -61,11 +61,35 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(import.meta.dirname, "dist"),
       emptyOutDir: true,
+      // The main entry is now ~96KB; the only >500kB files are intentional
+      // vendor caches (react-dom / misc), which are long-cached and load in
+      // parallel. Prefer many stable vendor chunks over one giant bundle.
+      chunkSizeWarningLimit: 700,
       rollupOptions: {
         // jsPDF's optional pdf.html() API lazily imports 'html2canvas'. We draw
         // PDFs natively on canvas (see src/lib/pdf.ts) and never call it, so
         // keep that ~200KB chunk out of the bundle entirely.
         external: ["html2canvas"],
+        output: {
+          // Split heavy dependency groups into their own long-cached chunks so
+          // the main entry stays small and vendors load in parallel. This caps
+          // single-file size and improves caching across deploys.
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) {
+              return undefined;
+            }
+            if (/react|scheduler|react-dom/.test(id)) return 'vendor-react';
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts';
+            if (id.includes('framer-motion')) return 'vendor-motion';
+            if (id.includes('jspdf')) return 'vendor-pdf';
+            if (id.includes('@supabase')) return 'vendor-supabase';
+            if (id.includes('react-router')) return 'vendor-router';
+            if (id.includes('react-hook-form') || id.includes('zod') || id.includes('@hookform')) return 'vendor-forms';
+            if (id.includes('@radix-ui') || id.includes('cmdk') || id.includes('embla') || id.includes('input-otp') || id.includes('react-day-picker') || id.includes('react-resizable') || id.includes('vaul') || id.includes('sonner') || id.includes('react-hot-toast')) return 'vendor-ui';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            return 'vendor-misc';
+          },
+        },
       },
     },
     server: {

@@ -52,7 +52,9 @@ function EnrollmentTab() {
       try {
         const { data: students } = await supabase
           .from('students')
-          .select('id,created_at,batch_id,batch:batches(name)');
+          .select('id,created_at,batch_id,batch:batches(name)')
+          .eq('is_approved', true)
+          .eq('status', 'active');
         const list = students ?? [];
         setTotal(list.length);
 

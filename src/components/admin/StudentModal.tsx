@@ -170,6 +170,14 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
 
   const handlePhotoSelect = (file: File) => {
     setPhotoError('');
+    if (!file.type.match(/^image\/(png|jpe?g|webp)$/i)) {
+      setPhotoError('Unsupported image. Use JPG, PNG, or WebP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError('Original image must be under 5 MB. Choose a smaller file.');
+      return;
+    }
     if (file.size > MAX_SIZE_KB * 1024) {
       // Try to compress first, show error only if still too large
       setPhotoFile(file);
@@ -304,7 +312,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                       <Upload size={14} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
                     </button>
                     <p className="text-slate-600 text-xs">
-                      JPG/PNG, max {MAX_SIZE_KB}KB. Auto-compressed if larger.
+                      JPG/PNG/WebP · original max 5MB · resized to 400×400 · final max {MAX_SIZE_KB}KB.
                     </p>
                     {photoError && (
                       <p className="text-red-400 text-xs mt-1 flex items-center gap-1">

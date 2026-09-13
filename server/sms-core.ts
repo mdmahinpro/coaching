@@ -10,6 +10,7 @@
  * server-side `is_admin()` RPC, which reads the `admin_users` roster — not by
  * `user_metadata`, which the browser can rewrite via `auth.updateUser()`.
  */
+import { fetchProvider } from './safe-url';
 
 export interface SmsRequestBody {
   phones: string[];
@@ -22,7 +23,19 @@ export interface SmsCoreResult {
   body: unknown;
 }
 
-const SMS_ENDPOINT = 'https://api.mimsms.com/smsapi';
+async function providerConfig(authHeader?: string) {
+  const url = process.env.SUPABASE_URL;
+  const anon = process.env.SUPABASE_ANON_KEY;
+  if (!url || !anon) return {};
+  try {
+    const r = await fetch(`${url}/rest/v1/provider_secrets?provider=eq.sms&select=api_key,endpoint,sender_id`, { headers: { apikey: anon, ...(authHeader ? { Authorization: authHeader } : {}) } });
+    const row = (await r.json() as Array<{ api_key?: string; endpoint?: string; sender_id?: string }>)[0];
+    if (row) return { sms_api_key: row.api_key, sms_endpoint: row.endpoint, sms_sender_id: row.sender_id };
+    const legacy = await fetch(`${url}/rest/v1/site_settings?key=in.(sms_provider,sms_endpoint,sms_sender_id)&select=key,value`, { headers: { apikey: anon, ...(authHeader ? { Authorization: authHeader } : {}) } });
+    const rows = await legacy.json() as Array<{ key: string; value: string }>;
+    return Object.fromEntries((rows ?? []).map((item) => [item.key, item.value]));
+  } catch { return {}; }
+}
 
 /**
  * Verify the bearer token belongs to an authenticated admin.
@@ -95,8 +108,10 @@ export async function handleSendSms(
     return { ok: false, status: 400, body: { error: 'phones and message are required' } };
   }
 
-  const apiKey = process.env.SMS_API_KEY;
-  const senderId = process.env.SMS_SENDER_ID || 'CoachMS';
+  const config = await providerConfig(authHeader) as Record<string, string | undefined>;
+  const apiKey = config.sms_api_key || process.env.SMS_API_KEY;
+  const senderId = config.sms_sender_id || process.env.SMS_SENDER_ID || 'CoachMS';
+  const endpoint = config.sms_endpoint || process.env.SMS_ENDPOINT || 'https://api.mimsms.com/smsapi';
 
   // No key configured → treat as a no-op "pending" send (dev / demo).
   if (!apiKey) {
@@ -104,18 +119,27 @@ export async function handleSendSms(
   }
 
   try {
-    const res = await fetch(SMS_ENDPOINT, {
+    const provider = String(config.sms_provider || process.env.SMS_PROVIDER || 'mimsms').toLowerCase();
+    const requestBody = provider === 'mimsms'
+      ? {
+          api_key: apiKey,
+          senderid: senderId,
+          type: 'text',
+          scheduleat: '',
+          route: 'T',
+          contacts: phones.join(','),
+          msg: message,
+        }
+      : {
+          api_key: apiKey,
+          sender: senderId,
+          to: phones,
+          message,
+        };
+    const res = await fetchProvider(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: apiKey,
-        senderid: senderId,
-        type: 'text',
-        scheduleat: '',
-        route: 'T',
-        contacts: phones.join(','),
-        msg: message,
-      }),
+      body: JSON.stringify(requestBody),
     });
     const raw = await res.json().catch(() => null);
     const status = (raw as { status?: string } | null)?.status;

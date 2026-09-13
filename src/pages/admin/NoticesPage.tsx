@@ -14,6 +14,7 @@ interface Notice {
   title: string;
   content: string;
   type: string;
+  category?: string;
   target: 'all' | 'batch';
   batch_id?: string;
   is_published: boolean;
@@ -22,14 +23,25 @@ interface Notice {
   batch?: { name: string };
 }
 
-const NOTICE_TYPES = ['general', 'exam', 'holiday', 'fee', 'result', 'event'];
+const NOTICE_TYPES = ['general', 'exam', 'fees', 'holiday', 'result', 'urgent', 'event'];
 const TYPE_COLORS: Record<string, string> = {
   exam: 'badge-violet',
   holiday: 'badge-green',
-  fee: 'badge-yellow',
+  fees: 'badge-yellow',
   result: 'badge-blue',
+  urgent: 'badge-red',
   event: 'badge-violet',
   general: 'badge-blue',
+};
+
+const NOTICE_TYPE_LABELS: Record<string, string> = {
+  general: 'General',
+  exam: 'Exam',
+  fees: 'Fees',
+  holiday: 'Holiday',
+  result: 'Result',
+  urgent: 'Urgent',
+  event: 'Event',
 };
 
 const EMPTY: Partial<Notice> = {
@@ -50,6 +62,9 @@ export default function NoticesPage() {
   const [sendSMSFlag, setSendSMSFlag] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [resultExams, setResultExams] = useState<any[]>([]);
+  const [resultExamId, setResultExamId] = useState('');
+  const [loadingResultExams, setLoadingResultExams] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +106,47 @@ export default function NoticesPage() {
       );
   }, []);
 
+  useEffect(() => {
+    if (editing.type !== 'result') {
+      return;
+    }
+    setLoadingResultExams(true);
+    supabase
+      .from('exams')
+      .select('id,title,total_marks,status')
+      .in('status', ['active', 'ended'])
+      .order('created_at', { ascending: false })
+      .limit(30)
+      .then(({ data, error }) => {
+        if (!error) setResultExams(data ?? []);
+        setLoadingResultExams(false);
+      });
+  }, [editing.type]);
+
+  const generateResultNotice = async () => {
+    if (!resultExamId) {
+      toast.error('Select an exam first');
+      return;
+    }
+    const exam = resultExams.find((e) => e.id === resultExamId);
+    if (!exam) return;
+    const { data: top } = await supabase
+      .from('mcq_submissions')
+      .select('score,student:students(name)')
+      .eq('exam_id', resultExamId)
+      .order('score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const topName = (top as any)?.student?.name ?? 'সর্বোচ্চ স্কোরধারী শিক্ষার্থী';
+    const score = top?.score ?? 0;
+    const total = exam.total_marks ?? 0;
+    setEditing((p) => ({
+      ...p,
+      title: `${exam.title} এর ফলাফল প্রকাশিত হয়েছে`,
+      content: `${exam.title} এর ফলাফল প্রকাশিত হয়েছে। সর্বোচ্চ স্কোর: ${score}/${total} (${topName})। পোর্টালে লগইন করে ফলাফল দেখুন।`,
+    }));
+  };
+
   const resetForm = () => {
     setEditing(EMPTY);
     setIsEdit(false);
@@ -115,7 +171,10 @@ export default function NoticesPage() {
     const payload = {
       title: editing.title,
       content: editing.content,
-      type: editing.type ?? 'general',
+        // `type` is the current column; older deployments may expose the same
+        // value as `category`. Keep the saved vocabulary aligned with the
+        // public Notice Board filters.
+        type: editing.type ?? editing.category ?? 'general',
       target: editing.target ?? 'all',
       batch_id: editing.target === 'batch' ? (editing.batch_id ?? null) : null,
       is_published: editing.is_published ?? true,
@@ -238,7 +297,7 @@ export default function NoticesPage() {
                 >
                   {NOTICE_TYPES.map((t) => (
                     <option key={t} value={t} className="capitalize">
-                      {t}
+                      {NOTICE_TYPE_LABELS[t] ?? t}
                     </option>
                   ))}
                 </select>
@@ -273,6 +332,27 @@ export default function NoticesPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {editing.type === 'result' && (
+              <div className="rounded-lg border border-blue-400/20 bg-blue-400/5 p-3 space-y-2">
+                <label className="text-xs text-slate-400 block">Generate from exam result</label>
+                <div className="flex gap-2">
+                  <select
+                    value={resultExamId}
+                    onChange={(e) => setResultExamId(e.target.value)}
+                    className="input-field text-sm flex-1"
+                    disabled={loadingResultExams}
+                  >
+                    <option value="">Select published exam…</option>
+                    {resultExams.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+                  </select>
+                  <button type="button" onClick={generateResultNotice} className="btn-outline text-xs px-3">
+                    Generate
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">Uses the highest real submission from the database.</p>
               </div>
             )}
 

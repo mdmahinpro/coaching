@@ -72,7 +72,7 @@ export default function PortalFeesPage() {
         }
       )
       .catch(() => setLoading(false));
-  }, [student]);
+  }, [student?.id, student?.token]);
 
   useEffect(() => {
     load();

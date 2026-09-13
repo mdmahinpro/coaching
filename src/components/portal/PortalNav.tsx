@@ -76,6 +76,7 @@ export function PortalNav() {
             </Link>
             <Link
               to="/portal/profile"
+              aria-label="Profile"
               className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 transition-all"
               title="Profile"
             >
@@ -83,6 +84,7 @@ export function PortalNav() {
             </Link>
             <button
               onClick={handleLogout}
+              aria-label="Logout"
               className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
               title="Logout"
             >

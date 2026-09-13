@@ -1,18 +1,19 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
-const BASE = 'http://127.0.0.1:5173';
+const {
+  requireDisposableTarget,
+  assertAppTargetsDisposable,
+  assertServerEndpointsDisposable,
+  readIsolatedCreds,
+} = require('./disposable-guard.cjs');
+const BASE = require('./disposable-guard.cjs').isolatedBaseUrl();
 const EXE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 
-// Admin credentials are read from a LOCAL file ONLY (never committed/printed).
-// Resolve relative to THIS script (e2e/admin-creds.json) so it works from any cwd.
-const credsFile = path.join(__dirname, 'admin-creds.json');
-let creds = null;
-try { creds = JSON.parse(fs.readFileSync(credsFile, 'utf8')); } catch {}
-if (!creds || !creds.email || !creds.password) {
-  console.error('admin-creds.json missing or incomplete. Create it with {"email":"...","password":"..."}');
-  process.exit(1);
-}
+// Fail closed before any browser launch. Credentials come ONLY from the
+// isolated file (never `.env.local`, never printed).
+const target = requireDisposableTarget();
+const creds = readIsolatedCreds();
 
 const results = [];
 const step = (name, ok, detail = '') => {
@@ -47,6 +48,8 @@ const step = (name, ok, detail = '') => {
   // 1. Admin login
   await page.goto(BASE + '/admin/login', { waitUntil: 'networkidle2', timeout: 20000 });
   await page.waitForSelector('input[autocomplete="email"]', { timeout: 10000 });
+  await assertAppTargetsDisposable(page, target.url);
+  await assertServerEndpointsDisposable(BASE, target.url);
   await typeInto('input[autocomplete="email"]', creds.email);
   await typeInto('input[autocomplete="current-password"]', creds.password);
   await page.evaluate(() => {

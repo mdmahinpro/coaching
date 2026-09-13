@@ -36,6 +36,19 @@ export default function ContactPage() {
   const waLink = settings.centerWhatsapp
     ? `https://wa.me/${settings.centerWhatsapp.replace(/[^0-9]/g, '')}`
     : 'https://wa.me/';
+  const normalizeMapUrl = (value: string) => {
+    const raw = value.trim();
+    const iframeSrc = raw.match(/<iframe[^>]+src=["']([^"']+)["']/i)?.[1] ?? raw;
+    if (/^https:\/\/www\.google\.com\/maps\/embed/i.test(iframeSrc)) return iframeSrc;
+    if (/^https:\/\//i.test(iframeSrc) && /google\.[^/]+\/maps/i.test(iframeSrc)) {
+      return `https://www.google.com/maps?q=${encodeURIComponent(iframeSrc)}&output=embed`;
+    }
+    if (settings.centerAddress.trim()) {
+      return `https://www.google.com/maps?q=${encodeURIComponent(settings.centerAddress)}&output=embed`;
+    }
+    return '';
+  };
+  const safeMapEmbedUrl = normalizeMapUrl(settings.mapEmbedUrl);
 
   return (
     <div className="min-h-screen bg-navy-900">
@@ -107,13 +120,24 @@ export default function ContactPage() {
               </a>
             </div>
 
-            {/* Map placeholder */}
-            <div className="mt-6 rounded-xl overflow-hidden border border-white/8 h-44 bg-navy-700/40 flex items-center justify-center">
-              <div className="text-center text-slate-600">
-                <MapPin size={28} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Map embed</p>
-                <p className="text-xs mt-1 text-slate-700">Configure address in Settings</p>
-              </div>
+            <div className="mt-6 rounded-xl overflow-hidden border border-white/8 h-44 bg-navy-700/40">
+              {safeMapEmbedUrl ? (
+                <iframe
+                  title="Institute location map"
+                  src={safeMapEmbedUrl}
+                  className="w-full h-full border-0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center text-slate-600">
+                    <MapPin size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Map embed</p>
+                    <p className="text-xs mt-1 text-slate-700">Configure map embed URL in Settings</p>
+                  </div>
+                </div>
+              )}
             </div>
           </AnimatedSection>
 

@@ -11,14 +11,17 @@ import {
   CheckCircle2,
   X,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS, fillTemplate, SMS_TEMPLATES } from '@/lib/sms';
+import { sendEmail, emailTemplate, EMAIL_TEMPLATES } from '@/lib/email';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
-type Tab = 'send' | 'templates' | 'log' | 'settings';
+type Tab = 'send' | 'email' | 'templates' | 'log' | 'settings';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'send', label: 'Send SMS' },
+  { id: 'email', label: 'Send Email' },
   { id: 'templates', label: 'Templates' },
   { id: 'log', label: 'SMS Log' },
   { id: 'settings', label: 'Settings' },
@@ -553,6 +556,7 @@ function SMSLogTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -580,6 +584,26 @@ function SMSLogTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const deleteLog = async (id: string) => {
+    if (!window.confirm('Delete this SMS log? This cannot be undone.')) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      const { error } = await supabase.from('sms_logs').delete().eq('id', id);
+      if (error) {
+        toast.error(`Could not delete SMS log: ${error.message}`);
+        return;
+      }
+      setLogs((current) => current.filter((log) => log.id !== id));
+      toast.success('SMS log deleted');
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -627,7 +651,7 @@ function SMSLogTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-navy-700/50">
-                  {['Phone', 'Message', 'Type', 'Status', 'Time'].map((h) => (
+                  {['Phone', 'Message', 'Type', 'Status', 'Time', 'Action'].map((h) => (
                     <th
                       key={h}
                       className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap"
@@ -662,6 +686,18 @@ function SMSLogTab() {
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
                       {l.created_at ? formatDate(l.created_at) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => deleteLog(l.id)}
+                        disabled={deletingId === l.id}
+                        className="inline-flex items-center justify-center rounded-lg border border-red-400/25 p-2 text-red-300 hover:bg-red-400/10 hover:border-red-400/50 disabled:opacity-50"
+                        title="Delete SMS log"
+                        aria-label={`Delete SMS log for ${l.phone}`}
+                      >
+                        {deletingId === l.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -747,6 +783,63 @@ function SMSSettingsTab() {
   );
 }
 
+function EmailTab() {
+  const { settings } = useSettingsStore();
+  const [recipientType, setRecipientType] = useState<'all' | 'batch' | 'student' | 'custom'>('all');
+  const [batchId, setBatchId] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [batches, setBatches] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [customEmails, setCustomEmails] = useState('');
+  const [recipientCount, setRecipientCount] = useState(0);
+  const [subject, setSubject] = useState<string>(EMAIL_TEMPLATES.FEE_REMINDER.subject);
+  const [body, setBody] = useState<string>(EMAIL_TEMPLATES.FEE_REMINDER.body);
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    Promise.all([
+      supabase.from('batches').select('id,name').eq('is_active', true).order('name'),
+      supabase.from('students').select('id,name,email,batch_id').eq('status', 'active').eq('is_approved', true).not('email', 'is', null).order('name'),
+    ]).then(([batchResult, studentResult]) => { setBatches(batchResult.data ?? []); setStudents(studentResult.data ?? []); });
+  }, []);
+  useEffect(() => {
+    if (recipientType === 'custom') setRecipientCount(customEmails.split(/\r?\n|,/).map((x) => x.trim()).filter(Boolean).length);
+    else if (recipientType === 'student') setRecipientCount(studentId ? 1 : 0);
+    else setRecipientCount(students.filter((s) => recipientType === 'all' || !batchId || s.batch_id === batchId).length);
+  }, [recipientType, batchId, studentId, customEmails, students]);
+  const send = async () => {
+    const list = recipientType === 'custom'
+      ? customEmails.split(/\r?\n|,/).map((v) => v.trim()).filter(Boolean)
+      : recipientType === 'student'
+        ? students.filter((s) => s.id === studentId).map((s) => s.email)
+        : students.filter((s) => recipientType === 'all' || !batchId || s.batch_id === batchId).map((s) => s.email);
+    if (!list.length || !subject.trim() || !body.trim()) { toast.error('Recipients, subject and message are required'); return; }
+    setSending(true);
+    try {
+      const result = await sendEmail(list, subject, emailTemplate(subject, body, settings.centerName), 'custom');
+      toast.success(result.sent > 0 ? `Email sent to ${result.sent} recipients` : 'Email queued or provider is not configured');
+    } catch (err) { handleSupabaseError(err); }
+    finally { setSending(false); }
+  };
+  return <div className="max-w-2xl card p-5 space-y-4">
+    <h3 className="font-semibold text-white">Send Email</h3>
+    <p className="text-xs text-slate-500">Email costs less than SMS. Choose recipients from live student data.</p>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {([['all', 'All with email'], ['batch', 'By batch'], ['student', 'One student'], ['custom', 'Custom']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setRecipientType(id)} className={cn('btn-outline text-xs px-2 py-2', recipientType === id && 'border-sky-400 text-sky-400')}>{label}</button>)}
+    </div>
+    {recipientType === 'batch' && <select className="input-field" value={batchId} onChange={(e) => setBatchId(e.target.value)}><option value="">All batches</option>{batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+    {recipientType === 'student' && <select className="input-field" value={studentId} onChange={(e) => setStudentId(e.target.value)}><option value="">Select student</option>{students.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}</select>}
+    {recipientType === 'custom' && <textarea className="input-field" rows={3} placeholder="student@example.com" value={customEmails} onChange={(e) => setCustomEmails(e.target.value)} />}
+    <p className="text-xs text-sky-400">Recipients found: {recipientCount}</p>
+    <select className="input-field" onChange={(e) => { const t = EMAIL_TEMPLATES[e.target.value as keyof typeof EMAIL_TEMPLATES]; if (t) { setSubject(t.subject); setBody(t.body); } }}>
+      {Object.entries(EMAIL_TEMPLATES).map(([key, t]) => <option key={key} value={key}>{t.label}</option>)}
+    </select>
+    <input className="input-field" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
+    <textarea className="input-field font-hind" rows={8} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Email message" />
+    <button className="btn-primary" disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Send Email'}</button>
+    <p className="text-xs text-slate-500">Configure `EMAIL_API_KEY` and `EMAIL_FROM` on hosting. The key never goes to the browser.</p>
+  </div>;
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SMSPage() {
   const [tab, setTab] = useState<Tab>('send');
@@ -771,6 +864,7 @@ export default function SMSPage() {
       </div>
 
       {tab === 'send' && <SendSMSTab />}
+      {tab === 'email' && <EmailTab />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'log' && <SMSLogTab />}
       {tab === 'settings' && <SMSSettingsTab />}

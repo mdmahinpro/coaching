@@ -28,7 +28,7 @@ import {
   Upload,
   ImagePlus,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { applyThemeColor, cn } from '@/lib/utils';
 import { classLevelList } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -43,6 +43,21 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'social', label: 'Social', icon: Share2 },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'admins', label: 'Admins', icon: Users },
+];
+
+const THEME_PRESETS = [
+  { name: 'Neon Cyan', color: '#38bdf8', description: 'Clean cyber blue' },
+  { name: 'Electric Violet', color: '#a78bfa', description: 'Arcade purple' },
+  { name: 'Laser Lime', color: '#a3e635', description: 'High-energy green' },
+  { name: 'Hot Magenta', color: '#f472b6', description: 'Synthwave pink' },
+  { name: 'Plasma Orange', color: '#fb923c', description: 'Competitive orange' },
+  { name: 'Carbon Gray', color: '#a7b0bd', description: 'Carbon/silver stealth' },
+];
+
+const BUTTON_STYLES = [
+  { id: 'solid' as const, name: 'Solid', description: 'Bright filled CTA buttons' },
+  { id: 'outline' as const, name: 'Outline', description: 'Neon border, lighter visual weight' },
+  { id: 'glass' as const, name: 'Glass', description: 'Transparent glass with glow' },
 ];
 
 /**
@@ -76,7 +91,7 @@ function SiteImageUpload({
             <img
               src={preview}
               alt={label}
-              className={cn('object-cover w-full h-full', label === 'Logo' && 'object-contain bg-navy-900/70 p-1')}
+              className={cn('object-cover w-full h-full', label === 'Logo' && 'object-contain p-1')}
             />
           ) : (
             <ImagePlus size={20} className="text-slate-600" />
@@ -172,6 +187,15 @@ function ClassLevelsEditor({ value, onChange }: { value: string; onChange: (v: s
   );
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { settings, updateSettings, saveToDB } = useSettingsStore();
   const [tab, setTab] = useState<Tab>('institute');
@@ -197,6 +221,9 @@ export default function SettingsPage() {
   const [admins, setAdmins] = useState<{ email: string; created_at: string }[]>([]);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [feedbackRows, setFeedbackRows] = useState<any[]>([]);
+  const [feedbackForm, setFeedbackForm] = useState({ name: '', grade: '', content: '', rating: 5, image_url: '', is_published: true });
+  const [providerSecrets, setProviderSecrets] = useState({ smsKey: '', smsEndpoint: '', smsSender: '', emailKey: '', emailEndpoint: '', emailFrom: '' });
   // Admin profile picture
   const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -226,8 +253,8 @@ export default function SettingsPage() {
 
   // Live color preview
   useEffect(() => {
-    document.documentElement.style.setProperty('--primary', form.primaryColor);
-  }, [form.primaryColor]);
+    applyThemeColor(form.primaryColor, form.buttonStyle);
+  }, [form.primaryColor, form.buttonStyle]);
 
   // Fetch the admin roster the first time the Admins tab is opened. A ref (not
   // `admins.length`) guards the one-shot so re-renders during the fetch cannot
@@ -366,8 +393,58 @@ export default function SettingsPage() {
     }
   };
 
-  /** Shrink an image to ≤1024px JPEG before upload (mirrors portal/student flow). */
-  const compressImage = (file: File): Promise<Blob> =>
+  const loadFeedback = async () => {
+    const { data } = await supabase.from('feedback').select('*').order('sort_order').order('created_at', { ascending: false });
+    setFeedbackRows(data ?? []);
+  };
+
+  const loadProviderSecrets = async () => {
+    const { data } = await supabase.from('provider_secrets').select('provider,endpoint,sender_id,from_email').in('provider', ['sms', 'email']);
+    const sms = data?.find((x) => x.provider === 'sms');
+    const email = data?.find((x) => x.provider === 'email');
+    setProviderSecrets((p) => ({ ...p, smsEndpoint: sms?.endpoint ?? '', smsSender: sms?.sender_id ?? '', emailEndpoint: email?.endpoint ?? '', emailFrom: email?.from_email ?? '' }));
+  };
+  const saveProviderSecrets = async () => {
+    const rows = [
+      { provider: 'sms', ...(providerSecrets.smsKey ? { api_key: providerSecrets.smsKey } : {}), endpoint: providerSecrets.smsEndpoint, sender_id: providerSecrets.smsSender },
+      { provider: 'email', ...(providerSecrets.emailKey ? { api_key: providerSecrets.emailKey } : {}), endpoint: providerSecrets.emailEndpoint, from_email: providerSecrets.emailFrom },
+    ];
+    const { error } = await supabase.from('provider_secrets').upsert(rows, { onConflict: 'provider' });
+    if (error) toast.error(error.message);
+    else { toast.success('Provider settings saved'); setProviderSecrets((p) => ({ ...p, smsKey: '', emailKey: '' })); }
+  };
+
+  const saveFeedback = async () => {
+    if (!feedbackForm.name.trim() || !feedbackForm.content.trim()) {
+      toast.error('Name and feedback are required');
+      return;
+    }
+    const { error } = await supabase.from('feedback').insert(feedbackForm);
+    if (error) toast.error(error.message);
+    else { toast.success('Feedback saved'); setFeedbackForm({ name: '', grade: '', content: '', rating: 5, image_url: '', is_published: true }); loadFeedback(); }
+  };
+
+  useEffect(() => {
+    if (tab === 'institute') loadFeedback();
+    if (tab === 'sms') loadProviderSecrets();
+  }, [tab]);
+
+  const uploadFeedbackImage = async (file: File) => {
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type) || file.size > 5 * 1024 * 1024) {
+      toast.error('Use JPG, PNG, or WebP under 5 MB');
+      return;
+    }
+    const path = `feedback/${crypto.randomUUID()}.${file.type === 'image/png' ? 'png' : 'jpg'}`;
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
+    if (error) toast.error(error.message);
+    else {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      setFeedbackForm((p) => ({ ...p, image_url: data.publicUrl }));
+    }
+  };
+
+  /** Resize an image while preserving alpha when the output is PNG. */
+  const compressImage = (file: File, outputType = 'image/jpeg'): Promise<Blob> =>
     new Promise((resolve, reject) => {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
@@ -381,7 +458,11 @@ export default function SettingsPage() {
         canvas.height = height;
         canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
         URL.revokeObjectURL(objectUrl);
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('compress failed'))), 'image/jpeg', 0.85);
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('compress failed'))),
+          outputType,
+          outputType === 'image/png' ? undefined : 0.85
+        );
       };
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
@@ -395,8 +476,12 @@ export default function SettingsPage() {
     if (!file) {
       return;
     }
+    if (!file.type.match(/^image\/(png|jpe?g|webp)$/i)) {
+      toast.error('Unsupported image. Use JPG, PNG, or WebP.');
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be under 5 MB');
+      toast.error('Profile photo must be under 5 MB. Choose a smaller image.');
       return;
     }
     setPhotoUploading(true);
@@ -443,18 +528,25 @@ export default function SettingsPage() {
     if (!file) {
       return;
     }
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      toast.error('Unsupported image. Use PNG, JPG, WebP, or SVG.');
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be under 5 MB');
+      toast.error(`${kind === 'logo' ? 'Logo' : 'Banner'} must be under 5 MB. Choose a smaller image.`);
       return;
     }
     setUploadingImg(kind);
     try {
-      const blob = file.type === 'image/svg+xml' ? file : await compressImage(file);
-      const ext = file.type === 'image/svg+xml' ? 'svg' : 'jpg';
+      const isSvg = file.type === 'image/svg+xml';
+      const preserveAlpha = kind === 'logo' && !isSvg && file.type !== 'image/jpeg';
+      const outputType = preserveAlpha ? 'image/png' : 'image/jpeg';
+      const blob = isSvg ? file : await compressImage(file, outputType);
+      const ext = isSvg ? 'svg' : preserveAlpha ? 'png' : 'jpg';
       const path = `site/${kind}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from('avatars')
-        .upload(path, blob, { upsert: true, contentType: file.type || 'image/jpeg' });
+        .upload(path, blob, { upsert: true, contentType: isSvg ? file.type : outputType });
       if (upErr) {
         throw upErr;
       }
@@ -511,13 +603,6 @@ export default function SettingsPage() {
       setRevoking(null);
     }
   };
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div>
-      <label className="text-xs text-slate-400 mb-1.5 block">{label}</label>
-      {children}
-    </div>
-  );
 
   return (
     <AdminLayout title="সেটিংস">
@@ -584,6 +669,18 @@ export default function SettingsPage() {
                     rows={2}
                     placeholder="Full address"
                   />
+                </Field>
+                <Field label="Map Embed URL">
+                  <input
+                    type="url"
+                    value={form.mapEmbedUrl}
+                    onChange={(e) => set('mapEmbedUrl', e.target.value)}
+                    className="input-field"
+                    placeholder="https://www.google.com/maps/embed?pb=…"
+                  />
+                  <p className="text-slate-500 text-xs mt-1">
+                    Paste the iframe HTML, iframe src, or normal Google Maps URL. The app will normalize it safely.
+                  </p>
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Phone">
@@ -767,14 +864,17 @@ export default function SettingsPage() {
                   placeholder="01XXXXXXXXX"
                 />
               </Field>
-              <Field label="Admission Fee (৳)">
+              <Field label="One-time Admission Fee (৳)">
                 <input
                   type="number"
                   value={form.admissionFee}
                   onChange={(e) => set('admissionFee', Number(e.target.value))}
                   className="input-field"
-                  placeholder="500"
+                  placeholder="0"
                 />
+                <p className="text-slate-500 text-xs mt-1">
+                  This is separate from each batch&apos;s monthly fee. Set 0 if admission is free.
+                </p>
               </Field>
 
               {/* Gateway toggles — explicit on/off per payment method */}
@@ -851,10 +951,21 @@ export default function SettingsPage() {
               </h3>
               <div className="card-glass p-3 text-xs text-slate-300 leading-relaxed">
                 The SMS API key is stored securely on the server and never exposed to the browser.
-                Configure the <code className="text-sky-400">SMS_API_KEY</code> and{' '}
-                <code className="text-sky-400">SMS_SENDER_ID</code> environment variables in your
-                hosting platform (Netlify / Vercel) to enable delivery.
+                You can configure provider, endpoint, sender ID, and API keys below. Keys are
+                masked and never returned after saving.
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="SMS Provider"><input className="input-field" value={form.smsProvider} onChange={(e) => set('smsProvider', e.target.value)} placeholder="mimsms or custom" /></Field>
+                <Field label="SMS Sender ID"><input className="input-field" value={providerSecrets.smsSender} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsSender: e.target.value }))} placeholder="YourSchool" /></Field>
+                <Field label="SMS Endpoint"><input className="input-field" type="url" value={providerSecrets.smsEndpoint} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsEndpoint: e.target.value }))} placeholder="https://provider.example/send" /></Field>
+                <Field label="SMS API Key"><input className="input-field" type="password" value={providerSecrets.smsKey} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsKey: e.target.value }))} placeholder="Leave blank to keep current key" /></Field>
+                <Field label="Email Provider"><input className="input-field" value={form.emailProvider} onChange={(e) => set('emailProvider', e.target.value)} placeholder="resend or custom" /></Field>
+                <Field label="Email Endpoint"><input className="input-field" type="url" value={providerSecrets.emailEndpoint} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailEndpoint: e.target.value }))} placeholder="https://api.resend.com/emails" /></Field>
+                <Field label="Email From"><input className="input-field" type="email" value={providerSecrets.emailFrom} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailFrom: e.target.value }))} placeholder="office@school.com" /></Field>
+                <Field label="Email API Key"><input className="input-field" type="password" value={providerSecrets.emailKey} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailKey: e.target.value }))} placeholder="Leave blank to keep current key" /></Field>
+              </div>
+              <button type="button" onClick={saveProviderSecrets} className="btn-primary text-sm">Save provider settings</button>
+              <p className="text-xs text-slate-500">Provider keys are stored in protected provider_secrets and are never returned to the browser.</p>
               <div className="border-t border-white/5 pt-4">
                 <p className="text-xs text-slate-400 mb-2">
                   Send a test SMS to verify configuration:
@@ -990,30 +1101,77 @@ export default function SettingsPage() {
               <h3 className="font-semibold text-white text-sm flex items-center gap-2">
                 <Share2 size={15} className="text-sky-400" /> Social Media
               </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Paste the complete public page URL. After saving, the enabled links
+                appear as icons in the public website footer. WhatsApp is managed in
+                the Institute tab using the international phone number.
+              </p>
               <Field label="Facebook URL">
                 <input
+                  type="url"
                   value={form.socialFacebook}
                   onChange={(e) => set('socialFacebook', e.target.value)}
                   className="input-field"
-                  placeholder="https://facebook.com/…"
+                  placeholder="https://www.facebook.com/your-page"
                 />
               </Field>
               <Field label="YouTube URL">
                 <input
+                  type="url"
                   value={form.socialYoutube}
                   onChange={(e) => set('socialYoutube', e.target.value)}
                   className="input-field"
-                  placeholder="https://youtube.com/…"
+                  placeholder="https://www.youtube.com/@your-channel"
                 />
               </Field>
               <Field label="Instagram URL">
                 <input
+                  type="url"
                   value={form.socialInstagram}
                   onChange={(e) => set('socialInstagram', e.target.value)}
                   className="input-field"
-                  placeholder="https://instagram.com/…"
+                  placeholder="https://www.instagram.com/your-page"
                 />
               </Field>
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
+                  Footer preview
+                </p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className={cn('badge-blue', !form.socialFacebook && 'opacity-40')}>
+                    Facebook {form.socialFacebook ? 'enabled' : 'not set'}
+                  </span>
+                  <span className={cn('badge-red', !form.socialYoutube && 'opacity-40')}>
+                    YouTube {form.socialYoutube ? 'enabled' : 'not set'}
+                  </span>
+                  <span className={cn('badge-violet', !form.socialInstagram && 'opacity-40')}>
+                    Instagram {form.socialInstagram ? 'enabled' : 'not set'}
+                  </span>
+                  <span className={cn('badge-green', !form.centerWhatsapp && 'opacity-40')}>
+                    WhatsApp {form.centerWhatsapp ? 'enabled' : 'not set'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === 'institute' && (
+            <div className="card p-5 space-y-4">
+              <h3 className="font-semibold text-white text-sm">Student Feedback / Success Stories</h3>
+              <p className="text-xs text-slate-500">Only published feedback appears on the homepage. Upload an optional student photo.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <input className="input-field" placeholder="Student name" value={feedbackForm.name} onChange={(e) => setFeedbackForm((p) => ({ ...p, name: e.target.value }))} />
+                <input className="input-field" placeholder="SSC 2025 — GPA 5.00" value={feedbackForm.grade} onChange={(e) => setFeedbackForm((p) => ({ ...p, grade: e.target.value }))} />
+              </div>
+              <textarea className="input-field" rows={3} placeholder="Student feedback" value={feedbackForm.content} onChange={(e) => setFeedbackForm((p) => ({ ...p, content: e.target.value }))} />
+              <div className="flex items-center gap-3">
+                <input type="number" min={1} max={5} className="input-field w-24" value={feedbackForm.rating} onChange={(e) => setFeedbackForm((p) => ({ ...p, rating: Number(e.target.value) }))} />
+                <label className="btn-outline text-xs py-2 px-3 cursor-pointer">Upload image<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFeedbackImage(e.target.files[0])} /></label>
+                <button type="button" onClick={saveFeedback} className="btn-primary text-xs px-4 py-2">Add feedback</button>
+              </div>
+              <div className="space-y-2">
+                {feedbackRows.map((row) => <div key={row.id} className="flex items-center gap-3 rounded-lg border border-white/10 p-3"><span className="flex-1 text-sm text-white">{row.name}<span className="block text-xs text-slate-500">{row.content}</span></span><button type="button" className="btn-outline text-xs px-2 py-1" onClick={async () => { await supabase.from('feedback').update({ is_published: !row.is_published }).eq('id', row.id); loadFeedback(); }}>{row.is_published ? 'Unpublish' : 'Publish'}</button></div>)}
+              </div>
             </div>
           )}
 
@@ -1025,7 +1183,7 @@ export default function SettingsPage() {
               </h3>
               <div>
                 <label className="text-xs text-slate-400 mb-3 block">
-                  Primary Color (live preview)
+                  Theme Accent (live preview)
                 </label>
                 <div className="flex items-center gap-4">
                   <input
@@ -1037,22 +1195,52 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-white font-medium">{form.primaryColor}</p>
                     <p className="text-slate-400 text-xs mt-1">
-                      Changes the accent color throughout the app
+                      Changes buttons, links, focus rings, active states, badges, and glows throughout the app.
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#ef4444', '#f472b6'].map((c) => (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
+                  {THEME_PRESETS.map((preset) => (
                     <button
-                      key={c}
-                      onClick={() => set('primaryColor', c)}
-                      className="w-8 h-8 rounded-lg border-2 border-transparent hover:border-white/30 transition-all"
-                      style={{ backgroundColor: c }}
-                    />
+                      key={preset.color}
+                      type="button"
+                      onClick={() => set('primaryColor', preset.color)}
+                      className={cn(
+                        'rounded-xl border px-3 py-2 text-left transition-all hover:-translate-y-0.5',
+                        form.primaryColor.toLowerCase() === preset.color
+                          ? 'border-white/70 bg-white/10 shadow-lg'
+                          : 'border-white/10 bg-white/[0.03] hover:border-white/30'
+                      )}
+                    >
+                      <span className="block h-1.5 rounded-full mb-1" style={{ backgroundColor: preset.color }} />
+                      <span className="block text-[11px] text-white">{preset.name}</span>
+                      <span className="block text-[10px] text-slate-500">{preset.description}</span>
+                    </button>
                   ))}
                 </div>
-              </div>
-              <div className="card-glass p-4 border border-sky-400/10">
+                </div>
+                <div className="pt-3 border-t border-white/10">
+                  <label className="text-xs text-slate-400 mb-2 block">Button Style</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {BUTTON_STYLES.map((style) => (
+                      <button
+                        key={style.id}
+                        type="button"
+                        onClick={() => set('buttonStyle', style.id)}
+                        className={cn(
+                          'rounded-xl border px-2.5 py-2 text-left transition-all',
+                          form.buttonStyle === style.id
+                            ? 'border-white/70 bg-white/10'
+                            : 'border-white/10 bg-white/[0.03] hover:border-white/30'
+                        )}
+                      >
+                        <span className="block text-xs text-white">{style.name}</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5">{style.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="card-glass p-4 border border-sky-400/10">
                 <p className="text-xs text-slate-400 font-hind">
                   Preview buttons with current color:
                 </p>
@@ -1099,7 +1287,7 @@ export default function SettingsPage() {
                     <input
                       id="admin-photo-input"
                       type="file"
-                      accept="image/*"
+                       accept="image/png,image/jpeg,image/webp"
                       className="hidden"
                       onChange={handleAdminPhotoChange}
                     />
@@ -1108,7 +1296,10 @@ export default function SettingsPage() {
                     <p className="text-white text-sm font-medium">{adminEmail || 'Admin'}</p>
                     <span className="badge-green text-xs">Active</span>
                   </div>
-                </div>
+                  </div>
+                  <p className="text-slate-500 text-[11px] mt-2">
+                    JPG/PNG/WebP · original max 5 MB · resized to 1024 px before upload
+                  </p>
 
                 <form
                   onSubmit={handleChangePassword}

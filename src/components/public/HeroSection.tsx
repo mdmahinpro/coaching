@@ -6,14 +6,17 @@ import { Logo } from '@/components/shared/Logo';
 import { useCallback, useEffect, useState } from 'react';
 import { useIntersection } from '@/hooks/useIntersection';
 import { usePoll } from '@/hooks/useRealtimePoll';
-import { resolveHomeStats, type HomeStatsCounts } from '@/lib/homeStats';
+import { resolveHomeStats, type HomeStatsFetch } from '@/lib/homeStats';
 import { supabase } from '@/lib/supabase';
-import { handleSupabaseError } from '@/utils/errorHandler';
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
 
 function useCountUp(target: number, duration = 1800, active = false) {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    if (!active) {return;}
+    if (!active) {return undefined;}
     let start = 0;
     const step = target / (duration / 16);
     const timer = setInterval(() => {
@@ -36,21 +39,27 @@ const codeLines = [
 
 export function HeroSection() {
   const { settings } = useSettingsStore();
-  const { ref: statsRef, isVisible: statsVisible } = useIntersection({ threshold: 0.3 });
+  const { ref: statsRef, isVisible: statsVisible } = useIntersection(
+    { threshold: 0.3 },
+    settings.showHomeStats
+  );
 
   // Live DB counts for the hero stats — polled when "auto-calculate from
   // database" is on (students approved+active, active teachers, active batches).
   const autoFromDb = settings.statAutoFromDb;
-  const countFetcher = useCallback(async (): Promise<HomeStatsCounts | null> => {
+  const countFetcher = useCallback(async (): Promise<HomeStatsFetch> => {
     if (!useSettingsStore.getState().settings.statAutoFromDb) {
-      return null; // skip polling when the admin disabled auto-from-DB
+      return { ok: false }; // skipped when the admin disabled auto-from-DB
     }
-    const [s, t, b] = await Promise.all([
-      supabase
-        .from('students')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_approved', true)
-        .eq('status', 'active'),
+    const results = await Promise.all([
+      // Students is a private table: count it through the secured server
+      // aggregate endpoint, never as anon.
+      fetch('/api/home-stats')
+        .then(async (r) => {
+          if (!r.ok) {return null;}
+          const body = (await r.json()) as { students?: unknown } | null;
+          return body?.students;
+        }),
       supabase
         .from('teachers')
         .select('id', { count: 'exact', head: true })
@@ -59,30 +68,35 @@ export function HeroSection() {
         .from('batches')
         .select('id', { count: 'exact', head: true })
         .eq('is_active', true),
-    ]);
-    if (s.error) {
-      handleSupabaseError(s.error);
-      return null;
+    ]).catch(() => null);
+    if (!results) {
+      return { ok: false };
     }
-    if (t.error) {
-      handleSupabaseError(t.error);
-      return null;
+    const [studentsCount, t, b] = results;
+    // Only explicit nonnegative integers are counts. Missing/invalid values
+    // and query failures are unavailable, not an empty database.
+    if (t.error || b.error || !isCount(studentsCount) || !isCount(t.count) || !isCount(b.count)) {
+      return { ok: false };
     }
-    if (b.error) {
-      handleSupabaseError(b.error);
-      return null;
-    }
-    return { students: s.count ?? 0, teachers: t.count ?? 0, batches: b.count ?? 0 };
+    return {
+      ok: true,
+      counts: {
+        students: studentsCount,
+        teachers: t.count,
+        batches: b.count,
+      },
+    };
   }, []);
-  const dbCounts = usePoll<HomeStatsCounts | null>(countFetcher);
+  const dbStats = usePoll<HomeStatsFetch>(countFetcher);
 
-  const resolved = resolveHomeStats(autoFromDb ? dbCounts : null, autoFromDb, settings);
+  const resolved = resolveHomeStats(autoFromDb ? dbStats : null, autoFromDb, settings);
 
   const stats = [
-    { icon: <Users size={22} />, value: resolved.students, suffix: '+', label: 'শিক্ষার্থী', color: 'text-sky-400' },
-    { icon: <BookOpen size={22} />, value: resolved.batches, suffix: '+', label: 'কোর্স', color: 'text-violet-400' },
-    { icon: <Award size={22} />, value: resolved.teachers, suffix: '+', label: 'শিক্ষক', color: 'text-emerald-400' },
-    { icon: <TrendingUp size={22} />, value: resolved.successRate, suffix: '%', label: 'সাফল্য', color: 'text-amber-400' },
+    { icon: <Users size={22} />, value: resolved.students, fromDb: autoFromDb, suffix: '+', label: 'শিক্ষার্থী', color: 'text-sky-400' },
+    { icon: <BookOpen size={22} />, value: resolved.batches, fromDb: autoFromDb, suffix: '+', label: 'কোর্স', color: 'text-violet-400' },
+    { icon: <Award size={22} />, value: resolved.teachers, fromDb: autoFromDb, suffix: '+', label: 'শিক্ষক', color: 'text-emerald-400' },
+    // Success rate is configured independently, never fetched from the DB counts.
+    { icon: <TrendingUp size={22} />, value: resolved.successRate, fromDb: false, suffix: '%', label: 'সাফল্য', color: 'text-amber-400' },
   ];
 
   const counts = [
@@ -172,7 +186,9 @@ export function HeroSection() {
                 {stats.map((s, i) => (
                   <div key={s.label} className="text-center">
                     <div className={`font-inter font-black text-2xl sm:text-3xl ${s.color} mb-0.5`}>
-                      {counts[i].toLocaleString()}{s.suffix}
+                      {resolved.failed && s.fromDb
+                        ? '—'
+                        : `${counts[i].toLocaleString()}${s.suffix}`}
                     </div>
                     <div className="font-hind text-slate-500 text-xs sm:text-sm">{s.label}</div>
                   </div>

@@ -5,9 +5,8 @@
       <stop offset="1" stop-color="#00C2A8"/>
     </linearGradient>
   </defs>
-  <!-- Ink tile (Concept B palette) -->
-  <rect width="128" height="128" rx="30" fill="#1B2A4A"/>
-  <!-- Mortarboard + circuit tassel mark, centered (scaled from the lockup art) -->
+  <!-- Transparent mortarboard + circuit tassel mark. The browser owns the
+       surrounding tab background; the mark itself must not paint a tile. -->
   <g transform="translate(9.1 13.6) scale(0.9)">
     <path d="M60 12 L114 40 L60 68 L6 40 Z" fill="url(#cb-grad)"/>
     <path d="M28 54 V80 C28 93 42 100 60 100 C78 100 92 93 92 80 V54"

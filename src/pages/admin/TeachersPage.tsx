@@ -132,8 +132,12 @@ export default function TeachersPage() {
     if (!file) {
       return;
     }
+    if (!file.type.match(/^image\/(png|jpe?g|webp)$/i)) {
+      toast.error('Unsupported image. Use JPG, PNG, or WebP.');
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Photo must be under 5 MB');
+      toast.error('Photo must be under 5 MB. Choose a smaller image.');
       return;
     }
     setPhotoPreview((prev) => {
@@ -378,13 +382,13 @@ export default function TeachersPage() {
                   <input
                     ref={fileRef}
                     type="file"
-                    accept="image/*"
+                   accept="image/png,image/jpeg,image/webp"
                     className="hidden"
                     onChange={handlePhoto}
                   />
                 </div>
                 <p className="text-center text-slate-600 text-xs">
-                  Max 5MB · Auto-compressed · JPG/PNG
+                  JPG/PNG/WebP · original max 5MB · resized to 400×400 · auto-compressed
                 </p>
 
                 <div className="grid grid-cols-2 gap-3">

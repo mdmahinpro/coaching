@@ -7,6 +7,7 @@ export function Footer() {
   const { settings } = useSettingsStore();
   const year = new Date().getFullYear();
   const waNumber = (settings.centerWhatsapp || settings.centerPhone || '').replace(/[^0-9]/g, '');
+  const isSafeExternalUrl = (value: string) => /^https?:\/\//i.test(value.trim());
 
   return (
     <footer className="bg-navy-900 border-t border-navy-700/50 mt-20">
@@ -22,7 +23,7 @@ export function Footer() {
           </p>
           {/* Social icons — configured in Settings → Social */}
           <div className="flex items-center gap-3">
-            {settings.socialFacebook && (
+            {isSafeExternalUrl(settings.socialFacebook) && (
               <a
                 href={settings.socialFacebook}
                 target="_blank"
@@ -33,7 +34,7 @@ export function Footer() {
                 <Facebook size={16} />
               </a>
             )}
-            {settings.socialYoutube && (
+            {isSafeExternalUrl(settings.socialYoutube) && (
               <a
                 href={settings.socialYoutube}
                 target="_blank"
@@ -44,7 +45,7 @@ export function Footer() {
                 <Youtube size={16} />
               </a>
             )}
-            {settings.socialInstagram && (
+            {isSafeExternalUrl(settings.socialInstagram) && (
               <a
                 href={settings.socialInstagram}
                 target="_blank"

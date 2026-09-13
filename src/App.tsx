@@ -290,7 +290,7 @@ function App() {
     initialize();
     loadFromDB();
     return () => teardown();
-  }, []);
+  }, [initialize, loadFromDB, teardown]);
   // Keep favicon === logo: mirrors the active logo (custom or default) in the
   // browser tab, so they can never drift apart.
   useEffect(() => {

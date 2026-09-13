@@ -49,8 +49,14 @@ BEGIN
 
   RAISE NOTICE 'counter RPCs found: %', found;
   IF found = 0 THEN
-    RAISE EXCEPTION
-      'Neither increment_enrolled(uuid) nor decrement_enrolled(uuid) exists. Nothing was locked down — check the project before assuming this succeeded.';
+    -- Fresh-install / clean-schema path: the legacy permissive counters were
+    -- never created by any tracked migration (they existed only on the live
+    -- project), so there is nothing to *de-escalate*. The DROP + CREATE below
+    -- still defines both functions in their hardened is_admin()-gated form, so
+    -- the final state is identical to a live lockdown. Do not fail a clean
+    -- install; only warn so the operator knows no legacy grant needed revoking.
+    RAISE WARNING
+      'No legacy counter RPCs present (expected on a fresh install). Creating hardened increment_enrolled/decrement_enrolled below.';
   END IF;
 
   -- The new bodies call is_admin(); without it they would fail at runtime
@@ -76,7 +82,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  IF NOT is_admin() THEN
+  IF NOT COALESCE(is_admin(), false) THEN
     RAISE EXCEPTION 'Admin authorization required';
   END IF;
 
@@ -93,7 +99,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  IF NOT is_admin() THEN
+  IF NOT COALESCE(is_admin(), false) THEN
     RAISE EXCEPTION 'Admin authorization required';
   END IF;
 
@@ -121,35 +127,43 @@ COMMIT;
 -- ============================================================
 DO $$
 DECLARE
-  bad TEXT[];
+  oid_inc oid := to_regprocedure('public.increment_enrolled(uuid)');
+  oid_dec oid := to_regprocedure('public.decrement_enrolled(uuid)');
+  missing TEXT[];
 BEGIN
-  -- 1. Neither counter may still be executable by anon or PUBLIC.
-  SELECT ARRAY_AGG(p.oid::regprocedure::TEXT)
-  INTO bad
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public'
-    AND p.proname IN ('increment_enrolled', 'decrement_enrolled')
-    AND (
-      HAS_FUNCTION_PRIVILEGE('anon', p.oid, 'EXECUTE')
-      OR HAS_FUNCTION_PRIVILEGE('public', p.oid, 'EXECUTE')
-    );
+  -- Resolve both counters by exact schema-qualified signature and assert they
+  -- exist. The OIDs obtained here are the authoritative handle for every
+  -- privilege check below (never re-identified by name or by assuming the
+  -- identity-arguments string equals 'uuid').
+  missing := NULL;
+  IF oid_inc IS NULL THEN
+    missing := array_append(missing, 'public.increment_enrolled(uuid)');
+  END IF;
+  IF oid_dec IS NULL THEN
+    missing := array_append(missing, 'public.decrement_enrolled(uuid)');
+  END IF;
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'Counter RPC signature(s) missing: %', array_to_string(missing, ', ');
+  END IF;
 
-  IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'anon can still EXECUTE: %', ARRAY_TO_STRING(bad, ', ');
+  -- 1. Neither counter may still be executable by anon or PUBLIC. PostgreSQL
+  --    accepts lowercase 'public' as the pseudo-role argument to
+  --    has_function_privilege (PG13+; explicitly in PG17).
+  IF HAS_FUNCTION_PRIVILEGE('anon', oid_inc, 'EXECUTE')
+     OR HAS_FUNCTION_PRIVILEGE('public', oid_inc, 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon/public can still EXECUTE increment_enrolled';
+  END IF;
+  IF HAS_FUNCTION_PRIVILEGE('anon', oid_dec, 'EXECUTE')
+     OR HAS_FUNCTION_PRIVILEGE('public', oid_dec, 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon/public can still EXECUTE decrement_enrolled';
   END IF;
 
   -- 2. authenticated must retain EXECUTE, or the admin screens break.
-  SELECT ARRAY_AGG(p.oid::regprocedure::TEXT)
-  INTO bad
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public'
-    AND p.proname IN ('increment_enrolled', 'decrement_enrolled')
-    AND NOT HAS_FUNCTION_PRIVILEGE('authenticated', p.oid, 'EXECUTE');
-
-  IF bad IS NOT NULL THEN
-    RAISE EXCEPTION 'authenticated LOST EXECUTE on: %', ARRAY_TO_STRING(bad, ', ');
+  IF NOT HAS_FUNCTION_PRIVILEGE('authenticated', oid_inc, 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated LOST EXECUTE on increment_enrolled';
+  END IF;
+  IF NOT HAS_FUNCTION_PRIVILEGE('authenticated', oid_dec, 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated LOST EXECUTE on decrement_enrolled';
   END IF;
 
   -- 3. No batch may be left with a negative enrolled count.

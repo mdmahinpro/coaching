@@ -1,0 +1,79 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Avatar } from './Avatar';
+
+const PROJECT = 'https://flbvusudwszxdylxevfe.supabase.co';
+const STUDENT_ID = '11111111-2222-3333-4444-555555555555';
+const PUBLIC_URL = `${PROJECT}/storage/v1/object/public/avatars/students/${STUDENT_ID}-photo.jpg`;
+
+vi.mock('@/lib/env', () => ({
+  env: { VITE_SUPABASE_URL: 'https://flbvusudwszxdylxevfe.supabase.co' },
+}));
+
+vi.mock('@/lib/avatars', () => ({
+  seededAvatarUrl: (seed: string) => `https://seeded.example/${encodeURIComponent(seed)}.svg`,
+}));
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let root: ReturnType<typeof createRoot> | null = null;
+let container: HTMLDivElement | null = null;
+
+async function render(element: React.ReactNode) {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(element);
+  });
+  await act(async () => {
+    await new Promise((res) => setTimeout(res, 0));
+  });
+  return container;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+afterEach(async () => {
+  if (root) {
+    await act(async () => {
+      root!.unmount();
+    });
+  }
+  if (container?.parentNode) container.parentNode.removeChild(container);
+  root = null;
+  container = null;
+  vi.unstubAllGlobals();
+});
+
+describe('Avatar public-avatar display', () => {
+  it('resolves the validated original reference to a public URL without contacting retrieval RPCs', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await render(
+      <Avatar
+        name="Test Student"
+        src={`avatars/students/${STUDENT_ID}-photo.jpg`}
+        bearer="portal-token"
+      />
+    );
+
+    expect(container!.querySelector('img')?.getAttribute('src')).toBe(PUBLIC_URL);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('renders an existing full public URL unchanged', async () => {
+    const existing = 'https://randomuser.me/api/portraits/men/1.jpg';
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await render(<Avatar name="Test Student" src={existing} bearer="portal-token" />);
+
+    expect(container!.querySelector('img')?.getAttribute('src')).toBe(existing);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

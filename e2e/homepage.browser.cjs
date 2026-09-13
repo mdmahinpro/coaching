@@ -5,16 +5,12 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
-const BASE = 'http://127.0.0.1:5173';
+const { requireDisposableTarget, assertAppTargetsDisposable, assertServerEndpointsDisposable, readIsolatedCreds } = require('./disposable-guard.cjs');
+const BASE = require('./disposable-guard.cjs').isolatedBaseUrl();
 const EXE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 
-const credsFile = path.join(__dirname, 'admin-creds.json');
-let creds = null;
-try { creds = JSON.parse(fs.readFileSync(credsFile, 'utf8')); } catch {}
-if (!creds || !creds.email || !creds.password) {
-  console.error('admin-creds.json missing or incomplete. Create it with {"email":"...","password":"..."}');
-  process.exit(1);
-}
+const target = requireDisposableTarget();
+const creds = readIsolatedCreds();
 
 const results = [];
 const step = (name, ok, detail = '') => {
@@ -31,6 +27,8 @@ const step = (name, ok, detail = '') => {
   admin.on('pageerror', e => console.log('[admin-pageerror]', String(e && e.message).slice(0, 160)));
   await admin.goto(BASE + '/admin/login', { waitUntil: 'networkidle2', timeout: 20000 });
   await admin.waitForSelector('input[autocomplete="email"]', { timeout: 10000 });
+  await assertAppTargetsDisposable(admin, target.url);
+  await assertServerEndpointsDisposable(BASE, target.url);
   const typeInto = async (p, sel, val) => {
     const el = await p.$(sel); if (!el) return false;
     await el.click({ clickCount: 3 }); await el.type(val); return true;

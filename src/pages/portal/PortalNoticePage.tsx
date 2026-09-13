@@ -44,7 +44,7 @@ export default function PortalNoticePage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, student]);
+  }, [filter, student?.id, student?.token]);
 
   useEffect(() => {
     load();
@@ -61,7 +61,7 @@ export default function PortalNoticePage() {
         handleSupabaseError(err);
       }
     );
-  }, [student]);
+  }, [student?.id, student?.token]);
 
   const markRead = (id: string) => {
     if (readIds.includes(id)) {

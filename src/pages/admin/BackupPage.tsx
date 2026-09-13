@@ -27,11 +27,13 @@ const TABLES = [
   { key: 'mcq_submissions', label: 'MCQ Submissions' },
   { key: 'notices', label: 'Notices' },
   { key: 'sms_logs', label: 'SMS Logs' },
+  { key: 'payment_approvals', label: 'Payment Approvals' },
+  { key: 'fee_audit_logs', label: 'Fee Audit Logs' },
   { key: 'admission_requests', label: 'Admission Requests' },
   { key: 'site_settings', label: 'Site Settings' },
 ] as const;
 
-type StepState = 'pending' | 'running' | 'done' | 'skip';
+type StepState = 'pending' | 'running' | 'done' | 'error';
 
 interface Step {
   label: string;
@@ -60,6 +62,7 @@ export default function BackupPage() {
     }>
   >([]);
   const [loadingAuto, setLoadingAuto] = useState(false);
+  const [creatingAuto, setCreatingAuto] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreSummary, setRestoreSummary] = useState<Record<string, number> | null>(null);
   const [restoreData, setRestoreData] = useState<any | null>(null);
@@ -102,18 +105,24 @@ export default function BackupPage() {
   const downloadAutoBackup = async (id: string) => {
     const { data, error } = await supabase
       .from('backups')
-      .select('tables, institute_name, backup_date')
+        .select('tables, institute_name, backup_date')
       .eq('id', id)
       .single();
     if (error || !data) {
       toast.error('Failed to load backup');
       return;
     }
+    // Older automated snapshots stored the complete envelope inside `tables`.
+    // Normalize both old and corrected snapshots when downloading.
+    const stored = data.tables as Record<string, unknown>;
+    const tables = stored?.backup_version && stored?.tables
+      ? stored.tables
+      : stored;
     const payload = {
       backup_version: '1.0',
       backup_date: data.backup_date,
       institute: data.institute_name,
-      tables: data.tables,
+      tables,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -123,6 +132,23 @@ export default function BackupPage() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Backup downloaded');
+  };
+
+  const createAutoBackupNow = async () => {
+    setCreatingAuto(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_create_backup_now');
+      if (error) {
+        toast.error(`Automatic backup failed: ${error.message}`);
+        return;
+      }
+      toast.success(`Automatic backup created (${data?.[0]?.record_count ?? 0} records)`);
+      await loadAutoBackups();
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setCreatingAuto(false);
+    }
   };
 
   const saveHistory = (date: string) => {
@@ -144,6 +170,7 @@ export default function BackupPage() {
 
     const backup: Record<string, unknown[]> = {};
     let totalRecords = 0;
+    const failures: string[] = [];
 
     try {
       for (let i = 0; i < TABLES.length; i++) {
@@ -151,12 +178,19 @@ export default function BackupPage() {
         await new Promise((r) => setTimeout(r, 80)); // visual delay
         const { data, error } = await supabase.from(TABLES[i].key).select('*');
         if (error) {
-          setStep(i, 'skip'); // table might not exist yet
+          setStep(i, 'error');
+          failures.push(`${TABLES[i].label}: ${error.message}`);
         } else {
           backup[TABLES[i].key] = data ?? [];
           totalRecords += (data ?? []).length;
           setStep(i, 'done');
         }
+      }
+
+      // Never produce a file that looks complete when a required table failed.
+      if (failures.length > 0) {
+        toast.error(`Backup stopped. No file was created. Failed: ${failures.join('; ')}`);
+        return;
       }
 
       // Finalize
@@ -234,53 +268,43 @@ export default function BackupPage() {
       return;
     }
     setRestoring(true);
-    let totalRestored = 0;
-    // Process in FK-safe order: parents before children
-    const RESTORE_ORDER = [
-      'site_settings',
-      'batches',
-      'teachers',
-      'students',
-      'fees',
-      'notices',
-      'exams',
-      'mcq_questions',
-      'mcq_submissions',
-      'sms_logs',
-      'admission_requests',
-    ];
-    const processed = new Set<string>();
     try {
-      for (const tableName of RESTORE_ORDER) {
-        const rows = (restoreData.tables as any)[tableName];
-        if (!Array.isArray(rows) || rows.length === 0) {
-          processed.add(tableName);
-          continue;
+      // Preferred path: server-side transactional restore (20250904000001).
+      // Replaces every table present in the backup; any failure rolls back the
+      // whole restore and reports the offending table. Only falls back to the
+      // legacy client-side upsert when the new RPC is not yet deployed.
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_restore_backup', {
+        p_tables: restoreData.tables,
+      });
+      if (!rpcErr) {
+        const rows = (rpcData ?? []) as Array<{ table_name: string; rows_restored: number }>;
+        const total = rows.reduce((sum, r) => sum + (Number(r.rows_restored) || 0), 0);
+        toast.success(`✅ Restore complete! ${total} records restored`);
+      } else {
+        // Legacy fallback: keep apply-in-order semantics but surface every
+        // per-table error instead of claiming success despite failures.
+        let totalRestored = 0;
+        const failures: string[] = [];
+        for (const tableName of Object.keys(restoreData.tables)) {
+          const rows = (restoreData.tables as any)[tableName];
+          if (!Array.isArray(rows) || rows.length === 0) {
+            continue;
+          }
+          const { error } = await supabase
+            .from(tableName as any)
+            .upsert(rows as any[], { onConflict: 'id', ignoreDuplicates: false });
+          if (error) {
+            failures.push(`${tableName}: ${error.message}`);
+          } else {
+            totalRestored += rows.length;
+          }
         }
-        const { error } = await supabase
-          .from(tableName as any)
-          .upsert(rows as any[], { onConflict: 'id', ignoreDuplicates: false });
-        if (!error) {
-          totalRestored += rows.length;
+        if (failures.length > 0) {
+          toast.error(`Restore incomplete: ${totalRestored} restored, ${failures.length} table(s) failed — ${failures.join('; ')}`);
+        } else {
+          toast.success(`✅ Restore complete! ${totalRestored} records restored`);
         }
-        processed.add(tableName);
       }
-      // Handle any extra tables not in the known order
-      for (const [table, rows] of Object.entries(restoreData.tables)) {
-        if (processed.has(table)) {
-          continue;
-        }
-        if (!Array.isArray(rows) || rows.length === 0) {
-          continue;
-        }
-        const { error } = await supabase
-          .from(table as any)
-          .upsert(rows as any[], { onConflict: 'id', ignoreDuplicates: false });
-        if (!error) {
-          totalRestored += (rows as any[]).length;
-        }
-      }
-      toast.success(`✅ Restore complete! ${totalRestored} records restored`);
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -299,8 +323,8 @@ export default function BackupPage() {
     if (state === 'running') {
       return <Loader2 size={14} className="text-sky-400 animate-spin shrink-0" />;
     }
-    if (state === 'skip') {
-      return <span className="text-slate-500 text-xs shrink-0">—</span>;
+    if (state === 'error') {
+      return <span className="text-red-400 text-xs shrink-0">Failed</span>;
     }
     return <div className="w-3.5 h-3.5 rounded-full border border-white/20 shrink-0" />;
   };
@@ -350,8 +374,8 @@ export default function BackupPage() {
                         ? 'text-emerald-400'
                         : s.state === 'running'
                           ? 'text-sky-400'
-                          : s.state === 'skip'
-                            ? 'text-slate-600'
+                          : s.state === 'error'
+                            ? 'text-red-400'
                             : 'text-slate-600'
                     )}
                   >
@@ -369,7 +393,7 @@ export default function BackupPage() {
         </div>
 
         {/* ── Backup History ── */}
-        {(history.length > 0 || autoBackups.length > 0) && (
+        {(history.length > 0 || autoBackups.length > 0 || !loadingAuto) && (
           <div className="card p-5">
             <h3 className="font-semibold text-white text-sm flex items-center gap-2 mb-3">
               <Clock size={15} className="text-slate-400" /> Backup History
@@ -411,6 +435,14 @@ export default function BackupPage() {
                 <RefreshCw size={11} className={loadingAuto ? 'animate-spin' : ''} /> Refresh
               </button>
             )}
+            <button
+              onClick={createAutoBackupNow}
+              disabled={creatingAuto}
+              className="btn-outline text-xs py-1.5 px-3 mt-3 flex items-center gap-1"
+            >
+              {creatingAuto ? <Loader2 size={11} className="animate-spin" /> : <Database size={11} />}
+              {creatingAuto ? 'Creating…' : 'Create backup now'}
+            </button>
           </div>
         )}
 
@@ -532,8 +564,10 @@ export default function BackupPage() {
         <div className="card-glass p-4 border border-sky-400/10 flex items-start gap-3">
           <Info size={16} className="text-sky-400 shrink-0 mt-0.5" />
           <p className="text-slate-400 text-sm leading-relaxed font-hind">
-            ℹ️ এই ব্যাকআপ ফাইলটি ভবিষ্যতে নতুন ফিচার যোগ হলেও কাজ করবে। নতুন ফিচারের ডেটা পুরোনো
-            ব্যাকআপে থাকবে না, তবে পুরোনো ডেটা নিরাপদ থাকবে।
+            ℹ️ এই ব্যাকআপে শিক্ষার্থী, শিক্ষক, ব্যাচ, ফি, পেমেন্ট অনুমোদন, ফি অডিট,
+            পরীক্ষা, প্রশ্ন, ফলাফল, নোটিশ, SMS লগ, ভর্তি আবেদন এবং সাইট সেটিংস থাকে।
+            লগইন সেশন, অ্যাডমিন রোস্টার বা কোনো গোপন API/ডাটাবেস পাসওয়ার্ড ইচ্ছাকৃতভাবে
+            ফাইলে রাখা হয় না।
           </p>
         </div>
 
@@ -541,9 +575,9 @@ export default function BackupPage() {
         <div className="card-glass p-4 border border-emerald-400/10 flex items-start gap-3">
           <Database size={16} className="text-emerald-400 shrink-0 mt-0.5" />
           <p className="text-slate-400 text-sm leading-relaxed font-hind">
-            🤖 স্বয়ংক্রিয় ব্যাকআপ প্রতিদিন মdzনায় চলবে (pg_cron via Supabase)। স্বয়ংক্রিয়
-            ব্যাকআপগুলো ইতিহাসে দেখুন এবং ডাউনলোড করুন। প্রথম ব্যাকআপ আগামীকাল (মdzনা ০০:০০) পাওয়া
-            যাবে।
+            🤖 স্বয়ংক্রিয় ব্যাকআপ প্রতিদিন রাত ১২:০০টায় (Supabase pg_cron) চলবে।
+            ইতিহাস থেকে স্বয়ংক্রিয় ব্যাকআপ দেখুন ও ডাউনলোড করুন। প্রথম ব্যাকআপ তৈরি হওয়ার
+            পরেই এখানে দেখা যাবে।
           </p>
         </div>
       </div>

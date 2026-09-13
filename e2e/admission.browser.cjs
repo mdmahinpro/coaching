@@ -9,9 +9,16 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
-const BASE = 'http://127.0.0.1:5173';
+const {
+  requireDisposableTarget,
+  assertAppTargetsDisposable,
+  assertServerEndpointsDisposable,
+  readIsolatedCreds,
+} = require('./disposable-guard.cjs');
+const BASE = require('./disposable-guard.cjs').isolatedBaseUrl();
 const EXE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const creds = JSON.parse(fs.readFileSync(path.join(__dirname, 'admin-creds.json'), 'utf8'));
+const target = requireDisposableTarget();
+const creds = readIsolatedCreds();
 
 const results = [];
 const step = (n, ok, d = '') => {
@@ -34,6 +41,9 @@ const setSelect = (sel, val) => {
   const browser = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--no-sandbox', '--disable-gpu'] });
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.log('[pageerror]', String(e && e.message).slice(0, 160)));
+  await page.goto(BASE + '/admission', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await assertAppTargetsDisposable(page, target.url);
+  await assertServerEndpointsDisposable(BASE, target.url);
 
   const uniq = String(Date.now()).slice(-8);
   const phone = '0187' + uniq.slice(0, 8).padEnd(8, '0').slice(0, 8);
@@ -187,7 +197,12 @@ const setSelect = (sel, val) => {
     }, matchKey);
     await new Promise((r) => setTimeout(r, 3500));
     const adminBody = await adminPage.evaluate(() => document.body.innerText);
-    step('Admin: approve succeeds w/ reference as password', /Approved!|Student ID:/.test(adminBody) && adminBody.includes(observedRef), (adminBody.match(/Approved!.*/) || [])[0]?.slice(0, 90) ?? 'no toast');
+    // The current toast shows the generated student ID and explains that the
+    // admission reference is the password; the reference itself is displayed
+    // in the drawer, not necessarily repeated in the toast. The later portal
+    // login is the definitive reference-password assertion.
+    const approvalSucceeded = /Approved!|Student ID:|default password is the admission reference/i.test(adminBody);
+    step('Admin: approve succeeds w/ reference as password', approvalSucceeded, (adminBody.match(/Approved!.*(?:\n|$)/) || adminBody.match(/Student ID:.*(?:\n|$)/) || [])[0]?.slice(0, 120) ?? 'no approval text');
   } else {
     step('Admin: admission row found + has View', false, 'no name/ref captured');
     step('Admin: drawer shows Reference (default password)', false, 'no name/ref');

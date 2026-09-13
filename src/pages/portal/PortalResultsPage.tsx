@@ -105,7 +105,7 @@ export default function PortalResultsPage() {
         setLoading(false);
       }
     );
-  }, [student]);
+  }, [student?.id, student?.token]);
 
   const openBreakdown = async (sub: Submission) => {
     try {

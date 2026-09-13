@@ -25,16 +25,12 @@ const whyUs = [
   { icon: <Shield size={22} />, title: 'নিরাপদ পরিবেশ', desc: 'নিরাপদ, শান্তিপূর্ণ ও পড়াশোনার উপযুক্ত পরিবেশ নিশ্চিত করা হয়।' },
 ];
 
-const testimonials = [
-  { name: 'রাহিম উদ্দিন', grade: 'SSC 2024 — GPA 5.00', gender: 'male', text: 'এই কোচিং সেন্টারের সহায়তায় আমি SSC-তে A+ পেয়েছি। স্যারদের পড়ানোর পদ্ধতি অসাধারণ ছিল।' },
-  { name: 'সুমাইয়া বেগম', grade: 'HSC 2024 — GPA 4.83', gender: 'female', text: 'নিয়মিত মডেল টেস্ট ও স্যারদের গাইডেন্স আমাকে ভালো ফলাফল করতে সাহায্য করেছে।' },
-  { name: 'করিম হোসেন', grade: 'IELTS 7.5 Band', gender: 'male', text: 'IELTS প্রস্তুতির জন্য এটি সেরা জায়গা। Speaking ও Writing এ অনেক উপকার হয়েছে।' },
-];
 
 export default function HomePage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
+  const [feedback, setFeedback] = useState<any[]>([]);
 
   // Polled "realtime" fetchers — run immediately, then every interval and on
   // window focus, so batch occupancy, the notice ticker and teachers stay live.
@@ -62,7 +58,7 @@ export default function HomePage() {
         .from('teachers')
         .select('id,name,subject,qualification,bio,photo_url,is_active')
         .eq('is_active', true)
-        .limit(4);
+        .order('name', { ascending: true });
       setTeachers(
         (data ?? []).map((t: any) => ({
           ...t, name: sanitize(t.name), subject: t.subject ? sanitize(t.subject) : t.subject,
@@ -87,13 +83,26 @@ export default function HomePage() {
     }
   }, []);
 
+  const fetchFeedback = useCallback(async () => {
+    const { data } = await supabase
+      .from('feedback')
+      .select('id,name,grade,content,image_url,rating')
+      .eq('is_published', true)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(6);
+    setFeedback((data ?? []).map((item: any) => ({ ...item, name: sanitize(item.name), content: sanitize(item.content) })));
+  }, []);
+
   usePoll(fetchBatches);
   usePoll(fetchTeachers);
   usePoll(fetchNotices);
+  usePoll(fetchFeedback);
 
-  const tickerItems = notices.length > 0
-    ? [...notices, ...notices].map(n => n.title)
-    : ['Welcome to our coaching center!', 'Admissions open for 2025', 'Excellent results in SSC 2024'];
+  // Live SaaS data only: never show demo announcements when the database has
+  // no published notices. The ticker simply stays hidden until the institute
+  // publishes its first real notice.
+  const tickerItems = [...notices, ...notices].map((n) => n.title);
 
   return (
     <div className="min-h-screen bg-navy-900">
@@ -203,15 +212,15 @@ export default function HomePage() {
         </AnimatedSection>
       )}
 
-      {/* Testimonials */}
-      <AnimatedSection className="bg-navy-800/40 py-20">
+      {/* Published student feedback */}
+      {feedback.length > 0 && <AnimatedSection className="bg-navy-800/40 py-20">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
             <span className="badge-yellow mb-3 inline-block">শিক্ষার্থীদের মতামত</span>
             <h2 className="section-title mb-3">সাফল্যের <span className="text-gradient">গল্প</span></h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {testimonials.map((t, i) => (
+            {feedback.map((t, i) => (
               <motion.div
                 key={t.name}
                 initial={{ opacity: 0, y: 24 }}
@@ -220,14 +229,14 @@ export default function HomePage() {
                 transition={{ delay: i * 0.1 }}
                 className="card-glass p-6"
               >
-                <div className="flex gap-0.5 mb-4">
-                  {Array.from({ length: 5 }).map((_, j) => (
+                  <div className="flex gap-0.5 mb-4">
+                  {Array.from({ length: t.rating ?? 5 }).map((_, j) => (
                     <Star key={j} size={14} className="text-amber-400 fill-amber-400" />
                   ))}
                 </div>
-                <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">&quot;{t.text}&quot;</p>
-                <div className="flex items-center gap-3 border-t border-white/5 pt-4">
-                  <Avatar name={t.name} size="sm" seed={t.name} gender={t.gender as 'male' | 'female'} />
+                  <p className="font-hind text-slate-300 text-sm leading-relaxed mb-5 italic">&quot;{t.content}&quot;</p>
+                  <div className="flex items-center gap-3 border-t border-white/5 pt-4">
+                   <Avatar name={t.name} size="sm" seed={t.id} src={t.image_url} fallbackToInitials />
                   <div>
                     <p className="font-semibold text-white text-sm">{t.name}</p>
                     <p className="text-slate-500 text-xs">{t.grade}</p>
@@ -237,7 +246,7 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </AnimatedSection>
+       </AnimatedSection>}
 
       {/* Admission CTA */}
       <AnimatedSection>

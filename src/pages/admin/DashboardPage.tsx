@@ -31,8 +31,6 @@ import {
   Legend,
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { loadDemoData, isDemoLoaded } from '@/data/demoData';
-import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { logWarning } from '@/utils/logger';
 
@@ -69,8 +67,6 @@ export default function DashboardPage() {
   const [recentAdmissions, setRecentAdmissions] = useState<any[]>([]);
   const [activeExams, setActiveExams] = useState<any[]>([]);
   const [feeDues, setFeeDues] = useState<any[]>([]);
-  const [demoLoaded, setDemoLoaded] = useState(isDemoLoaded);
-  const [loadingDemo, setLoadingDemo] = useState(false);
   const [dbHealthy, setDbHealthy] = useState<boolean | null>(null);
   const [checkingDb, setCheckingDb] = useState(false);
 
@@ -92,8 +88,17 @@ export default function DashboardPage() {
         examsRes,
         allFeesRes,
       ] = await Promise.all([
-        supabase.from('students').select('id', { count: 'exact', head: true }),
-        supabase.from('students').select('id,created_at').gte('created_at', sixMonthsAgo),
+         supabase
+           .from('students')
+           .select('id', { count: 'exact', head: true })
+           .eq('is_approved', true)
+           .eq('status', 'active'),
+         supabase
+           .from('students')
+           .select('id,created_at')
+           .eq('is_approved', true)
+           .eq('status', 'active')
+           .gte('created_at', sixMonthsAgo),
         supabase
           .from('fees')
           .select('amount,note')
@@ -254,20 +259,6 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLoadDemo = async () => {
-    setLoadingDemo(true);
-    try {
-      await loadDemoData();
-      setDemoLoaded(true);
-      toast.success('ডেমো ডেটা সফলভাবে লোড হয়েছে!');
-      await fetchData();
-    } catch (err: any) {
-      toast.error('ডেমো লোড ব্যর্থ: ' + (err?.message ?? 'Unknown error'));
-    } finally {
-      setLoadingDemo(false);
-    }
-  };
-
   const customTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) {
       return null;
@@ -288,43 +279,6 @@ export default function DashboardPage() {
   return (
     <AdminLayout title="Dashboard">
       <div className="space-y-5">
-        {/* Demo Data Banner */}
-        {!demoLoaded && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="card p-4 border border-sky-400/20 bg-gradient-to-r from-sky-400/5 to-violet-400/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-400/10 border border-sky-400/20 flex items-center justify-center shrink-0">
-                <Sparkles size={18} className="text-sky-400" />
-              </div>
-              <div>
-                <p className="text-white font-semibold text-sm font-inter">প্রথমবার সেটআপ করছেন?</p>
-                <p className="text-slate-400 text-xs mt-0.5">
-                  ডেমো ডেটা লোড করে সিস্টেমটি পরীক্ষা করুন — শিক্ষক, ব্যাচ, ছাত্র, পরীক্ষা এবং নোটিশ
-                  যোগ হবে।
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleLoadDemo}
-              disabled={loadingDemo}
-              className="btn-primary text-sm shrink-0 min-h-[44px]"
-            >
-              {loadingDemo ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> লোড হচ্ছে…
-                </>
-              ) : (
-                <>
-                  <Database size={14} /> ডেমো ডেটা লোড করুন
-                </>
-              )}
-            </button>
-          </motion.div>
-        )}
-
         {/* System Health Indicator */}
         <div className="flex items-center gap-3">
           <button

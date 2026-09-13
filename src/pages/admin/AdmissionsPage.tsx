@@ -105,6 +105,13 @@ export default function AdmissionsPage() {
   }, [load]);
 
   const handleApprove = async (admission: Admission) => {
+    // Idempotency guard: an admission that is no longer pending must not be
+    // re-approved (a retry after a timeout would otherwise create duplicates).
+    if (admission.status !== 'pending') {
+      toast.error('This application is no longer pending.');
+      setActing(null);
+      return;
+    }
     setActing(admission.id);
     try {
       // Batch code feeds the ID scheme (ShortName+Code+Year+Seq); fall back
@@ -175,7 +182,7 @@ export default function AdmissionsPage() {
         load();
         return;
       }
-      toast.success(`Approved! Student ID: ${studentId} · Password: ${password}`);
+      toast.success(`Approved! Student ID: ${studentId} — default password is the admission reference.`);
 
       // Send SMS with correct password
       if (admission.phone) {

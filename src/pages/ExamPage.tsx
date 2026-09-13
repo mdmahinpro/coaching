@@ -14,6 +14,7 @@ import {
   getExamReview,
 } from '@/lib/examApi';
 import type { ExamJoinResult } from '@/lib/examApi';
+import { clearExamDraft, loadExamDraft, saveExamDraft } from '@/lib/examRecovery';
 import toast from 'react-hot-toast';
 import { cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -83,7 +84,7 @@ interface Submission {
 type Step =
   | 'loading'
   | 'not-started'
-  | 'verify'
+  | 'login-required'
   | 'instructions'
   | 'exam'
   | 'result'
@@ -132,11 +133,7 @@ export default function ExamPage() {
   // Held in a ref (not state) since it's only read imperatively, never rendered.
   const examTokenRef = useRef<string | null>(null);
 
-  // Verify step
-  const [studentIdInput, setStudentIdInput] = useState('');
   const [student, setStudent] = useState<any | null>(null);
-  const [verifyError, setVerifyError] = useState('');
-  const [verifying, setVerifying] = useState(false);
 
   // Exam step
   const [currentQ, setCurrentQ] = useState(0);
@@ -166,15 +163,15 @@ export default function ExamPage() {
 
   // ── Enter the exam once identity is established (mints exam token) ─────────
   // Resolves questions (without answer key) or routes to the result view if the
-  // student has already submitted. `code` is the manual-verify Student ID.
+  // student has already submitted. Identity comes from the portal session.
   const enterExam = useCallback(
-    async (opts: { code?: string; examStatus?: string }) => {
+    async (opts: { examStatus?: string }) => {
       if (!examId) {
         return;
       }
       let join: ExamJoinResult;
       try {
-        join = await joinExam(examId, opts.code);
+        join = await joinExam(examId);
       } catch (err) {
         // A draft/upcoming exam may have started since meta was loaded — stop
         // the join cleanly instead of surfacing the raw EXAM_NOT_STARTED error.
@@ -217,21 +214,17 @@ export default function ExamPage() {
       }));
       setQuestions(normalised as Question[]);
 
-      // Resume in-progress answers from localStorage.
-      const saved = localStorage.getItem(`exam-answers-${examId}-${join.student_id}`);
-      if (saved) {
-        try {
-          setAnswers(JSON.parse(saved));
-          let secs = (exam?.duration_minutes ?? 30) * 60;
-          if (exam?.timer_enabled !== false && exam?.end_time) {
-            secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
-          }
-          setRemainingSecs(secs);
-          setStep('exam');
-          return;
-        } catch {
-          /* fall through to instructions */
+      const questionIds = new Set<string>(normalised.map((question: Question) => question.id));
+      const saved = loadExamDraft(examId, join.student_id, questionIds);
+      if (saved && Object.keys(saved).length > 0) {
+        setAnswers(saved);
+        let secs = (exam?.duration_minutes ?? 30) * 60;
+        if (exam?.timer_enabled !== false && exam?.end_time) {
+          secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
         }
+        setRemainingSecs(secs);
+        setStep('exam');
+        return;
       }
       setStep('instructions');
     },
@@ -280,12 +273,13 @@ export default function ExamPage() {
           return;
         }
 
-        // No session → ask for a Student ID (manual verify).
+        // No session → require portal authentication. A Student ID alone must
+        // never mint an exam token.
         if (meta.status === 'ended') {
           setStep('ended');
           return;
         }
-        setStep('verify');
+        setStep('login-required');
       } catch (err) {
         handleSupabaseError(err);
         setStep('ended');
@@ -317,47 +311,12 @@ export default function ExamPage() {
     };
   }, [examId, step]);
 
-  // ── Verify Student ────────────────────────────────────────────────────────
-  // Manual-verify path: identity resolves server-side from the Student ID via
-  // exam_join, which validates approval/suspension and mints an exam token.
-  const handleVerify = async () => {
-    const code = studentIdInput.trim();
-    if (!code) {
-      return;
-    }
-    setVerifying(true);
-    setVerifyError('');
-
-    try {
-      await enterExam({ code });
-    } catch (err: any) {
-      const msg = String(err?.message ?? '');
-      if (msg.includes('STUDENT_NOT_FOUND')) {
-        setVerifyError('এই Student ID দিয়ে কোনো শিক্ষার্থী পাওয়া যায়নি।');
-      } else if (msg.includes('NOT_APPROVED')) {
-        setVerifyError('আপনি এখনো অনুমোদিত হননি। Admin এর সাথে যোগাযোগ করুন।');
-      } else if (msg.includes('SUSPENDED')) {
-        setVerifyError('আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে। Admin এর সাথে যোগাযোগ করুন।');
-      } else if (msg.includes('EXAM_NOT_FOUND')) {
-        setStep('ended');
-      } else {
-        setVerifyError('যাচাই করা যায়নি। আবার চেষ্টা করুন।');
-      }
-    } finally {
-      setVerifying(false);
-    }
-  };
-
   // ── Start Exam ────────────────────────────────────────────────────────────
   const startExam = () => {
     // Restore from localStorage
-    const saved = localStorage.getItem(`exam-answers-${examId}-${student?.id}`);
-    if (saved) {
-      try {
-        setAnswers(JSON.parse(saved));
-      } catch {
-        /* ignore */
-      }
+    if (examId && student?.id) {
+      const saved = loadExamDraft(examId, student.id, new Set(questions.map((question) => question.id)));
+      if (saved) setAnswers(saved);
     }
 
     // Compute remaining seconds
@@ -414,10 +373,7 @@ export default function ExamPage() {
       return;
     }
     autoSaveRef.current = setInterval(() => {
-      localStorage.setItem(
-        `exam-answers-${examId}-${student?.id}`,
-        JSON.stringify(answersRef.current)
-      );
+      if (examId && student?.id) saveExamDraft(examId, student.id, answersRef.current);
     }, 10000);
     return () => {
       if (autoSaveRef.current) {
@@ -438,10 +394,7 @@ export default function ExamPage() {
     }
     const handler = (e: BeforeUnloadEvent) => {
       // Flush latest answers immediately so nothing is lost beyond the 10s interval
-      localStorage.setItem(
-        `exam-answers-${examId}-${student?.id}`,
-        JSON.stringify(answersRef.current)
-      );
+      if (examId && student?.id) saveExamDraft(examId, student.id, answersRef.current);
       e.preventDefault();
       e.returnValue = '';
     };
@@ -499,7 +452,11 @@ export default function ExamPage() {
   }, [step, examId]);
 
   const selectAnswer = (questionId: string, opt: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: opt }));
+    setAnswers((prev) => {
+      const next = { ...prev, [questionId]: opt };
+      if (examId && student?.id) saveExamDraft(examId, student.id, next);
+      return next;
+    });
   };
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -547,7 +504,7 @@ export default function ExamPage() {
         const result = await submitExam(token, answers, timeTaken, redCardsRef.current);
 
         // Clear localStorage
-        localStorage.removeItem(`exam-answers-${examId}-${student?.id}`);
+        if (examId && student?.id) clearExamDraft(examId, student.id);
 
         setSubmission({
           id: result.id,
@@ -736,8 +693,8 @@ export default function ExamPage() {
     );
   }
 
-  // ── Render: Verify ────────────────────────────────────────────────────────
-  if (step === 'verify') {
+  // ── Render: Login required ────────────────────────────────────────────────
+  if (step === 'login-required') {
     return (
       <div className="min-h-screen bg-navy-900 flex items-center justify-center p-4">
         <motion.div
@@ -756,44 +713,10 @@ export default function ExamPage() {
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs text-slate-400 mb-1.5 block">আপনার Student ID লিখুন</label>
-              <input
-                value={studentIdInput}
-                onChange={(e) => {
-                  setStudentIdInput(e.target.value);
-                  setVerifyError('');
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
-                className="input-field text-center font-mono tracking-widest text-lg"
-                placeholder="CF250001"
-                autoFocus
-              />
-            </div>
-            {verifyError && (
-              <motion.p
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-red-400 text-sm text-center"
-              >
-                {verifyError}
-              </motion.p>
-            )}
-            <button
-              onClick={handleVerify}
-              disabled={verifying || !studentIdInput.trim()}
-              className="btn-primary w-full justify-center"
-            >
-              {verifying ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" /> যাচাই করা হচ্ছে…
-                </>
-              ) : (
-                'শুরু করুন'
-              )}
-            </button>
-          </div>
+          <p className="text-slate-300 text-sm text-center leading-relaxed mb-4">
+            পরীক্ষা দিতে আগে ছাত্র পোর্টালে ফোন ও পাসওয়ার্ড দিয়ে লগইন করুন। Student ID একা দিয়ে পরীক্ষা শুরু করা যায় না।
+          </p>
+          <a href="/portal/login" className="btn-primary w-full justify-center">পোর্টালে লগইন করুন</a>
         </motion.div>
       </div>
     );

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { applyThemeColor } from '@/lib/utils';
 
 export interface Settings {
   // Coaching short name used to build student IDs (e.g. 'TLY').
@@ -9,9 +10,16 @@ export interface Settings {
   centerName: string;
   centerTagline: string;
   centerAddress: string;
+  mapEmbedUrl: string;
   centerPhone: string;
   centerEmail: string;
   centerWhatsapp: string;
+  smsProvider: string;
+  smsEndpoint: string;
+  smsSenderId: string;
+  emailProvider: string;
+  emailEndpoint: string;
+  emailFrom: string;
   currency: string;
   logoUrl: string;
   bannerUrl: string;
@@ -33,6 +41,7 @@ export interface Settings {
   socialYoutube: string;
   socialInstagram: string;
   primaryColor: string;
+  buttonStyle: 'solid' | 'outline' | 'glass';
   // Receipt + offline-payment presentation.
   receiptFooter: string;
   paymentInstructions: string;
@@ -60,9 +69,16 @@ export const defaults: Settings = {
   centerName: 'Techely Learning Academy',
   centerTagline: 'Excellence in Education',
   centerAddress: '389 5th Ave, New York, 10016, USA',
+  mapEmbedUrl: '',
   centerPhone: '+16502977656',
   centerEmail: 'coaching@techely.com',
   centerWhatsapp: '8801768836443',
+  smsProvider: 'mimsms',
+  smsEndpoint: 'https://api.mimsms.com/smsapi',
+  smsSenderId: 'CoachMS',
+  emailProvider: 'resend',
+  emailEndpoint: 'https://api.resend.com/emails',
+  emailFrom: '',
   currency: 'BDT',
   logoUrl: '',
   bannerUrl: '',
@@ -82,6 +98,7 @@ export const defaults: Settings = {
   socialYoutube: '',
   socialInstagram: '',
   primaryColor: '#38bdf8',
+  buttonStyle: 'solid',
   receiptFooter: '',
   paymentInstructions:
     'পেমেন্ট করতে: bKash / Nagad নম্বরে টাকা পাঠিয়ে রশিদ নিশ্চিত করুন, তারপর নিচের বাটনে ক্লিক করে ট্রানজেকশন আইডি জমা দিন।',
@@ -99,9 +116,16 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   centerName: 'institute_name',
   centerTagline: 'tagline',
   centerAddress: 'address',
+  mapEmbedUrl: 'map_embed_url',
   centerPhone: 'phone',
   centerEmail: 'email',
   centerWhatsapp: 'whatsapp',
+  smsProvider: 'sms_provider',
+  smsEndpoint: 'sms_endpoint',
+  smsSenderId: 'sms_sender_id',
+  emailProvider: 'email_provider',
+  emailEndpoint: 'email_endpoint',
+  emailFrom: 'email_from',
   currency: 'currency',
   logoUrl: 'logo_url',
   bannerUrl: 'banner_url',
@@ -121,6 +145,7 @@ export const SETTINGS_KEY_MAP: Record<keyof Settings, string> = {
   socialYoutube: 'social_youtube',
   socialInstagram: 'social_instagram',
   primaryColor: 'primary_color',
+  buttonStyle: 'button_style',
   receiptFooter: 'receipt_footer',
   paymentInstructions: 'payment_instructions',
   defaultExamDuration: 'default_exam_duration',
@@ -192,16 +217,16 @@ export const useSettingsStore = create<SettingsState>()(
             }
           }
 
-          set((state) => ({
-            settings: { ...state.settings, ...patch },
-            dbLoaded: true,
-          }));
+           set((state) => ({
+             settings: { ...state.settings, ...patch },
+             dbLoaded: true,
+           }));
 
-          /* Apply primary color to CSS immediately */
-          const color = patch.primaryColor ?? get().settings.primaryColor;
-          if (color) {
-            document.documentElement.style.setProperty('--primary', color);
-          }
+           /* Apply primary color to CSS immediately */
+           const color = patch.primaryColor ?? get().settings.primaryColor;
+           if (color) {
+             applyThemeColor(color, (patch.buttonStyle ?? get().settings.buttonStyle) as Settings['buttonStyle']);
+           }
         } catch (err) {
           handleSupabaseError(err);
         }

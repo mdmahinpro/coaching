@@ -156,7 +156,16 @@ async function ensureFontsLoaded(): Promise<void> {
       `600 16px ${FONT_STACK}`,
       `700 16px ${FONT_STACK}`,
       `800 16px ${FONT_STACK}`,
-    ].map((f) => document.fonts.load(f).catch(() => null));
+    ].map((f) =>
+      // Race each font load against a hard timeout: document.fonts.load()
+      // never settles when the webfont fetch stalls (offline/slow CDN), and
+      // an unsettled promise would hang PDF generation forever. Drawing with
+      // a fallback font after the timeout is far better than not rendering.
+      Promise.race([
+        document.fonts.load(f),
+        new Promise<FontFace[]>((resolve) => setTimeout(() => resolve([]), 4000)),
+      ]).catch(() => null)
+    );
     await Promise.all(loads);
   } catch {
     /* best-effort — fall back to whatever fonts are available */

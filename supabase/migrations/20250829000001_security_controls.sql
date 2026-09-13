@@ -251,7 +251,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  IF NOT is_admin() THEN
+  IF NOT COALESCE(is_admin(), false) THEN
     RAISE EXCEPTION 'Admin authorization required';
   END IF;
 
@@ -271,7 +271,7 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 BEGIN
-  IF NOT is_admin() THEN
+  IF NOT COALESCE(is_admin(), false) THEN
     RAISE EXCEPTION 'Admin authorization required';
   END IF;
 

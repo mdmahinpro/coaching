@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { getInitials } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { seededAvatarUrl } from '@/lib/avatars';
+import { resolveAvatarUrl } from '@/lib/avatarRetrieval';
+import { env } from '@/lib/env';
 
 interface Props {
   name: string;
@@ -13,15 +16,21 @@ interface Props {
   fallbackToInitials?: boolean;
   gender?: 'male' | 'female' | null;
   className?: string;
+  /** Authorization for the private-avatar retrieval endpoint. Pass the opaque
+   *  portal token for a student, or the Supabase JWT for an admin. If the
+   *  `src` is a private avatar object ref, it is resolved to a signed URL. */
+  bearer?: string;
+  /** Target student UUID, required for ADMIN retrieval of another student's
+   *  avatar. Omit for self-owned (student) retrieval. */
+  studentId?: string;
 }
 
 const sizes = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-lg' };
 
 /**
  * Avatar: renders the person's `src` when present; otherwise a stable seeded
- * headshot derived from their id/name (never an empty image). Pass
- * `fallbackToInitials` for cases that should keep the monogram (e.g. canned
- * testimonials that aren't real people).
+ * headshot derived from their id/name (never an empty image). Pass `bearer`
+ * (and `studentId` for admin) to resolve a PRIVATE avatar ref to a signed URL.
  */
 export function Avatar({
   name,
@@ -31,10 +40,32 @@ export function Avatar({
   fallbackToInitials = false,
   gender = null,
   className,
+  bearer,
+  studentId,
 }: Props) {
+  const [resolved, setResolved] = useState<string | null | undefined>(undefined);
   const imgClass = cn('rounded-full object-cover shrink-0', sizes[size], className);
-  if (src) {
-    return <img src={src} alt={name} className={imgClass} />;
+
+  useEffect(() => {
+    let active = true;
+    setResolved(undefined);
+    if (src && bearer) {
+      resolveAvatarUrl(src, bearer, {
+        supabaseUrl: env.VITE_SUPABASE_URL,
+        ...(studentId ? { studentId } : {}),
+      }).then((u) => {
+        if (active) setResolved(u);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [src, bearer, studentId]);
+
+  const displaySrc = resolved !== undefined ? resolved : src;
+
+  if (displaySrc) {
+    return <img src={displaySrc} alt={name} className={imgClass} loading="lazy" />;
   }
   if (!fallbackToInitials) {
     return (

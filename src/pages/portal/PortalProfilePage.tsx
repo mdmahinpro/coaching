@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { supabase } from '@/lib/supabase';
-import { updatePhoto, changePassword } from '@/lib/portalApi';
+import { updatePhoto, changePassword, updateEmail } from '@/lib/portalApi';
+import { resolveAvatarUrl } from '@/lib/avatarRetrieval';
+import { env } from '@/lib/env';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { Camera, Save, Lock, Loader2, User, Phone, Mail, BookOpen, Hash } from 'lucide-react';
@@ -15,10 +16,42 @@ export default function PortalProfilePage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(student?.photo_url ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    let active = true;
+    // Full public URLs (including the stored upload result) display directly;
+    // the validated original reference resolves against the configured project.
+    if (student?.photo_url && student.token) {
+      resolveAvatarUrl(student.photo_url, student.token, {
+        supabaseUrl: env.VITE_SUPABASE_URL,
+      }).then((u) => {
+        if (active && u) setPhotoPreview(u);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [student?.photo_url, student?.token]);
+
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [savingPw, setSavingPw] = useState(false);
+  const [email, setEmail] = useState(student?.email ?? '');
+  const [savingEmail, setSavingEmail] = useState(false);
+
+  const handleEmailSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingEmail(true);
+    try {
+      const saved = await updateEmail(email.trim());
+      setStudent({ ...(student as any), email: saved });
+      toast.success('ইমেইল সংরক্ষণ হয়েছে');
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setSavingEmail(false);
+    }
+  };
 
   const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve) => {
@@ -56,6 +89,16 @@ export default function PortalProfilePage() {
     if (!file || !student) {
       return;
     }
+    if (!file.type.match(/^image\/(png|jpe?g|webp)$/i)) {
+      toast.error('অসমর্থিত ছবি। JPG, PNG অথবা WebP ব্যবহার করুন।');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('ছবির মূল ফাইল ৫MB-এর কম হতে হবে।');
+      e.target.value = '';
+      return;
+    }
     setUploading(true);
     try {
       const blob = await compressImage(file);
@@ -63,24 +106,39 @@ export default function PortalProfilePage() {
         toast.error('ছবির সাইজ ৫MB এর বেশি হওয়া যাবে না');
         return;
       }
-      const path = `students/${student.id}-photo.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-      if (upErr) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      const data = `base64,${btoa(binary)}`;
+      const response = await fetch('/api/upload-avatar', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${student.token ?? ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type: 'image/jpeg', data }),
+      });
+      if (!response.ok) {
         toast.error('আপলোড ব্যর্থ হয়েছে');
         return;
       }
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      const cacheBustedUrl = `${data.publicUrl}?t=${Date.now()}`;
+      const payload = (await response.json()) as { path?: string; publicUrl?: string };
+      // Original public-bucket flow: persist the project-bound public URL of
+      // the uploaded object. `path` is kept as a fallback for old responses.
+      const publicUrl = payload?.publicUrl;
+      if (!publicUrl) {
+        toast.error('আপলোড ব্যর্থ হয়েছে');
+        return;
+      }
       try {
-        await updatePhoto(data.publicUrl);
+        await updatePhoto(publicUrl);
       } catch {
         toast.error('আপডেট ব্যর্থ হয়েছে');
         return;
       }
-      setPhotoPreview(cacheBustedUrl);
-      setStudent({ ...student, photo_url: cacheBustedUrl });
+      // The stored value is a full public URL, so it displays directly.
+      setPhotoPreview(publicUrl);
+      setStudent({ ...student, photo_url: publicUrl });
       toast.success('ছবি আপডেট হয়েছে');
     } catch (err) {
       handleSupabaseError(err);
@@ -171,12 +229,14 @@ export default function PortalProfilePage() {
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={handlePhotoChange}
               />
             </div>
-            <p className="text-slate-500 text-xs mb-4">Max 5MB · Auto-compressed · JPG/PNG</p>
+            <p className="text-slate-500 text-xs mb-4">
+              JPG/PNG/WebP · মূল ফাইল সর্বোচ্চ ৫MB · ৪০০×৪০০-এ রিসাইজ হয়
+            </p>
 
             <h2 className="font-inter font-bold text-white text-lg">{student.name}</h2>
             <p className="font-mono text-sky-400 text-sm">{student.student_id}</p>
@@ -213,6 +273,29 @@ export default function PortalProfilePage() {
               </span>
             </div>
           </div>
+          <form onSubmit={handleEmailSave} className="card p-5 mt-4 text-left space-y-3">
+            <h3 className="font-semibold text-white flex items-center gap-2">
+              <Mail size={15} className="text-sky-400" /> ইমেইল ঠিকানা
+            </h3>
+            <p className="text-xs text-slate-500">
+              ফি রিমাইন্ডার ও গুরুত্বপূর্ণ নোটিশ ইমেইলে পেতে আপনার ইমেইল দিন।
+            </p>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input-field"
+              placeholder="student@example.com"
+            />
+            <button
+              type="submit"
+              disabled={savingEmail}
+              className="btn-outline w-full justify-center text-sm"
+            >
+              {savingEmail ? 'সংরক্ষণ হচ্ছে…' : 'ইমেইল সংরক্ষণ করুন'}
+            </button>
+          </form>
         </div>
 
         {/* Change password */}

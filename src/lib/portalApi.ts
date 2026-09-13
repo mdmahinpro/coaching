@@ -45,6 +45,11 @@ export async function fetchProfile() {
   return unwrap(data, error)?.[0] ?? null;
 }
 
+export async function updateEmail(email: string) {
+  const { data, error } = await supabase.rpc('portal_update_email', { p_token: requireToken(), p_email: email });
+  return unwrap(data, error);
+}
+
 export async function fetchFees() {
   const { data, error } = await supabase.rpc('portal_get_fees', { p_token: requireToken() });
   return unwrap(data, error) ?? [];

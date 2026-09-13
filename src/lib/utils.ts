@@ -8,6 +8,30 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Apply the admin-selected accent to the shared CSS theme tokens. */
+export function applyThemeColor(value: string, buttonStyle: 'solid' | 'outline' | 'glass' = 'solid'): void {
+  const color = /^#[0-9a-f]{6}$/i.test(value) ? value : '#38bdf8';
+  const channels = color
+    .slice(1)
+    .match(/.{2}/g)!
+    .map((part) => parseInt(part, 16));
+  const rgb = channels.join(', ');
+  const luminance = (0.299 * channels[0] + 0.587 * channels[1] + 0.114 * channels[2]) / 255;
+  const root = document.documentElement;
+  root.style.setProperty('--primary', color);
+  root.style.setProperty('--primary-rgb', rgb);
+  root.style.setProperty('--primary-soft', `rgba(${rgb}, 0.14)`);
+  root.style.setProperty('--primary-border', `rgba(${rgb}, 0.42)`);
+  root.style.setProperty('--primary-glow', `rgba(${rgb}, 0.34)`);
+  root.style.setProperty('--primary-ink', luminance > 0.67 ? '#07111f' : '#ffffff');
+  root.dataset.buttonStyle = buttonStyle;
+  // Tailwind's sky tokens are the app's existing accent utilities. Rebinding
+  // them keeps legacy utility classes responsive to the Appearance setting.
+  root.style.setProperty('--color-sky-400', color);
+  root.style.setProperty('--color-sky-500', color);
+  root.style.setProperty('--color-sky-600', color);
+}
+
 export function formatDate(date: string | Date): string {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',

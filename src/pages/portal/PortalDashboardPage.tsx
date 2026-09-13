@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
-import { fetchFees, fetchExams, fetchSubmissions, fetchNotices } from '@/lib/portalApi';
+import { fetchFees, fetchExams, fetchSubmissions, fetchNotices, fetchNoticeReads } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { formatDate, formatCurrency, cn, sanitize, isExamForBatch } from '@/lib/utils';
@@ -21,9 +21,7 @@ export default function PortalDashboardPage() {
   const [notices, setNotices] = useState<any[]>([]);
   const [recentResults, setRecentResults] = useState<any[]>([]);
 
-  const [readNotices, setReadNotices] = useState<string[]>(() =>
-    JSON.parse(localStorage.getItem('portal-read-notices') ?? '[]')
-  );
+  const [readNotices, setReadNotices] = useState<string[]>([]);
 
   useEffect(() => {
     if (!student) {
@@ -31,11 +29,12 @@ export default function PortalDashboardPage() {
     }
     const load = async () => {
       try {
-        const [fees, exams, subs, notices] = await Promise.all([
+        const [fees, exams, subs, notices, noticeReads] = await Promise.all([
           fetchFees(),
           fetchExams(),
           fetchSubmissions(),
           fetchNotices(),
+          fetchNoticeReads(),
         ]);
 
         const pending = (fees ?? [])
@@ -96,7 +95,7 @@ export default function PortalDashboardPage() {
           content: n.content ?? '',
         }));
         setNotices(noticeList);
-        const freshRead: string[] = JSON.parse(localStorage.getItem('portal-read-notices') ?? '[]');
+        const freshRead = (noticeReads ?? []).map((row: any) => row.notice_id);
         setReadNotices(freshRead);
         setUnreadNotices(noticeList.filter((n: any) => !freshRead.includes(n.id)).length);
       } catch (err) {
@@ -104,7 +103,7 @@ export default function PortalDashboardPage() {
       }
     };
     load();
-  }, [student]);
+  }, [student?.id, student?.token, student?.batch_id]);
 
   const STATS = [
     {

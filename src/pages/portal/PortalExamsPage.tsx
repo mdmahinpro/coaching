@@ -210,7 +210,7 @@ export default function PortalExamsPage() {
       }
     };
     load();
-  }, [student]);
+  }, [student?.id, student?.token, student?.batch_id]);
 
   // Only this student's own exams (batch-scoped), with wall-clock state.
   const mine = exams.filter((e) => isForStudent(e, student?.batch_id));

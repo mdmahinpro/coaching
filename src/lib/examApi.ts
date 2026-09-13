@@ -34,6 +34,7 @@ export interface ExamMeta {
 
 export interface ExamJoinResult {
   exam_token: string;
+  /** Database UUID. Never use student_code for authorization or draft keys. */
   student_id: string;
   student_name: string;
   student_code: string;
@@ -54,15 +55,14 @@ export async function getExamMeta(examId: string): Promise<ExamMeta | null> {
 }
 
 /**
- * Establish identity for an exam and mint an exam-scoped token.
- * Pass `studentCode` for the manual-verify path; otherwise the logged-in
- * portal session token is used automatically.
+ * Establish identity for an exam from the logged-in student's opaque portal
+ * session and mint an exam-scoped token. Student IDs are identifiers, not
+ * authentication factors, so they are never accepted here.
  */
-export async function joinExam(examId: string, studentCode?: string): Promise<ExamJoinResult> {
+export async function joinExam(examId: string): Promise<ExamJoinResult> {
   const { data, error } = await supabase.rpc('exam_join', {
     p_exam_id: examId,
-    p_portal_token: studentCode ? null : getStudentToken(),
-    p_student_code: studentCode ?? null,
+    p_portal_token: getStudentToken(),
   });
   const row = unwrap(data, error)?.[0];
   if (!row) {

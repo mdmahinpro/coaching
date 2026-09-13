@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+:root {
+  --primary: #38bdf8;
+  --primary-rgb: 56, 189, 248;
+  --primary-soft: rgba(56, 189, 248, 0.14);
+  --primary-border: rgba(56, 189, 248, 0.42);
+  --primary-glow: rgba(56, 189, 248, 0.34);
+  --primary-ink: #ffffff;
+}
+
 @theme inline {
   --color-navy-900: #0b1120;
   --color-navy-800: #0f172a;
@@ -132,11 +141,12 @@
     background: #0b1120;
   }
   ::-webkit-scrollbar-thumb {
-    background: #38bdf8;
+    background: var(--primary);
     border-radius: 3px;
   }
   ::selection {
-    background: rgba(56, 189, 248, 0.3);
+    background: var(--primary-soft);
+    color: #fff;
   }
   * {
     -webkit-tap-highlight-color: transparent;
@@ -177,9 +187,56 @@
   }
 }
 
+/*
+ * Theme bridge for Tailwind accent utilities. Tailwind emits these colors at
+ * build time, while the admin theme is selected at runtime. Keep the existing
+ * utility classes usable, but make them follow the selected accent everywhere.
+ */
+:root .text-sky-400,
+:root .text-sky-500,
+:root .text-sky-600 {
+  color: var(--primary) !important;
+}
+:root .border-sky-400,
+:root .border-sky-500,
+:root .border-sky-600 {
+  border-color: var(--primary-border) !important;
+}
+:root .bg-sky-400,
+:root .bg-sky-500,
+:root .bg-sky-600 {
+  background-color: var(--primary) !important;
+  color: var(--primary-ink) !important;
+}
+:root .bg-sky-400\/5,
+:root .bg-sky-400\/10,
+:root .bg-sky-400\/15,
+:root .bg-sky-400\/20 {
+  background-color: var(--primary-soft) !important;
+}
+:root .border-sky-400\/20,
+:root .border-sky-400\/30,
+:root .border-sky-400\/40,
+:root .border-sky-400\/50 {
+  border-color: var(--primary-border) !important;
+}
+:root .hover\:text-sky-300:hover,
+:root .hover\:text-sky-400:hover {
+  color: var(--primary) !important;
+}
+:root .hover\:border-sky-400\/40:hover,
+:root .hover\:border-sky-400\/50:hover {
+  border-color: var(--primary) !important;
+}
+:root .hover\:bg-sky-400\/5:hover,
+:root .hover\:bg-sky-400\/10:hover,
+:root .hover\:bg-sky-400\/15:hover {
+  background-color: var(--primary-soft) !important;
+}
+
 @layer components {
   .btn-primary {
-    background: linear-gradient(to right, #0ea5e9, #0284c7);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 92%, white), color-mix(in srgb, var(--primary) 78%, black));
     color: #fff;
     font-weight: 600;
     padding: 0.625rem 1.25rem;
@@ -188,15 +245,42 @@
     cursor: pointer;
     user-select: none;
     transition: all 0.2s;
-    box-shadow: 0 4px 14px rgba(14, 165, 233, 0.3);
+    box-shadow: 0 4px 14px var(--primary-glow), inset 0 1px rgba(255, 255, 255, 0.18);
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
   }
+  :root[data-button-style='outline'] .btn-primary {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    box-shadow: 0 0 16px var(--primary-glow);
+  }
+  :root[data-button-style='outline'] .btn-primary:hover {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+  :root[data-button-style='glass'] .btn-primary {
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.22), rgba(255, 255, 255, 0.06));
+    color: var(--primary);
+    border: 1px solid var(--primary-border);
+    box-shadow: 0 8px 24px var(--primary-glow), inset 0 1px rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(10px);
+  }
+  :root[data-button-style='glass'] .btn-primary:hover {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+  :root[data-button-style='outline'] .btn-secondary,
+  :root[data-button-style='glass'] .btn-secondary {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary-border);
+  }
   .btn-primary:hover {
-    background: linear-gradient(to right, #38bdf8, #0ea5e9);
-    transform: scale(1.02);
-    box-shadow: 0 6px 20px rgba(14, 165, 233, 0.45);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 78%, white), var(--primary));
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 8px 24px var(--primary-glow), inset 0 1px rgba(255, 255, 255, 0.22);
   }
   .btn-primary:active {
     transform: scale(0.98);
@@ -224,8 +308,8 @@
   }
 
   .btn-outline {
-    border: 1px solid rgba(56, 189, 248, 0.4);
-    color: #38bdf8;
+    border: 1px solid var(--primary-border);
+    color: var(--primary);
     font-weight: 600;
     padding: 0.625rem 1.25rem;
     border-radius: 0.5rem;
@@ -237,8 +321,9 @@
     gap: 0.5rem;
   }
   .btn-outline:hover {
-    background: rgba(56, 189, 248, 0.1);
-    border-color: rgba(56, 189, 248, 0.6);
+    background: var(--primary-soft);
+    border-color: var(--primary);
+    box-shadow: 0 0 18px var(--primary-glow);
   }
 
   .btn-danger {
@@ -288,8 +373,8 @@
   }
   .card-glass.interactive-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(56, 189, 248, 0.35);
-    box-shadow: 0 18px 35px -8px rgba(56, 189, 248, 0.18), 0 20px 25px -5px rgba(0, 0, 0, 0.35);
+    border-color: var(--primary-border);
+    box-shadow: 0 18px 35px -8px var(--primary-glow), 0 20px 25px -5px rgba(0, 0, 0, 0.35);
   }
 
   .input-field {
@@ -306,14 +391,14 @@
     color: #64748b;
   }
   .input-field:focus {
-    border-color: rgba(56, 189, 248, 0.6);
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft), 0 0 16px var(--primary-glow);
   }
 
   .badge-blue {
-    background: rgba(56, 189, 248, 0.15);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.2);
+    background: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid var(--primary-border);
     border-radius: 9999px;
     padding: 0.125rem 0.75rem;
     font-size: 0.75rem;
@@ -378,13 +463,14 @@
     color: #f8fafc;
   }
   .text-gradient {
-    background: linear-gradient(to right, #38bdf8, #a78bfa);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    /* Keep emphasized text readable over custom hero/banner backgrounds. */
+    color: var(--primary);
+    -webkit-text-fill-color: var(--primary);
+    background: none;
+    text-shadow: 0 2px 14px rgba(2, 8, 23, 0.72);
   }
   .glow-blue {
-    box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+    box-shadow: 0 0 20px var(--primary-glow);
   }
   .glow-violet {
     box-shadow: 0 0 20px rgba(167, 139, 250, 0.25);
@@ -399,21 +485,25 @@
     animation-play-state: paused;
   }
 
+  .ticker-track span {
+    color: var(--primary) !important;
+  }
+
   .hero-grid {
     background-image:
       repeating-linear-gradient(
         0deg,
         transparent,
         transparent 39px,
-        rgba(56, 189, 248, 0.04) 39px,
-        rgba(56, 189, 248, 0.04) 40px
+         rgba(var(--primary-rgb), 0.04) 39px,
+         rgba(var(--primary-rgb), 0.04) 40px
       ),
       repeating-linear-gradient(
         90deg,
         transparent,
         transparent 39px,
-        rgba(56, 189, 248, 0.04) 39px,
-        rgba(56, 189, 248, 0.04) 40px
+         rgba(var(--primary-rgb), 0.04) 39px,
+         rgba(var(--primary-rgb), 0.04) 40px
       );
   }
 
@@ -429,13 +519,13 @@
     transition: all 0.2s;
   }
   .filter-pill:hover {
-    border-color: rgba(56, 189, 248, 0.3);
-    color: #38bdf8;
+    border-color: var(--primary-border);
+    color: var(--primary);
   }
   .filter-pill.active {
-    background: rgba(56, 189, 248, 0.15);
-    border-color: rgba(56, 189, 248, 0.4);
-    color: #38bdf8;
+    background: var(--primary-soft);
+    border-color: var(--primary-border);
+    color: var(--primary);
   }
 
   .step-dot {
@@ -450,9 +540,9 @@
     transition: all 0.3s;
   }
   .step-dot.active {
-    background: #0ea5e9;
-    color: #fff;
-    box-shadow: 0 0 16px rgba(14, 165, 233, 0.5);
+    background: var(--primary);
+    color: var(--primary-ink);
+    box-shadow: 0 0 16px var(--primary-glow);
   }
   .step-dot.done {
     background: #10b981;

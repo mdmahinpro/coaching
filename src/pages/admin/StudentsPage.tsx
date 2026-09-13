@@ -211,21 +211,24 @@ export default function StudentsPage() {
       return;
     }
     try {
-      // Remove related records before deleting the student to avoid orphaned rows
-      await supabase.from('mcq_submissions').delete().eq('student_id', deleteTarget.id);
-      await supabase.from('fees').delete().eq('student_id', deleteTarget.id);
-      const { error } = await supabase.from('students').delete().eq('id', deleteTarget.id);
-      if (error) {
-        toast.error('Delete failed');
+      // Preferred path: server-side transactional delete (20250904000001).
+      // Fail closed if the transactional RPC is unavailable. A generic RPC
+      // error may be an authorization/network/database failure; deleting some
+      // dependents from the browser in that case would create partial cleanup.
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_delete_student', {
+        p_student_id: deleteTarget.id,
+      });
+      if (!rpcErr) {
+        const related = Number((rpcResult && rpcResult[0] && rpcResult[0].related_removed) ?? 0);
+        toast.success(related > 0 ? `Student deleted (${related} related records)` : 'Student deleted');
+        setDeleteTarget(null);
+        load();
         return;
       }
-      // Decrement enrolled count for the student's batch
-      if (deleteTarget.batch_id) {
-        await supabase.rpc('decrement_enrolled', { batch_uuid: deleteTarget.batch_id });
-      }
-      toast.success('Student deleted');
-      setDeleteTarget(null);
-      load();
+      const missingRpc = /PGRST202|Could not find the function|function .*admin_delete_student.*does not exist/i.test(rpcErr.message ?? '');
+      toast.error(missingRpc
+        ? 'Student deletion is unavailable until the transactional database migration is applied.'
+        : `Student deletion failed: ${rpcErr.message}`);
     } catch (err) {
       handleSupabaseError(err);
     }
