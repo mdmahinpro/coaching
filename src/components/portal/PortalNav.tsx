@@ -36,7 +36,7 @@ export function PortalNav() {
   return (
     <>
       {/* Top navbar */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-navy-800/90 backdrop-blur-md border-b border-white/5">
+      <nav aria-label="Student portal" className="fixed top-0 inset-x-0 z-50 bg-navy-800/90 backdrop-blur-md border-b border-white/5 pt-[env(safe-area-inset-top)]">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <Link to="/portal/dashboard" className="flex items-center gap-2 shrink-0">
             <Logo className="w-7 h-7 rounded-lg" />
@@ -71,8 +71,8 @@ export function PortalNav() {
                 <span className="font-mono text-sky-400 text-[10px]">{student.student_id}</span>
               </div>
             )}
-            <Link to="/portal/profile">
-              <Avatar name={student?.name ?? 'S'} size="sm" src={student?.photo_url} />
+            <Link to="/portal/profile" aria-label="Student profile">
+              <Avatar name={student?.name ?? 'S'} size="sm" src={student?.photo_url} bearer={student?.token} />
             </Link>
             <Link
               to="/portal/profile"
@@ -95,7 +95,7 @@ export function PortalNav() {
       </nav>
 
       {/* Mobile bottom tab bar */}
-      <div className="fixed bottom-0 inset-x-0 z-50 md:hidden bg-navy-800/95 backdrop-blur-md border-t border-white/5">
+      <nav aria-label="Portal sections" className="fixed bottom-0 inset-x-0 z-50 md:hidden bg-navy-800/95 backdrop-blur-md border-t border-white/5 pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
           {NAV_LINKS.map((l) => {
             const active = location.pathname === l.to;
@@ -103,18 +103,19 @@ export function PortalNav() {
               <Link
                 key={l.to}
                 to={l.to}
+                aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors',
+                  'flex-1 min-h-12 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors',
                   active ? 'text-violet-400' : 'text-slate-500'
                 )}
               >
-                <l.icon size={18} />
+                <l.icon size={18} aria-hidden="true" />
                 <span className="text-[9px] font-medium">{l.label}</span>
               </Link>
             );
           })}
         </div>
-      </div>
+      </nav>
     </>
   );
 }

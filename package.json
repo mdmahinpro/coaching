@@ -11,7 +11,10 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 127.0.0.1",
     "dev:netlify": "vite --config vite.config.ts --host 127.0.0.1 --port 5173",
-    "build": "vite build --config vite.config.ts",
+    "clean:dist": "node scripts/release-clean.mjs --delete-dist",
+    "release:check": "node scripts/release-clean.mjs",
+    "build:production": "pnpm run clean:dist && vite build --config vite.config.ts --mode production && pnpm run release:check",
+    "build": "pnpm run build:production",
     "serve": "vite preview --config vite.config.ts --host 127.0.0.1",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
@@ -27,6 +30,11 @@
     "e2e:isolated:check": "node e2e/run-isolated.cjs --check",
     "e2e:isolated": "node e2e/run-isolated.cjs",
     "provision:customer": "node scripts/provision-customer.mjs",
+    "onboard:preflight": "node scripts/onboarding-preflight.mjs",
+    "onboard:first-admin": "node scripts/bootstrap-first-admin.mjs",
+    "test:onboarding-offline": "vitest run --config scripts/vitest.provisioning.config.mjs scripts/bootstrap-first-admin.test.mjs scripts/onboarding-preflight.test.mjs scripts/release-clean.test.mjs",
+    "upgrade:showcase": "node scripts/upgrade-existing.mjs",
+    "fixture:showcase": "node scripts/seed-showcase.mjs",
     "check:disposable-connection": "node scripts/check-disposable-connection.mjs"
   },
   "devDependencies": {

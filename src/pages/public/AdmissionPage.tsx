@@ -3,7 +3,6 @@ import { Footer } from '@/components/public/Footer';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import toast from 'react-hot-toast';
@@ -13,22 +12,12 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sanitize } from '@/lib/utils';
 import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
-import { generateReferenceNo } from '@/lib/studentId';
 import { usePoll } from '@/hooks/useRealtimePoll';
-
-const schema = z.object({
-  name: z.string().min(2, 'নাম কমপক্ষে ২ অক্ষর হতে হবে'),
-  email: z.string().email('সঠিক ইমেইল দিন'),
-  phone: z.string().min(10, 'সঠিক ফোন নম্বর দিন'),
-  guardian_name: z.string().min(2, 'অভিভাবকের নাম দিন'),
-  guardian_phone: z.string().min(10, 'অভিভাবকের ফোন দিন'),
-  address: z.string().optional(),
-  class_level: z.string().optional(),
-  gender: z.string().optional(),
-  batch_id: z.string().min(1, 'একটি ব্যাচ বেছে নিন'),
-  message: z.string().optional(),
-});
-type F = z.infer<typeof schema>;
+import {
+  admissionFormSchema as schema,
+  PUBLIC_FORM_LIMITS,
+  type AdmissionFormData as F,
+} from '../../../shared/public-form-schemas';
 
 const steps = [
   { id: 1, label: 'Personal Info', icon: <User size={16} /> },
@@ -83,14 +72,17 @@ export default function AdmissionPage() {
 
   const onSubmit = async (data: F) => {
     try {
-      // Reference number persists with the application and becomes the
-      // DEFAULT portal password once an admin approves the admission.
-      const ref = generateReferenceNo();
-      const { error } = await supabase.from('admission_requests').insert([
-        { ...data, reference_no: ref, status: 'pending' },
-      ]);
-      if (error) { toast.error('জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।'); return; }
-      setRefNo(ref);
+      const response = await fetch('/api/admissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await response.json().catch(() => null) as { reference?: unknown } | null;
+      if (!response.ok || typeof result?.reference !== 'string') {
+        toast.error(response.status === 429 ? 'অনেকবার চেষ্টা করা হয়েছে। পরে আবার চেষ্টা করুন।' : 'জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+        return;
+      }
+      setRefNo(result.reference);
       setSubmitted(true);
       toast.success('আবেদন সফলভাবে জমা হয়েছে!');
     } catch (err) {
@@ -203,6 +195,10 @@ export default function AdmissionPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="sr-only" aria-hidden="true">
+            <label htmlFor="admission-website">Website</label>
+            <input id="admission-website" {...register('website')} tabIndex={-1} autoComplete="off" />
+          </div>
           <AnimatePresence mode="wait">
             {/* Step 1: Personal Info */}
             {step === 1 && (
@@ -218,19 +214,19 @@ export default function AdmissionPage() {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="Full Name *" error={errors.name?.message}>
-                    <input {...register('name')} className="input-field" placeholder="Your full name" />
+                    <input {...register('name')} maxLength={PUBLIC_FORM_LIMITS.name} className="input-field" placeholder="Your full name" />
                   </Field>
                   <Field label="Email *" error={errors.email?.message}>
-                    <input {...register('email')} className="input-field" placeholder="email@example.com" />
+                    <input {...register('email')} maxLength={PUBLIC_FORM_LIMITS.email} className="input-field" placeholder="email@example.com" />
                   </Field>
                   <Field label="Phone *" error={errors.phone?.message}>
-                    <input {...register('phone')} className="input-field" placeholder="01XXXXXXXXX" />
+                    <input {...register('phone')} maxLength={PUBLIC_FORM_LIMITS.phone} className="input-field" placeholder="01XXXXXXXXX" />
                   </Field>
                   <Field label="Guardian's Name *" error={errors.guardian_name?.message}>
-                    <input {...register('guardian_name')} className="input-field" placeholder="Parent / Guardian" />
+                    <input {...register('guardian_name')} maxLength={PUBLIC_FORM_LIMITS.name} className="input-field" placeholder="Parent / Guardian" />
                   </Field>
                   <Field label="Guardian's Phone *" error={errors.guardian_phone?.message}>
-                    <input {...register('guardian_phone')} className="input-field" placeholder="01XXXXXXXXX" />
+                    <input {...register('guardian_phone')} maxLength={PUBLIC_FORM_LIMITS.phone} className="input-field" placeholder="01XXXXXXXXX" />
                   </Field>
                   <Field label="Class Level (শ্রেণী)">
                     <select {...register('class_level')} className="input-field">
@@ -251,7 +247,7 @@ export default function AdmissionPage() {
                     </select>
                   </Field>
                   <Field label="Address">
-                    <input {...register('address')} className="input-field" placeholder="Your address" />
+                    <input {...register('address')} maxLength={PUBLIC_FORM_LIMITS.address} className="input-field" placeholder="Your address" />
                   </Field>
                 </div>
                 <div className="pt-2 flex justify-end">
@@ -285,7 +281,7 @@ export default function AdmissionPage() {
                   </select>
                 </Field>
                 <Field label="Additional Message (optional)">
-                  <textarea {...register('message')} className="input-field" rows={4}
+                  <textarea {...register('message')} maxLength={PUBLIC_FORM_LIMITS.message} className="input-field" rows={4}
                     placeholder="Any questions or notes for us?" />
                 </Field>
                 <div className="pt-2 flex justify-between">

@@ -32,6 +32,10 @@ export default defineConfig(() => {
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(config.url),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(config.anonKey),
+      'import.meta.env.VITE_EXPECTED_SUPABASE_PROJECT_REF': JSON.stringify(
+        new URL(config.url).hostname.split('.')[0]
+      ),
+      'import.meta.env.VITE_ENVIRONMENT_KIND': JSON.stringify('test'),
       'import.meta.env.VITE_SITE_URL': JSON.stringify(`http://127.0.0.1:${config.port}`),
     },
     root,

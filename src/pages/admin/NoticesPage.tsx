@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
+import { formatMessagingResult, messagingIdempotencyKey } from '@/lib/messaging';
 
 interface Notice {
   id: string;
@@ -118,7 +119,7 @@ export default function NoticesPage() {
       .order('created_at', { ascending: false })
       .limit(30)
       .then(({ data, error }) => {
-        if (!error) setResultExams(data ?? []);
+        if (!error) {setResultExams(data ?? []);}
         setLoadingResultExams(false);
       });
   }, [editing.type]);
@@ -129,7 +130,7 @@ export default function NoticesPage() {
       return;
     }
     const exam = resultExams.find((e) => e.id === resultExamId);
-    if (!exam) return;
+    if (!exam) {return;}
     const { data: top } = await supabase
       .from('mcq_submissions')
       .select('score,student:students(name)')
@@ -223,7 +224,10 @@ export default function NoticesPage() {
           phones = (students ?? []).map((s) => s.phone).filter(Boolean);
         }
         if (phones.length) {
-          await sendSMS(phones, msg, 'NOTICE');
+          const delivery = await sendSMS(phones, msg, 'NOTICE', {
+            idempotencyKey: messagingIdempotencyKey('notice', editing.id || `${editing.title}|${editing.content}`),
+          });
+          toast(`Notice SMS: ${formatMessagingResult(delivery)}`);
         }
       } catch (err) {
         handleSupabaseError(err);
@@ -260,7 +264,7 @@ export default function NoticesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* ── Left: Create/Edit Form ───────────────────────────────────────── */}
         <div className="lg:col-span-2">
-          <div className="card p-5 space-y-4 sticky top-4">
+          <div className="card p-5 space-y-4 lg:sticky lg:top-20">
             <h3 className="font-inter font-bold text-white text-sm flex items-center gap-2">
               <Bell size={15} className="text-sky-400" />
               {isEdit ? 'Edit Notice' : 'New Notice'}

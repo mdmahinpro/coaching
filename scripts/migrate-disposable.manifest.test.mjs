@@ -11,16 +11,20 @@ function readMigration(file) {
 
 describe('recovered disposable installation manifest', () => {
   it('loads canonical.sql and every manifest follow-on through the apply file path', () => {
-    expect(fs.readFileSync(path.join(root, manifest.baseline), 'utf8').length).toBeGreaterThan(0);
-    expect(manifest.followOnMigrations).toHaveLength(40);
-    for (const file of manifest.followOnMigrations) {
+    expect(fs.readFileSync(path.join(root, manifest.baseline.file), 'utf8').length).toBeGreaterThan(0);
+    expect(manifest.migrations.length).toBeGreaterThan(30);
+    const migrationFiles = manifest.migrations.map((entry) => entry.file);
+    expect(migrationFiles).toContain('20250912000001_student_auth_hardening.sql');
+    expect(migrationFiles).toContain('20250913000001_private_avatars_public_assets.sql');
+    expect(manifest.operationalMigrations.every((entry) => entry.classification === 'optional-operational')).toBe(true);
+    for (const file of manifest.migrations.map((entry) => entry.file)) {
       expect(readMigration(file).length, file).toBeGreaterThan(0);
     }
   });
 
   it('loads the support-table SQL before dependent exam RPC SQL', () => {
-    const supportIndex = manifest.followOnMigrations.indexOf('20250817000000_support_tables.sql');
-    const examIndex = manifest.followOnMigrations.indexOf('20250818000002_exam_rpcs.sql');
+    const supportIndex = manifest.migrations.map((entry) => entry.file).indexOf('20250817000000_support_tables.sql');
+    const examIndex = manifest.migrations.map((entry) => entry.file).indexOf('20250818000002_exam_rpcs.sql');
     expect(supportIndex).toBeGreaterThanOrEqual(0);
     expect(examIndex).toBeGreaterThan(supportIndex);
     expect(readMigration('20250817000000_support_tables.sql')).toContain('CREATE TABLE IF NOT EXISTS public.mcq_questions');

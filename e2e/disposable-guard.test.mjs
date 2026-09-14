@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +18,30 @@ const {
 const disposableUrl = `https://${DISPOSABLE_PROJECT_REF}.supabase.co`;
 const originalUrl = `https://${ORIGINAL_PROJECT_REF}.supabase.co`;
 const key = 'sb_publishable_test-public-key';
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'techely-disposable-guard-'));
+const missingConfigFile = path.join(tempRoot, 'nonexistent-isolated-runtime.json');
+const ISOLATED_ENV_PREFIXES = ['E2E_', 'SUPABASE_', 'VITE_'];
+const ISOLATED_ENV_NAMES = new Set([
+  'EXPECTED_SUPABASE_PROJECT_REF',
+  'ENVIRONMENT_KIND',
+  'ISOLATED_PORT',
+  'TECHELY_ISOLATED_RUNTIME',
+  'TECHELY_ISOLATED_CONFIG_SOURCE',
+]);
+
+function cleanInheritedEnvironment() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => {
+      const upper = name.toUpperCase();
+      return (
+        !ISOLATED_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix)) &&
+        !ISOLATED_ENV_NAMES.has(upper)
+      );
+    })
+  );
+}
+
+afterAll(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
 
 describe('projectRefFromUrl', () => {
   it('extracts the project ref', () => {
@@ -63,7 +89,11 @@ describe('evaluateDisposableTarget', () => {
 describe('run-isolated launcher', () => {
   const run = (env) =>
     spawnSync(process.execPath, [path.join(here, 'run-isolated.cjs'), '--check'], {
-      env: { ...process.env, ...env },
+      env: {
+        ...cleanInheritedEnvironment(),
+        E2E_ISOLATED_CONFIG_FILE: missingConfigFile,
+        ...env,
+      },
       encoding: 'utf8',
     });
 
@@ -84,7 +114,6 @@ describe('run-isolated launcher', () => {
       E2E_DISPOSABLE_SUPABASE_URL: '',
       E2E_DISPOSABLE_SUPABASE_ANON_KEY: '',
       SUPABASE_SERVICE_ROLE_KEY: '',
-      E2E_ISOLATED_CONFIG_FILE: path.join(here, 'definitely-not-an-allowed-key-location.json'),
     });
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('BLOCKED');

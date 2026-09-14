@@ -13,6 +13,8 @@ module.exports = {
   },
   ignorePatterns: [
     'node_modules/',
+    '.kilo/',
+    '**/.kilo/**',
     'dist/',
     'build/',
     '**/*.test.ts',

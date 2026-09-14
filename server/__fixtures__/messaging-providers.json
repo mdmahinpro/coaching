@@ -1,0 +1,46 @@
+{
+  "mimAccepted": {
+    "statusCode": "200",
+    "status": "success",
+    "trackingId": "mim-track-1",
+    "success_Data": { "trackingId": "mim-track-1" },
+    "error_Data": null
+  },
+  "mimRejected": {
+    "statusCode": "401",
+    "status": "failed",
+    "trackingId": "",
+    "success_Data": null,
+    "error_Data": { "message": "apiKey=super-secret invalid" }
+  },
+  "resendAccepted": {
+    "data": [{ "id": "email-1" }, { "id": "email-2" }]
+  },
+  "resendMalformedSuccess": {
+    "data": [{ "id": "email-1" }, {}]
+  },
+  "mimDlrDelivered": {
+    "statusCode": "200",
+    "status": "Ok",
+    "trackingId": "mim-track-1",
+    "dlrCode": "0",
+    "operatorStatus": "DELIVERED",
+    "mobileNumber": "8801700000000"
+  },
+  "mimDlrTerminal": {
+    "statusCode": "200",
+    "status": "Ok",
+    "trackingId": "mim-track-2",
+    "dlrCode": "32",
+    "operatorStatus": "BARRED SUBSCRIBER",
+    "mobileNumber": "8801800000000"
+  },
+  "mimDlrTemporary": {
+    "statusCode": "200",
+    "status": "Ok",
+    "trackingId": "mim-track-3",
+    "dlrCode": "6",
+    "operatorStatus": "SYSTEM FAILURE",
+    "mobileNumber": "8801900000000"
+  }
+}

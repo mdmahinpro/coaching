@@ -529,28 +529,21 @@ function AllExamsTab({ onTabChange }: { onTabChange: (t: Tab) => void }) {
     }
     setDeleting(true);
     try {
-      const { error: e1 } = await supabase
-        .from('mcq_submissions')
-        .delete()
-        .eq('exam_id', deleteTarget.id);
-      if (e1) {
-        toast.error('Failed to delete submissions: ' + e1.message);
-        setDeleting(false);
+      // Questions, submissions, tokens and the exam are deleted in one admin-
+      // gated database transaction. Missing RPCs fail closed; never fall back
+      // to a sequence of client deletes that can leave orphaned/partial data.
+      const { data, error } = await supabase.rpc('admin_delete_exam', {
+        p_exam_id: deleteTarget.id,
+      });
+      if (error) {
+        toast.error('Exam was not deleted: ' + error.message);
         return;
       }
-      const { error: e2 } = await supabase
-        .from('mcq_questions')
-        .delete()
-        .eq('exam_id', deleteTarget.id);
-      if (e2) {
-        toast.error('Failed to delete questions: ' + e2.message);
-        setDeleting(false);
-        return;
-      }
-      const { error: e3 } = await supabase.from('exams').delete().eq('id', deleteTarget.id);
-      if (e3) {
-        toast.error('Failed to delete exam: ' + e3.message);
-        setDeleting(false);
+      const result = (data?.[0] ?? data) as { exam_removed?: boolean } | null;
+      if (!result?.exam_removed) {
+        toast.error('Exam was not found or was already deleted.');
+        setDeleteTarget(null);
+        load();
         return;
       }
       toast.success('Exam deleted');

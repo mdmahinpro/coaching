@@ -5,6 +5,7 @@ import { StudentDrawer } from '@/components/admin/StudentDrawer';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Avatar } from '@/components/shared/Avatar';
 import { supabase } from '@/lib/supabase';
+import { uploadStudentAvatarAsAdmin } from '@/lib/storageUploads';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import {
@@ -139,7 +140,7 @@ export default function StudentsPage() {
     try {
       if (editing?.id) {
         // Separate password from other fields for update
-        const { password, ...updateFields } = data;
+        const { password, photo_blob: _photoBlob, ...updateFields } = data;
         const { error } = await supabase.from('students').update(updateFields).eq('id', editing.id);
         if (error) {
           toast.error(
@@ -168,7 +169,7 @@ export default function StudentsPage() {
         toast.success('Student updated');
       } else {
         // New student — use RPC to hash password server-side
-        const { error } = await supabase.rpc('register_student', {
+        const { data: registeredRows, error } = await supabase.rpc('register_student', {
           p_name: data.name,
           p_phone: data.phone,
           p_student_id: data.student_id,
@@ -191,6 +192,20 @@ export default function StudentsPage() {
               : 'Failed to add student: ' + error.message
           );
           return;
+        }
+        const registeredId = registeredRows?.[0]?.id as string | undefined;
+        if (data.photo_blob && registeredId) {
+          try {
+            const avatarRef = await uploadStudentAvatarAsAdmin(registeredId, data.photo_blob);
+            const { error: photoError } = await supabase
+              .from('students')
+              .update({ photo_url: avatarRef })
+              .eq('id', registeredId);
+            if (photoError) {throw photoError;}
+          } catch (photoError) {
+            handleSupabaseError(photoError);
+            toast.error('Student was added, but the photo upload failed');
+          }
         }
         // Update batch enrolled count
         if (data.batch_id) {

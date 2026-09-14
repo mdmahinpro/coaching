@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import { generateStudentId } from '@/lib/studentId';
+import { generateStudentId, legacyAdmissionPassword } from '@/lib/studentId';
 import toast from 'react-hot-toast';
 import {
   CheckCircle,
@@ -19,6 +19,7 @@ import { formatDate, cn, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
+import { messagingIdempotencyKey } from '@/lib/messaging';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
 interface Admission {
@@ -132,63 +133,37 @@ export default function AdmissionsPage() {
       // Default password = the admission reference number (APP-XXXXXX), which
       // the student was shown at signup. Fall back to last 6 phone digits for
       // legacy admissions that predate the reference column.
-      const phone = (admission.phone ?? '').replace(/\D/g, '');
-      const password =
-        admission.reference_no || (phone.length >= 6 ? phone.slice(-6) : Math.random().toString(36).slice(-6));
+      const password = admission.reference_no || legacyAdmissionPassword(admission.phone);
 
-      // Create student record via RPC — password hashed server-side
-      const { error: sErr } = await supabase.rpc('register_student', {
-        p_name: admission.name,
-        p_phone: admission.phone,
-        p_student_id: studentId,
-        p_password: password,
-        p_email: admission.email ?? null,
-        p_guardian_name: admission.guardian_name ?? null,
-        p_guardian_phone: admission.guardian_phone ?? null,
-        p_address: admission.address ?? null,
-        p_class_level: admission.class_level ?? null,
-        p_gender: admission.gender ?? null,
-        p_batch_id: admission.batch_id ?? null,
-        p_status: 'active',
-        p_is_approved: true,
-        p_photo_url: admission.photo_url ?? null,
-      });
-
-      if (sErr) {
+      // Student creation, batch enrollment and admission status must commit as a
+      // single server-side transaction. There is deliberately no client fallback:
+      // an undeployed RPC fails closed instead of producing a half-approved record.
+      const { data: approvalData, error: approvalError } = await supabase.rpc(
+        'admin_approve_admission',
+        {
+          p_admission_id: admission.id,
+          p_student_id: studentId,
+          p_password: password,
+        }
+      );
+      if (approvalError) {
         toast.error(
-          String(sErr.message).includes('BATCH_FULL')
+          String(approvalError.message).includes('BATCH_FULL')
             ? 'এই ব্যাচটি পূর্ণ। আবেদনটি অনুমোদিত হল না — অন্য ব্যাচে বসান।'
-            : 'Failed to create student: ' + sErr.message
+            : 'Approval failed without changing the application: ' + approvalError.message
         );
         setActing(null);
         return;
       }
-
-      // Update batch enrolled count
-      if (admission.batch_id) {
-        await supabase.rpc('increment_enrolled', { batch_uuid: admission.batch_id });
-      }
-
-      // Update admission status
-      const { error: statusErr } = await supabase
-        .from('admission_requests')
-        .update({ status: 'approved' })
-        .eq('id', admission.id);
-      if (statusErr) {
-        toast.error(
-          'Student created but admission status update failed. Please refresh and check.'
-        );
-        setActing(null);
-        load();
-        return;
-      }
-      toast.success(`Approved! Student ID: ${studentId} — default password is the admission reference.`);
-
-      // Send SMS with correct password
-      if (admission.phone) {
-        const msg = `🎉 ${admission.name}, ভর্তি অনুমোদিত!\nStudent ID: ${studentId}\nPassword: ${password}\nপোর্টাল: /portal/login\n- ${settings.centerName}`;
-        await sendSMS(admission.phone, msg, 'APPROVED');
-      }
+      const approved = (approvalData?.[0] ?? approvalData) as
+        | { student_id?: string; created?: boolean }
+        | null;
+      const approvedStudentId = approved?.student_id || studentId;
+      toast.success(
+        approved?.created === false
+          ? `Application was already processed. Student ID: ${approvedStudentId}`
+          : `Approved! Student ID: ${approvedStudentId}. The notification was queued atomically with approval.`
+      );
 
       setActing(null);
       setViewing(null);
@@ -200,25 +175,37 @@ export default function AdmissionsPage() {
   };
 
   const handleReject = async (admission: Admission) => {
+    if (admission.status !== 'pending') {
+      toast.error('This application is no longer pending.');
+      return;
+    }
     setActing(admission.id);
     try {
-      await supabase
+      const { data: rejected, error: updateError } = await supabase
         .from('admission_requests')
         .update({ status: 'rejected' })
-        .eq('id', admission.id);
+        .eq('id', admission.id)
+        .eq('status', 'pending')
+        .select('id,status')
+        .maybeSingle();
+      if (updateError || rejected?.status !== 'rejected') {
+        toast.error(`Application was not rejected${updateError?.message ? `: ${updateError.message}` : ''}`);
+        return;
+      }
       toast.success('Application rejected');
 
-      // Send SMS
       if (admission.phone) {
         const msg = `দুঃখিত ${admission.name}, আপনার ভর্তির আবেদন গ্রহণ করা হয়নি। বিস্তারিত জানতে ${settings.centerPhone} এ যোগাযোগ করুন। - ${settings.centerName}`;
-        await sendSMS(admission.phone, msg, 'custom');
+        await sendSMS(admission.phone, msg, 'custom', {
+          idempotencyKey: messagingIdempotencyKey('admission-rejected', admission.id),
+        });
       }
 
-      setActing(null);
       setViewing(null);
-      load();
+      void load();
     } catch (err) {
       handleSupabaseError(err);
+    } finally {
       setActing(null);
     }
   };

@@ -13,7 +13,6 @@ import {
   getMySubmission,
   getExamReview,
 } from '@/lib/examApi';
-import type { ExamJoinResult } from '@/lib/examApi';
 import { clearExamDraft, loadExamDraft, saveExamDraft } from '@/lib/examRecovery';
 import toast from 'react-hot-toast';
 import { cn, sanitize } from '@/lib/utils';
@@ -134,6 +133,7 @@ export default function ExamPage() {
   const examTokenRef = useRef<string | null>(null);
 
   const [student, setStudent] = useState<any | null>(null);
+  const studentId = student?.id;
 
   // Exam step
   const [currentQ, setCurrentQ] = useState(0);
@@ -161,15 +161,64 @@ export default function ExamPage() {
   // Answer key + questions, fetched only AFTER submitting (for the review breakdown).
   const [reviewQuestions, setReviewQuestions] = useState<ReviewQuestion[]>([]);
 
+  // Fetch the answer key + questions for the review breakdown (only valid after submit).
+  const loadReview = useCallback(async (token: string) => {
+    if (!examId) {
+      return;
+    }
+    try {
+      const rows = await getExamReview(examId, token);
+      const cleaned = (rows ?? []).map((r: any) => ({
+        id: r.question_id,
+        question_text: sanitize(r.question_text),
+        option_a: sanitize(r.option_a),
+        option_b: sanitize(r.option_b),
+        option_c: sanitize(r.option_c),
+        option_d: sanitize(r.option_d),
+        correct_option: (r.correct_option as string).toUpperCase() as 'A' | 'B' | 'C' | 'D',
+        marks: r.marks,
+        order_num: r.order_num,
+      }));
+      setReviewQuestions(cleaned as ReviewQuestion[]);
+    } catch (err) {
+      // Review is best-effort; the score card still renders without it.
+      handleSupabaseError(err);
+    }
+  }, [examId]);
+
+  // The board is token-gated server-side, so the exam token minted by
+  // exam_join has to travel with the request. Only the caller's own row
+  // carries a student_code back; other rows return null there, which the
+  // `isMe` comparison below already treats as "not me".
+  const loadLeaderboard = useCallback(async (examToken?: string) => {
+    if (!examId) {
+      return;
+    }
+    try {
+      const rows = await getLeaderboard(examId, examToken);
+      const cleaned = (rows ?? []).map((row: any) => ({
+        id: row.id,
+        score: row.score,
+        time_taken: row.time_taken,
+        rank: row.rank,
+        student_id: row.student_code,
+        student: { name: sanitize(row.student_name ?? '—'), student_id: row.student_code },
+      }));
+      setLeaderboard(cleaned);
+    } catch (err) {
+      handleSupabaseError(err);
+    }
+  }, [examId]);
+
   // ── Enter the exam once identity is established (mints exam token) ─────────
   // Resolves questions (without answer key) or routes to the result view if the
   // student has already submitted. Identity comes from the portal session.
   const enterExam = useCallback(
-    async (opts: { examStatus?: string }) => {
+    async (opts: { examData: ExamData }) => {
       if (!examId) {
         return;
       }
-      let join: ExamJoinResult;
+      let join: import('@/lib/examApi').ExamJoinResult;
       try {
         join = await joinExam(examId);
       } catch (err) {
@@ -198,7 +247,7 @@ export default function ExamPage() {
         return;
       }
 
-      if ((opts.examStatus ?? join.exam_status) === 'ended') {
+      if ((opts.examData.status ?? join.exam_status) === 'ended') {
         setStep('ended');
         return;
       }
@@ -218,9 +267,9 @@ export default function ExamPage() {
       const saved = loadExamDraft(examId, join.student_id, questionIds);
       if (saved && Object.keys(saved).length > 0) {
         setAnswers(saved);
-        let secs = (exam?.duration_minutes ?? 30) * 60;
-        if (exam?.timer_enabled !== false && exam?.end_time) {
-          secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
+        let secs = (opts.examData.duration_minutes ?? 30) * 60;
+        if (opts.examData.timer_enabled !== false && opts.examData.end_time) {
+          secs = Math.max(0, Math.floor((new Date(opts.examData.end_time).getTime() - Date.now()) / 1000));
         }
         setRemainingSecs(secs);
         setStep('exam');
@@ -228,8 +277,7 @@ export default function ExamPage() {
       }
       setStep('instructions');
     },
-    // exam is read for duration/timer; examId is stable per route
-    [examId, exam]
+    [examId, loadLeaderboard, loadReview]
   );
 
   // ── Load exam ─────────────────────────────────────────────────────────────
@@ -269,7 +317,7 @@ export default function ExamPage() {
 
         if (loggedIn) {
           // Portal session establishes identity automatically.
-          await enterExam({ examStatus: meta.status });
+          await enterExam({ examData: cleanExam });
           return;
         }
 
@@ -285,13 +333,12 @@ export default function ExamPage() {
         setStep('ended');
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [examId]);
+  }, [enterExam, examId]);
 
   // ── Realtime: watch for exam ended ────────────────────────────────────────
   useEffect(() => {
     if (!examId || step !== 'exam') {
-      return;
+      return undefined;
     }
     const ch = supabase
       .channel(`exam-watch-${examId}`)
@@ -314,9 +361,9 @@ export default function ExamPage() {
   // ── Start Exam ────────────────────────────────────────────────────────────
   const startExam = () => {
     // Restore from localStorage
-    if (examId && student?.id) {
-      const saved = loadExamDraft(examId, student.id, new Set(questions.map((question) => question.id)));
-      if (saved) setAnswers(saved);
+    if (examId && studentId) {
+      const saved = loadExamDraft(examId, studentId, new Set(questions.map((question) => question.id)));
+      if (saved) {setAnswers(saved);}
     }
 
     // Compute remaining seconds
@@ -332,10 +379,10 @@ export default function ExamPage() {
   // ── Timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (step !== 'exam') {
-      return;
+      return undefined;
     }
     if (exam?.timer_enabled === false) {
-      return;
+      return undefined;
     }
 
     timerRef.current = setInterval(() => {
@@ -370,17 +417,17 @@ export default function ExamPage() {
   // Use answersRef (always current) so the interval doesn't restart on every keystroke
   useEffect(() => {
     if (step !== 'exam') {
-      return;
+      return undefined;
     }
     autoSaveRef.current = setInterval(() => {
-      if (examId && student?.id) saveExamDraft(examId, student.id, answersRef.current);
+      if (examId && studentId) {saveExamDraft(examId, studentId, answersRef.current);}
     }, 10000);
     return () => {
       if (autoSaveRef.current) {
         clearInterval(autoSaveRef.current);
       }
     };
-  }, [step, examId, student?.id]);
+  }, [step, examId, studentId]);
 
   // ── Keep answersRef in sync ────────────────────────────────────────────────
   useEffect(() => {
@@ -390,17 +437,17 @@ export default function ExamPage() {
   // ── Warn before tab close / navigation during exam ────────────────────────
   useEffect(() => {
     if (step !== 'exam') {
-      return;
+      return undefined;
     }
     const handler = (e: BeforeUnloadEvent) => {
       // Flush latest answers immediately so nothing is lost beyond the 10s interval
-      if (examId && student?.id) saveExamDraft(examId, student.id, answersRef.current);
+      if (examId && studentId) {saveExamDraft(examId, studentId, answersRef.current);}
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [step, examId, student?.id]);
+    return () => { window.removeEventListener('beforeunload', handler); };
+  }, [step, examId, studentId]);
 
   // ── Tab-minimize penalty: count red cards while hidden ───────────────────
   // Each full 30s block of hidden time adds one red card (shown as a warning).
@@ -409,11 +456,11 @@ export default function ExamPage() {
   // throttling can't stretch the timer.
   useEffect(() => {
     if (step !== 'exam') {
-      return;
+      return undefined;
     }
     // Strict Mode only: no penalty tracking when the exam doesn't opt in.
     if (exam?.strict_mode !== true) {
-      return;
+      return undefined;
     }
     const onVisibility = () => {
       if (document.hidden) {
@@ -423,7 +470,7 @@ export default function ExamPage() {
       // Back to visible: charge any cards, then resync the countdown.
       const hiddenStart = hiddenAtRef.current;
       hiddenAtRef.current = null;
-      if (hiddenStart != null) {
+      if (hiddenStart !== null) {
         const hiddenSecs = Math.floor((Date.now() - hiddenStart) / 1000);
         const cards = Math.floor(hiddenSecs / RED_CARD_SECONDS);
         if (cards > 0) {
@@ -446,7 +493,7 @@ export default function ExamPage() {
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    return () => { document.removeEventListener('visibilitychange', onVisibility); };
     // Timer/end_time are stable for the duration of a sitting; step gates it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, examId]);
@@ -454,7 +501,7 @@ export default function ExamPage() {
   const selectAnswer = (questionId: string, opt: string) => {
     setAnswers((prev) => {
       const next = { ...prev, [questionId]: opt };
-      if (examId && student?.id) saveExamDraft(examId, student.id, next);
+      if (examId && studentId) {saveExamDraft(examId, studentId, next);}
       return next;
     });
   };
@@ -504,7 +551,7 @@ export default function ExamPage() {
         const result = await submitExam(token, answers, timeTaken, redCardsRef.current);
 
         // Clear localStorage
-        if (examId && student?.id) clearExamDraft(examId, student.id);
+        if (examId && studentId) {clearExamDraft(examId, studentId);}
 
         setSubmission({
           id: result.id,
@@ -546,63 +593,13 @@ export default function ExamPage() {
         restartTimer();
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [answers, exam, examId, student, remainingSecs]
+    [answers, exam, examId, loadLeaderboard, loadReview, remainingSecs, studentId]
   );
 
   // Keep ref in sync so timer/realtime callbacks always call the freshest version
   useEffect(() => {
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
-
-  // Fetch the answer key + questions for the review breakdown (only valid after submit).
-  const loadReview = async (token: string) => {
-    if (!examId) {
-      return;
-    }
-    try {
-      const rows = await getExamReview(examId, token);
-      const cleaned = (rows ?? []).map((r: any) => ({
-        id: r.question_id,
-        question_text: sanitize(r.question_text),
-        option_a: sanitize(r.option_a),
-        option_b: sanitize(r.option_b),
-        option_c: sanitize(r.option_c),
-        option_d: sanitize(r.option_d),
-        correct_option: (r.correct_option as string).toUpperCase() as 'A' | 'B' | 'C' | 'D',
-        marks: r.marks,
-        order_num: r.order_num,
-      }));
-      setReviewQuestions(cleaned as ReviewQuestion[]);
-    } catch (err) {
-      // Review is best-effort; the score card still renders without it.
-      handleSupabaseError(err);
-    }
-  };
-
-  // The board is token-gated server-side, so the exam token minted by
-  // exam_join has to travel with the request. Only the caller's own row
-  // carries a student_code back; other rows return null there, which the
-  // `isMe` comparison below already treats as "not me".
-  const loadLeaderboard = async (examToken?: string) => {
-    if (!examId) {
-      return;
-    }
-    try {
-      const rows = await getLeaderboard(examId, examToken);
-      const cleaned = (rows ?? []).map((row: any) => ({
-        id: row.id,
-        score: row.score,
-        time_taken: row.time_taken,
-        rank: row.rank,
-        student_id: row.student_code,
-        student: { name: sanitize(row.student_name ?? '—'), student_id: row.student_code },
-      }));
-      setLeaderboard(cleaned);
-    } catch (err) {
-      handleSupabaseError(err);
-    }
-  };
 
   const unanswered = questions.filter((q) => !answers[q.id]).length;
   const timerColor =
@@ -900,7 +897,7 @@ export default function ExamPage() {
                       >
                         {opt}
                       </span>
-                      <span className="font-hind text-base">{text}</span>
+                      <span className="font-hind text-base min-w-0 break-words [overflow-wrap:anywhere]">{text}</span>
                     </button>
                   );
                 })}
@@ -968,7 +965,11 @@ export default function ExamPage() {
                 initial={{ opacity: 0, scale: 0.93 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.93 }}
-                className="relative card-glass p-6 w-full max-w-sm z-10 text-center"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="submit-dialog-title"
+                aria-describedby="submit-dialog-description"
+                className="relative card-glass p-5 sm:p-6 w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto z-10 text-center"
               >
                 {unanswered > 0 && (
                   <div className="mb-4 p-3 rounded-xl bg-amber-400/10 border border-amber-400/20">
@@ -1147,7 +1148,7 @@ function ResultView({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <div className="card p-3">
               <p className="text-emerald-400 font-bold text-xl">{submission.correct_count}</p>
               <p className="text-slate-500 text-xs">সঠিক</p>
@@ -1303,10 +1304,10 @@ function ResultView({
                           <p className="text-slate-400 text-xs">
                             Q{i + 1} · {q.marks} marks
                           </p>
-                          <p className="text-white text-sm font-hind mt-0.5">{q.question_text}</p>
+                          <p className="text-white text-sm font-hind mt-0.5 break-words [overflow-wrap:anywhere]">{q.question_text}</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 ml-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:ml-6">
                         {OPTS.map((o) => {
                           const key = `option_${o.toLowerCase()}` as keyof Question;
                           const optText = q[key] as string;
@@ -1327,7 +1328,7 @@ function ResultView({
                               )}
                             >
                               <span className="font-bold w-4">{o}.</span>
-                              <span className="font-hind truncate">{optText}</span>
+                              <span className="font-hind min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">{optText}</span>
                               {isCorrect && !isSelected && (
                                 <span className="ml-auto text-[10px] text-emerald-400">✓</span>
                               )}
@@ -1347,3 +1348,4 @@ function ResultView({
     </div>
   );
 }
+

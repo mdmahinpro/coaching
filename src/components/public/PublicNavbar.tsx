@@ -40,7 +40,7 @@ export function PublicNavbar() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-0.5">
+          <div className="hidden lg:flex items-center gap-0.5">
             {navLinks.map(l => {
               const active = location.pathname === l.to;
               return (
@@ -64,7 +64,7 @@ export function PublicNavbar() {
           </div>
 
           {/* Desktop actions */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <Link to="/admin/login" className="text-slate-500 hover:text-slate-300 text-xs font-medium transition-colors px-2 py-1">
               Admin
             </Link>
@@ -76,8 +76,10 @@ export function PublicNavbar() {
           {/* Mobile hamburger */}
           <button
             onClick={() => setOpen(v => !v)}
-            className="md:hidden w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-            aria-label="Toggle menu"
+            className="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={open}
+            aria-controls="public-mobile-menu"
           >
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -93,21 +95,25 @@ export function PublicNavbar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              className="fixed inset-0 z-40 bg-black/60 lg:hidden"
             />
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed top-0 right-0 bottom-0 w-72 z-50 bg-navy-800 border-l border-navy-700/60 flex flex-col md:hidden"
+              id="public-mobile-menu"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Mobile navigation"
+              className="fixed top-0 right-0 bottom-0 w-[min(18rem,calc(100vw-2rem))] z-50 bg-navy-800 border-l border-navy-700/60 flex flex-col lg:hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
             >
               <div className="flex items-center justify-between px-5 h-16 border-b border-navy-700/50">
                 <div className="flex items-center gap-2">
                   <Logo className="w-8 h-8 rounded-lg" />
                   <span className="font-inter font-bold text-white text-sm">{settings.centerName}</span>
                 </div>
-                <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white p-1">
+                <button onClick={() => setOpen(false)} aria-label="Close navigation menu" className="text-slate-400 hover:text-white p-2">
                   <X size={20} />
                 </button>
               </div>

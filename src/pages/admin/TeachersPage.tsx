@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, sanitize } from '@/lib/utils';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { uploadPublicAsset } from '@/lib/storageUploads';
 
 interface Teacher {
   id: string;
@@ -153,17 +154,14 @@ export default function TeachersPage() {
     }
     setUploading(true);
     const blob = await compressImage(photoFile);
-    const path = `teachers/${editing.id ?? Date.now()}.jpg`;
-    const { error } = await supabase.storage
-      .from('avatars')
-      .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-    setUploading(false);
-    if (error) {
+    try {
+      return await uploadPublicAsset('teachers', blob, 'image/jpeg');
+    } catch {
       toast.error('Photo upload failed');
       return null;
+    } finally {
+      setUploading(false);
     }
-    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-    return data.publicUrl;
   };
 
   const handleSave = async () => {

@@ -289,7 +289,7 @@ function FeesTab() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: 'Collected', val: totals.collected, color: 'text-emerald-400' },
           { label: 'Pending', val: totals.pending, color: 'text-amber-400' },

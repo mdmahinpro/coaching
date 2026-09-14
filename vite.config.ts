@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
 import path from "path";
-import { assertPublicSupabaseClientKey } from "./src/lib/supabaseKey";
+import { validateBrowserEnvironment } from "./src/lib/environmentContract";
 
 // PORT: required on Vercel, fall back to 5173 for local dev
 const rawPort = process.env.PORT ?? "5173";
@@ -19,25 +19,19 @@ const basePath = process.env.BASE_PATH ?? "/";
 export default defineConfig(({ mode }) => {
   const root = path.resolve(import.meta.dirname);
   const loadedEnv = loadEnv(mode, root, "");
+  const analyzeBundle = (process.env.ANALYZE_BUNDLE ?? loadedEnv.ANALYZE_BUNDLE) === "1";
 
   if (mode !== "test") {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? loadedEnv.VITE_SUPABASE_URL;
-    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY ?? loadedEnv.VITE_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl) {
-      throw new Error("VITE_SUPABASE_URL is required. Check .env.local or deployment settings.");
-    }
-    try {
-      new URL(supabaseUrl);
-    } catch {
-      throw new Error("VITE_SUPABASE_URL must be a valid URL.");
-    }
-    if (!supabaseKey) {
-      throw new Error(
-        "VITE_SUPABASE_ANON_KEY is required. Use the public anon or publishable key."
-      );
-    }
-    assertPublicSupabaseClientKey(supabaseKey);
+    validateBrowserEnvironment({
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? loadedEnv.VITE_SUPABASE_URL,
+      VITE_SUPABASE_ANON_KEY:
+        process.env.VITE_SUPABASE_ANON_KEY ?? loadedEnv.VITE_SUPABASE_ANON_KEY,
+      VITE_EXPECTED_SUPABASE_PROJECT_REF:
+        process.env.VITE_EXPECTED_SUPABASE_PROJECT_REF ??
+        loadedEnv.VITE_EXPECTED_SUPABASE_PROJECT_REF,
+      VITE_ENVIRONMENT_KIND:
+        process.env.VITE_ENVIRONMENT_KIND ?? loadedEnv.VITE_ENVIRONMENT_KIND,
+    });
   }
 
   return {
@@ -45,10 +39,14 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      visualizer({
-        open: false,
-        filename: 'stats.html',
-      }),
+      ...(analyzeBundle
+        ? [
+            visualizer({
+              open: false,
+              filename: path.resolve(root, "analysis", "bundle", "stats.html"),
+            }),
+          ]
+        : []),
     ],
     resolve: {
       alias: {
@@ -78,16 +76,16 @@ export default defineConfig(({ mode }) => {
             if (!id.includes('node_modules')) {
               return undefined;
             }
-            if (/react|scheduler|react-dom/.test(id)) return 'vendor-react';
-            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts';
-            if (id.includes('framer-motion')) return 'vendor-motion';
-            if (id.includes('jspdf')) return 'vendor-pdf';
-            if (id.includes('@supabase')) return 'vendor-supabase';
-            if (id.includes('react-router')) return 'vendor-router';
-            if (id.includes('react-hook-form') || id.includes('zod') || id.includes('@hookform')) return 'vendor-forms';
-            if (id.includes('@radix-ui') || id.includes('cmdk') || id.includes('embla') || id.includes('input-otp') || id.includes('react-day-picker') || id.includes('react-resizable') || id.includes('vaul') || id.includes('sonner') || id.includes('react-hot-toast')) return 'vendor-ui';
-            if (id.includes('lucide-react')) return 'vendor-icons';
-            return 'vendor-misc';
+            if (id.includes('jspdf')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('@supabase')) {
+              return 'vendor-supabase';
+            }
+            return undefined;
           },
         },
       },
@@ -109,7 +107,14 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: "jsdom",
+      exclude: ["**/node_modules/**", "**/.git/**", "**/.kilo/**", "**/dist/**"],
       setupFiles: ["./tests/setup.ts"],
+      env: {
+        VITE_SUPABASE_URL: "https://aaaaaaaaaaaaaaaaaaaa.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "sb_publishable_test_key_for_unit_tests_only",
+        VITE_EXPECTED_SUPABASE_PROJECT_REF: "aaaaaaaaaaaaaaaaaaaa",
+        VITE_ENVIRONMENT_KIND: "test",
+      },
       alias: {
         "@": path.resolve(import.meta.dirname, "src"),
       },

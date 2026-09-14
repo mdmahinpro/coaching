@@ -1,3 +1,4 @@
+import { secureRandomString } from '@/lib/cryptoRandom';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
@@ -23,11 +24,15 @@ const DEFAULT_SHORT_NAME = 'TLY';
  */
 export function generateReferenceNo(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789'; // no I/O to avoid confusion
-  let out = '';
-  for (let i = 0; i < 6; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return `APP-${out}`;
+  return `APP-${secureRandomString(chars, 6)}`;
+}
+
+/** Password fallback for legacy admissions that have no saved reference number. */
+export function legacyAdmissionPassword(phone: string | null | undefined): string {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  return digits.length >= 6
+    ? digits.slice(-6)
+    : secureRandomString('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 }
 
 export function currentYear2(): string {
@@ -91,6 +96,7 @@ export async function generateStudentId(parts: StudentIdParts = {}): Promise<str
     handleSupabaseError(err);
   }
 
-  // Fallback: timestamp-based unique suffix scoped to the same prefix.
-  return `${prefix}${Date.now().toString().slice(-4)}`;
+  // Rare fallback: a CSPRNG suffix avoids predictable IDs and same-millisecond
+  // collisions when the database uniqueness scan cannot complete.
+  return `${prefix}${secureRandomString('0123456789', 8)}`;
 }

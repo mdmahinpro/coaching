@@ -33,24 +33,29 @@ const categoryStyles: Record<string, { badge: string; border: string; icon: stri
 export default function NoticeBoardPage() {
   const [notices, setNotices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [filter, setFilter] = useState<Category>('all');
 
   useEffect(() => {
-    supabase
-      .from('notices')
-      .select('*')
-      .eq('is_published', true)
-      .order('is_pinned', { ascending: false })
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
+    Promise.resolve(
+      supabase
+        .from('notices')
+        .select('*')
+        .eq('is_published', true)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+    )
+      .then(({ data, error: queryError }) => {
+        if (queryError) {throw queryError;}
         const cleaned = (data ?? []).map((n: any) => ({
           ...n,
           title: sanitize(n.title),
           content: sanitize(n.content),
         }));
         setNotices(cleaned);
-        setLoading(false);
-      });
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, []);
 
   const getCategory = (notice: any) => {
@@ -88,6 +93,12 @@ export default function NoticeBoardPage() {
 
         {loading ? (
           <LoadingSkeleton rows={4} />
+        ) : error ? (
+          <EmptyState
+            title="নোটিশ লোড করা যায়নি"
+            description="ইন্টারনেট সংযোগ পরীক্ষা করে পরে আবার চেষ্টা করুন।"
+            icon={<AlertTriangle size={48} strokeWidth={1.2} />}
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             title="কোনো নোটিশ পাওয়া যায়নি"

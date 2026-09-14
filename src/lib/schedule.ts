@@ -23,7 +23,7 @@ export interface BatchScheduleLike {
 /** Coerce the raw `schedule_days` column into a clean string list. */
 export function batchDayList(b: BatchScheduleLike): string[] {
   const d = b.schedule_days;
-  if (!Array.isArray(d)) return [];
+  if (!Array.isArray(d)) {return [];}
   return d
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
     .filter((x) => x.length > 0);
@@ -34,13 +34,13 @@ export function batchDayList(b: BatchScheduleLike): string[] {
  * "9:30 AM" / "5:00 PM". Non-time input passes through trimmed.
  */
 export function formatTimeText(t?: string | null): string {
-  if (!t) return '';
+  if (!t) {return '';}
   const raw = t.trim();
   const m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!m) return raw;
+  if (!m) {return raw;}
   let h = parseInt(m[1], 10);
   const min = m[2];
-  if (h > 23) return raw; // not a time — leave untouched
+  if (h > 23) {return raw;} // not a time — leave untouched
   const period = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
   return `${h}:${min} ${period}`;
@@ -50,7 +50,7 @@ export function formatTimeText(t?: string | null): string {
 export function formatTimeRange(start?: string | null, end?: string | null): string {
   const s = formatTimeText(start);
   const e = formatTimeText(end);
-  if (s && e) return `${s} – ${e}`;
+  if (s && e) {return `${s} – ${e}`;}
   return s || e;
 }
 
@@ -64,10 +64,10 @@ export function formatBatchSchedule(b: BatchScheduleLike): string {
   const end = b.end_time ?? null;
 
   const parts: string[] = [];
-  if (days.length > 0) parts.push(days.join('/'));
+  if (days.length > 0) {parts.push(days.join('/'));}
   const range = formatTimeRange(start, end);
-  if (range) parts.push(range);
+  if (range) {parts.push(range);}
 
-  if (parts.length > 0) return parts.join(' · ');
+  if (parts.length > 0) {return parts.join(' · ');}
   return (b.schedule ?? '').trim();
 }

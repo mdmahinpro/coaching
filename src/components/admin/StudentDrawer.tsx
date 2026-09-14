@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -22,6 +22,8 @@ import { Avatar } from '@/components/shared/Avatar';
 import { SuspendModal } from './SuspendModal';
 import { formatDate, formatCurrency, cn, sanitize } from '@/lib/utils';
 import { sendSMS, SMS_TEMPLATES } from '@/lib/sms';
+import { formatMessagingResult, messagingIdempotencyKey } from '@/lib/messaging';
+import { messagingResultTone, smsHistoryRecipientVariants } from '@/lib/messagingUi';
 import toast from 'react-hot-toast';
 
 interface Student {
@@ -79,17 +81,19 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   const [smsSending, setSmsSending] = useState(false);
   const [smsLogs, setSmsLogs] = useState<any[]>([]);
   const [smsLogLoading, setSmsLogLoading] = useState(false);
+  const studentId = student?.id;
+  const studentPhone = student?.phone;
 
   useEffect(() => {
-    if (student) {
+    if (studentId) {
       setTab('profile');
       setNewPw('');
       setShowPw(false);
     }
-  }, [student?.id]);
+  }, [studentId]);
 
   useEffect(() => {
-    if (!student || tab !== 'fees') {
+    if (!studentId || tab !== 'fees') {
       return;
     }
     setFeesLoading(true);
@@ -98,7 +102,7 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
       supabase
         .from('fees')
         .select('*, batch:batches(name)')
-        .eq('student_id', student.id)
+        .eq('student_id', studentId)
         .order('due_date', { ascending: false })
     )
       .then(
@@ -116,10 +120,10 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
       .finally(() => {
         setFeesLoading(false);
       });
-  }, [student?.id, tab]);
+  }, [studentId, tab]);
 
   useEffect(() => {
-    if (!student || tab !== 'exams') {
+    if (!studentId || tab !== 'exams') {
       return;
     }
     setExamsLoading(true);
@@ -128,7 +132,7 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
       supabase
         .from('mcq_submissions')
         .select('*, exam:exams(title, exam_date, total_marks)')
-        .eq('student_id', student.id)
+        .eq('student_id', studentId)
         .order('submitted_at', { ascending: false })
     )
       .then(
@@ -146,28 +150,37 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
       .finally(() => {
         setExamsLoading(false);
       });
-  }, [student?.id, tab]);
+  }, [studentId, tab]);
 
-  // Load this student's SMS history when the SMS tab is opened.
+  const loadSmsHistory = useCallback(async () => {
+    if (!studentPhone) {
+      setSmsLogs([]);
+      return;
+    }
+    const recipients = smsHistoryRecipientVariants(studentPhone);
+    const { data, error } = await supabase
+      .from('message_deliveries')
+      .select('id,status,recipient,created_at,message_jobs!inner(id,channel,content)')
+      .in('recipient', recipients)
+      .eq('message_jobs.channel', 'sms')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) {
+      throw error;
+    }
+    setSmsLogs(data ?? []);
+  }, [studentPhone]);
+
+  // Load this student's durable delivery history when the SMS tab is opened.
   useEffect(() => {
-    if (!student || tab !== 'sms') {
+    if (!studentPhone || tab !== 'sms') {
       return;
     }
     setSmsLogLoading(true);
-    Promise.resolve(
-      supabase
-        .from('sms_logs')
-        .select('*')
-        .eq('phone', student.phone)
-        .order('created_at', { ascending: false })
-        .limit(20)
-    )
-      .then(
-        ({ data }) => setSmsLogs(data ?? []),
-        (err: any) => handleSupabaseError(err)
-      )
+    void loadSmsHistory()
+      .catch(handleSupabaseError)
       .finally(() => setSmsLogLoading(false));
-  }, [student?.id, tab, student?.phone]);
+  }, [loadSmsHistory, studentPhone, tab]);
 
   const handleSendSms = async () => {
     if (!student) {
@@ -179,23 +192,21 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
     }
     setSmsSending(true);
     try {
-      const res = await sendSMS(student.phone, smsMessage, 'custom');
-      if (res.sent > 0) {
-        toast.success('SMS sent');
+      const res = await sendSMS(student.phone, smsMessage, 'custom', {
+        idempotencyKey: messagingIdempotencyKey('student-drawer', `${student.id}|${smsMessage}`),
+      });
+      const summary = formatMessagingResult(res);
+      const tone = messagingResultTone(res);
+      if (tone === 'success') {
+        toast.success(summary);
         setSmsMessage('');
-        // Refresh log
-        const { data, error } = await supabase
-          .from('sms_logs')
-          .select('*')
-          .eq('phone', student.phone)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (!error && data) {
-          setSmsLogs(data);
-        }
+      } else if (tone === 'error') {
+        toast.error(`SMS not delivered: ${summary}`);
       } else {
-        toast.error(res.raw ? 'SMS failed' : 'SMS queued/failed — check server SMS key');
+        toast(`SMS requires review: ${summary}`);
+        if (res.accepted > 0) { setSmsMessage(''); }
       }
+      if (res.jobId) { await loadSmsHistory(); }
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -316,14 +327,17 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-full md:w-[480px] flex flex-col bg-navy-800 border-l border-navy-700/60 shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="student-drawer-title"
+              className="fixed right-0 top-0 bottom-0 z-50 w-full md:w-[480px] max-w-full flex flex-col bg-navy-800 border-l border-navy-700/60 shadow-2xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-navy-700/50 shrink-0">
                 <div className="flex items-center gap-3">
                   <Avatar name={student.name} size="md" src={student.photo_url} />
                   <div>
-                    <h2 className="font-inter font-bold text-white text-sm">{student.name}</h2>
+                    <h2 id="student-drawer-title" className="font-inter font-bold text-white text-sm break-words">{student.name}</h2>
                     <div className="flex items-center gap-2 mt-0.5">
                       {student.student_id && (
                         <button
@@ -340,20 +354,24 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                 </div>
                 <button
                   onClick={onClose}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                  aria-label="Close student details"
+                  className="w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
                 >
                   <X size={18} />
                 </button>
               </div>
 
               {/* Tabs */}
-              <div className="flex border-b border-navy-700/50 shrink-0">
+              <div role="tablist" aria-label="Student details" className="flex border-b border-navy-700/50 shrink-0 overflow-x-auto overscroll-x-contain">
                 {TABS.map((t) => (
                   <button
                     key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t.id}
                     onClick={() => setTab(t.id)}
                     className={cn(
-                      'flex items-center gap-1.5 px-4 py-3 text-xs font-medium transition-all border-b-2',
+                      'flex items-center gap-1.5 px-4 py-3 text-xs font-medium transition-all border-b-2 whitespace-nowrap shrink-0',
                       tab === t.id
                         ? 'text-sky-400 border-sky-400'
                         : 'text-slate-400 border-transparent hover:text-white'
@@ -365,7 +383,7 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
               </div>
 
               {/* Tab content */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                 {/* Profile Tab */}
                 {tab === 'profile' ? (
                   <div className="p-5 space-y-5">
@@ -673,27 +691,30 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
                         <p className="text-slate-600 text-xs">No SMS records for this student yet.</p>
                       ) : (
                         <div className="space-y-2">
-                          {smsLogs.map((l) => (
-                            <div key={l.id} className="card p-3">
-                              <div className="flex items-center justify-between mb-1">
-                                <span
-                                  className={
-                                    l.status === 'sent'
-                                      ? 'badge-green text-[10px]'
-                                      : l.status === 'pending'
-                                        ? 'badge-yellow text-[10px]'
-                                        : 'badge-red text-[10px]'
-                                  }
-                                >
-                                  {l.status}
-                                </span>
-                                <span className="text-slate-600 text-[10px]">
-                                  {l.created_at ? formatDate(l.created_at) : ''}
-                                </span>
+                          {smsLogs.map((delivery) => {
+                            const job = Array.isArray(delivery.message_jobs)
+                              ? delivery.message_jobs[0]
+                              : delivery.message_jobs;
+                            const status = String(delivery.status ?? 'pending').toLowerCase();
+                            const statusClass = status === 'failed' || status === 'bounced' || status === 'unavailable'
+                              ? 'badge-red text-[10px]'
+                              : status === 'partial' || status === 'requires_review' || status === 'pending' || status === 'processing'
+                                ? 'badge-yellow text-[10px]'
+                                : status === 'accepted' || status === 'delivered'
+                                  ? 'badge-green text-[10px]'
+                                  : 'badge-yellow text-[10px]';
+                            return (
+                              <div key={delivery.id} className="card p-3">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className={statusClass}>{status}</span>
+                                  <span className="text-slate-600 text-[10px]">
+                                    {delivery.created_at ? formatDate(delivery.created_at) : ''}
+                                  </span>
+                                </div>
+                                <p className="text-slate-300 text-xs break-words">{job?.content?.body ?? 'Message content unavailable'}</p>
                               </div>
-                              <p className="text-slate-300 text-xs break-words">{l.message}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

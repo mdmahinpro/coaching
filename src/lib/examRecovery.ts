@@ -21,7 +21,7 @@ export function loadExamDraft(
   maxAgeMs = 24 * 60 * 60 * 1000
 ): Record<string, string> | null {
   const raw = localStorage.getItem(keyFor(examId, studentId));
-  if (!raw) return null;
+  if (!raw) {return null;}
   try {
     const draft = JSON.parse(raw) as Partial<ExamDraft>;
     if (
@@ -39,7 +39,7 @@ export function loadExamDraft(
     }
     const answers: Record<string, string> = {};
     for (const [questionId, answer] of Object.entries(draft.answers)) {
-      if (questionIds.has(questionId) && ['A', 'B', 'C', 'D'].includes(answer)) answers[questionId] = answer;
+      if (questionIds.has(questionId) && ['A', 'B', 'C', 'D'].includes(answer)) {answers[questionId] = answer;}
     }
     return answers;
   } catch {
@@ -55,6 +55,6 @@ export function clearExamDraft(examId: string, studentId: string): void {
 export function clearAllExamDrafts(): void {
   for (let i = localStorage.length - 1; i >= 0; i -= 1) {
     const key = localStorage.key(i);
-    if (key?.startsWith('exam-draft:v1:')) localStorage.removeItem(key);
+    if (key?.startsWith('exam-draft:v1:')) {localStorage.removeItem(key);}
   }
 }

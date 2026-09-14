@@ -6,15 +6,27 @@ node_modules/
 # Build outputs
 dist/
 stats.html
+analysis/
 
 # Environment
 .env.local
 .env.*.local
 .env
+# Local credentials and operator-only secret material (never package)
+*-creds.json
+*-credentials.json
+*.credentials.json
+*.tmp
+*.temp
+tmp/
+temp/
+**/.temp/
 # Isolated E2E credentials for the approved disposable project (local only)
 e2e/isolated-creds.json
 
-# IDE
+# IDE and editor-managed mirror worktrees
+.kilo/
+**/.kilo/
 .idea/
 .vscode/
 *.swp
@@ -54,6 +66,9 @@ migration.sql
 # else. These contain student PII and must never enter the repository;
 # they live on disk (ideally off-machine) and get rebuilt on demand.
 backup_*.sql
+# Provision/upgrade plans and backup/adoption evidence are operator records and may contain infrastructure metadata.
+provisioning-reports/
+upgrade-evidence/
 # Browser E2E — local credential file, never commit
 e2e/admin-creds.json
 e2e/downloads/
@@ -61,9 +76,3 @@ e2e/live-url.txt
 
 # Supabase CLI working state (project link + version probe) — machine-local
 supabase/.temp/
-
-# Local agent-manager state — not project source
-.kilo/
-
-# Disposable-provisioning diagnostic reports — machine-local
-provisioning-reports/

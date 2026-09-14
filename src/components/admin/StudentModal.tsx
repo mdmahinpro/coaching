@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X, Save, Upload, User, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useSettingsStore, classLevelList } from '@/store/useSettingsStore';
 import { generateStudentId } from '@/lib/studentId';
+import { uploadStudentAvatarAsAdmin } from '@/lib/storageUploads';
 
 const schema = z.object({
   name: z.string().min(2, 'Name required'),
@@ -29,7 +29,7 @@ interface Props {
   open: boolean;
   student?: Partial<FormData> & { id?: string; student_id?: string; photo_url?: string };
   batches?: { id: string; name: string; code?: string }[];
-  onSave: (data: FormData & { photo_url?: string; student_id?: string }) => Promise<void>;
+  onSave: (data: FormData & { photo_url?: string; student_id?: string; photo_blob?: Blob }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -123,7 +123,6 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
     register,
     handleSubmit,
     reset,
-    watch,
     setValue,
     control,
     formState: { errors, isSubmitting },
@@ -132,8 +131,8 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
     defaultValues: { status: 'active', is_approved: true },
   });
 
-  const guardianPhone = watch('guardian_phone');
-  const phone = watch('phone');
+  const guardianPhone = useWatch({ control, name: 'guardian_phone' });
+  const phone = useWatch({ control, name: 'phone' });
 
   useEffect(() => {
     if (open) {
@@ -155,7 +154,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
       setPhotoPreview(student?.photo_url ?? null);
       setPhotoError('');
     }
-  }, [open, student]);
+  }, [open, reset, student]);
 
   // Auto-fill portal password from guardian/student phone — only when adding a new student
   useEffect(() => {
@@ -166,7 +165,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
     if (pw) {
       setValue('password', pw);
     }
-  }, [guardianPhone, phone, student]);
+  }, [guardianPhone, phone, setValue, student]);
 
   const handlePhotoSelect = (file: File) => {
     setPhotoError('');
@@ -191,6 +190,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
   const onSubmit = async (data: FormData) => {
     setUploading(true);
     let photo_url = student?.photo_url;
+    let photo_blob: Blob | undefined;
 
     // Photo upload
     if (photoFile) {
@@ -201,18 +201,12 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
           setUploading(false);
           return;
         }
-        const id = student?.id ?? crypto.randomUUID();
-        const path = `students/${id}-photo.jpg`;
-        const { error: storErr } = await supabase.storage
-          .from('avatars')
-          .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-        if (!storErr) {
-          // Persist the plain public URL, exactly like portal_update_photo
-          // does on the student portal. The old admin path appended
-          // `?t=<ts>` to the stored value, which breaks the stored URL's
-          // usability in the UI (the portal path is the proven-working one).
-          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-          photo_url = urlData.publicUrl;
+        if (student?.id) {
+          photo_url = await uploadStudentAvatarAsAdmin(student.id, compressed);
+        } else {
+          // Registration returns the authoritative database UUID. Defer the
+          // server upload until then so the private object path is canonical.
+          photo_blob = compressed;
         }
       } catch (err) {
         handleSupabaseError(err);
@@ -232,7 +226,7 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
     }
 
     setUploading(false);
-    await onSave({ ...data, photo_url, student_id });
+    await onSave({ ...data, photo_url, student_id, photo_blob });
   };
 
   return (

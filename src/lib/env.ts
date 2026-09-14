@@ -1,21 +1,8 @@
-import { z } from 'zod';
-import { assertPublicSupabaseClientKey } from './supabaseKey';
+import { validateBrowserEnvironment } from './environmentContract';
 
-const envSchema = z.object({
-  VITE_SUPABASE_URL: z.string().url('VITE_SUPABASE_URL must be a valid URL'),
-  VITE_SUPABASE_ANON_KEY: z.string().min(1, 'VITE_SUPABASE_ANON_KEY must not be empty'),
-});
-
-const parsed = envSchema.safeParse({
+export const env = validateBrowserEnvironment({
   VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+  VITE_EXPECTED_SUPABASE_PROJECT_REF: import.meta.env.VITE_EXPECTED_SUPABASE_PROJECT_REF,
+  VITE_ENVIRONMENT_KIND: import.meta.env.VITE_ENVIRONMENT_KIND,
 });
-
-if (!parsed.success) {
-  const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
-  throw new Error(`Invalid environment variables:\n${issues}\nPlease check your .env file.`);
-}
-
-assertPublicSupabaseClientKey(parsed.data.VITE_SUPABASE_ANON_KEY);
-
-export const env = parsed.data;

@@ -20,7 +20,6 @@ import ContactPage from '@/pages/public/ContactPage';
 // ── Auth pages — eager (shown before any lazy chunk resolves) ─────────────────
 import AdminLoginPage from '@/pages/admin/LoginPage';
 import PortalLoginPage from '@/pages/portal/PortalLoginPage';
-import PortalSignupPage from '@/pages/portal/PortalSignupPage';
 
 // ── Admin pages — lazy (only needed after admin login) ────────────────────────
 const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage'));
@@ -68,7 +67,7 @@ function AdminNotificationMount() {
   return null;
 }
 
-function AppRoutes() {
+export function AppRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
@@ -190,9 +189,9 @@ function AppRoutes() {
           />
         </Route>
 
-        {/* Portal login + signup (public) */}
+        {/* Portal login is public; legacy signup bookmarks use the supported admission flow. */}
         <Route path="/portal/login" element={<PortalLoginPage />} />
-        <Route path="/portal/signup" element={<PortalSignupPage />} />
+        <Route path="/portal/signup" element={<Navigate to="/admission" replace />} />
 
         {/* Portal protected (student sessionStorage auth) */}
         <Route element={<StudentProtectedRoute />}>

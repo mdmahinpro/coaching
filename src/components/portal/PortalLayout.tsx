@@ -9,26 +9,34 @@ interface Props {
 
 export function PortalLayout({ children }: Props) {
   const { student, setStudent } = useStudentStore();
+  const studentId = student?.id;
+  const studentToken = student?.token;
 
   // Refresh the student profile from the server on every portal page mount so
   // admin-side changes (batch assignment, class, photo) appear immediately
   // instead of lingering from a stale login-time session snapshot.
   useEffect(() => {
-    if (!student?.token) {
-      return;
+    if (!studentId || !studentToken) {
+      return undefined;
     }
     let cancelled = false;
     fetchProfile()
       .then((profile: any) => {
-        if (!cancelled && profile) {
+        const currentStudent = useStudentStore.getState().student;
+        if (
+          !cancelled &&
+          profile &&
+          currentStudent?.id === studentId &&
+          currentStudent.token === studentToken
+        ) {
           setStudent({
-            ...student,
-            name: profile.name ?? student.name,
-            student_id: profile.student_id ?? student.student_id,
-            class_level: profile.class_level ?? student.class_level,
-            batch_id: profile.batch_id ?? student.batch_id,
-            batch_name: profile.batch_name ?? student.batch_name,
-            photo_url: profile.photo_url ?? student.photo_url,
+            ...currentStudent,
+            name: profile.name ?? currentStudent.name,
+            student_id: profile.student_id ?? currentStudent.student_id,
+            class_level: profile.class_level ?? currentStudent.class_level,
+            batch_id: profile.batch_id ?? currentStudent.batch_id,
+            batch_name: profile.batch_name ?? currentStudent.batch_name,
+            photo_url: profile.photo_url ?? currentStudent.photo_url,
           });
         }
       })
@@ -38,8 +46,7 @@ export function PortalLayout({ children }: Props) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id, student?.token]);
+  }, [setStudent, studentId, studentToken]);
 
   return (
     <div className="min-h-screen bg-navy-900">
@@ -47,7 +54,7 @@ export function PortalLayout({ children }: Props) {
       {/* pt satisfies the fixed top navbar (h-14); pb clears the fixed mobile
           bottom tab bar; explicit px give every portal page consistent,
           comfortable breathing room with no conflicting top/bottom utilities. */}
-      <main className="max-w-5xl mx-auto pt-20 pb-28 md:pb-12 px-4 md:px-6">{children}</main>
+      <main className="max-w-5xl mx-auto pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-12 px-4 md:px-6 min-w-0 overflow-x-clip">{children}</main>
     </div>
   );
 }

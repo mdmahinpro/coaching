@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { cva } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
@@ -79,7 +79,7 @@ function Field({
   className,
   orientation = 'vertical',
   ...props
-}: React.ComponentProps<'div'> & VariantProps<typeof fieldVariants>) {
+}: React.ComponentProps<'div'> & import('class-variance-authority').VariantProps<typeof fieldVariants>) {
   return (
     <div
       role="group"

@@ -71,6 +71,8 @@ const parseAnswers = (raw: unknown): Record<string, string> => {
 
 export default function PortalResultsPage() {
   const { student } = useStudentStore();
+  const studentId = student?.id;
+  const studentToken = student?.token;
   const { settings } = useSettingsStore();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +85,7 @@ export default function PortalResultsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!student) {
+    if (!studentId) {
       return;
     }
     fetchSubmissions().then(
@@ -105,7 +107,7 @@ export default function PortalResultsPage() {
         setLoading(false);
       }
     );
-  }, [student?.id, student?.token]);
+  }, [studentId, studentToken]);
 
   const openBreakdown = async (sub: Submission) => {
     try {
@@ -315,6 +317,8 @@ export default function PortalResultsPage() {
                       }}
                       className="p-1.5 rounded-lg hover:bg-violet-500/15 text-slate-400 hover:text-violet-400 transition-colors"
                       title="Breakdown"
+                      aria-label={`${isExpanded ? 'Close' : 'Open'} answer breakdown for ${s.exam?.title ?? 'exam'}`}
+                      aria-expanded={isExpanded}
                     >
                       {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
@@ -344,7 +348,10 @@ export default function PortalResultsPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative card-glass w-full max-w-lg z-10 max-h-[85vh] flex flex-col"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="result-breakdown-title"
+              className="relative card-glass w-full max-w-lg z-10 max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
             >
               <div className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
                 <h2 className="font-inter font-bold text-white text-sm">উত্তর বিশ্লেষণ</h2>
@@ -353,7 +360,8 @@ export default function PortalResultsPage() {
                     setBreakdown(null);
                     setExpandedId(null);
                   }}
-                  className="text-slate-400 hover:text-white"
+                  aria-label="Close answer breakdown"
+                  className="p-2 text-slate-400 hover:text-white"
                 >
                   <X size={18} />
                 </button>
@@ -388,11 +396,11 @@ export default function PortalResultsPage() {
                             : 'bg-red-400/5 border-red-400/20'
                         )}
                       >
-                        <p className="text-white text-sm font-medium mb-2 font-hind">
+                        <p className="text-white text-sm font-medium mb-2 font-hind break-words [overflow-wrap:anywhere]">
                           <span className="text-slate-500 mr-2">Q{i + 1}.</span>
                           {q.question_text}
                         </p>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                           {Object.entries(opts)
                             .filter(([, v]) => v)
                             .map(([k, v]) => {
@@ -411,7 +419,7 @@ export default function PortalResultsPage() {
                                   )}
                                 >
                                   <span className="uppercase font-bold shrink-0">{k}</span>
-                                  <span className="truncate font-hind">{v}</span>
+                                  <span className="min-w-0 break-words [overflow-wrap:anywhere] font-hind">{v}</span>
                                   {isStudentChoice && (
                                     <span className="ml-auto shrink-0">
                                       {isCorrect ? '✓' : '✗'}
@@ -439,7 +447,7 @@ export default function PortalResultsPage() {
                             </span>
                           )}
                           {ans.correctText && (
-                            <span className="text-emerald-400 font-hind">
+                            <span className="text-emerald-400 font-hind break-words [overflow-wrap:anywhere]">
                               Correct: <strong>{ans.correctLetter}</strong>
                               <em className="not-italic"> — {ans.correctText}</em>
                             </span>
@@ -463,3 +471,4 @@ export default function PortalResultsPage() {
     </PortalLayout>
   );
 }
+

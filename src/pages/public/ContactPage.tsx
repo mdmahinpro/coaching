@@ -2,21 +2,15 @@ import { PublicNavbar } from '@/components/public/PublicNavbar';
 import { Footer } from '@/components/public/Footer';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import toast from 'react-hot-toast';
-import { supabase } from '@/lib/supabase';
-import { handleSupabaseError } from '@/utils/errorHandler';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { Phone, Mail, MapPin, Send, MessageCircle } from 'lucide-react';
-
-const schema = z.object({
-  name: z.string().min(2, 'নাম কমপক্ষে ২ অক্ষর হতে হবে'),
-  email: z.string().email('সঠিক ইমেইল দিন'),
-  phone: z.string().optional(),
-  message: z.string().min(10, 'বার্তা কমপক্ষে ১০ অক্ষর হতে হবে'),
-});
-type F = z.infer<typeof schema>;
+import {
+  contactFormSchema as schema,
+  PUBLIC_FORM_LIMITS,
+  type ContactFormData as F,
+} from '../../../shared/public-form-schemas';
 
 export default function ContactPage() {
   const { settings } = useSettingsStore();
@@ -24,12 +18,19 @@ export default function ContactPage() {
 
   const onSubmit = async (data: F) => {
     try {
-      const { error } = await supabase.from('contact_messages').insert([data]);
-      if (error) { toast.error('বার্তা পাঠাতে সমস্যা হয়েছে।'); return; }
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        toast.error(response.status === 429 ? 'অনেকবার চেষ্টা করা হয়েছে। পরে আবার চেষ্টা করুন।' : 'বার্তা পাঠাতে সমস্যা হয়েছে।');
+        return;
+      }
       toast.success('বার্তা সফলভাবে পাঠানো হয়েছে!');
       reset();
-    } catch (err) {
-      handleSupabaseError(err);
+    } catch {
+      toast.error('বার্তা পাঠাতে সমস্যা হয়েছে।');
     }
   };
 
@@ -39,7 +40,7 @@ export default function ContactPage() {
   const normalizeMapUrl = (value: string) => {
     const raw = value.trim();
     const iframeSrc = raw.match(/<iframe[^>]+src=["']([^"']+)["']/i)?.[1] ?? raw;
-    if (/^https:\/\/www\.google\.com\/maps\/embed/i.test(iframeSrc)) return iframeSrc;
+    if (/^https:\/\/www\.google\.com\/maps\/embed/i.test(iframeSrc)) {return iframeSrc;}
     if (/^https:\/\//i.test(iframeSrc) && /google\.[^/]+\/maps/i.test(iframeSrc)) {
       return `https://www.google.com/maps?q=${encodeURIComponent(iframeSrc)}&output=embed`;
     }
@@ -144,29 +145,33 @@ export default function ContactPage() {
           {/* Contact form */}
           <AnimatedSection delay={100} className="lg:col-span-3">
             <form onSubmit={handleSubmit(onSubmit)} className="card-glass p-7 space-y-5">
+              <div className="sr-only" aria-hidden="true">
+                <label htmlFor="contact-website">Website</label>
+                <input id="contact-website" {...register('website')} tabIndex={-1} autoComplete="off" />
+              </div>
               <h2 className="font-inter font-semibold text-white text-lg mb-1">Send a Message</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-slate-400 mb-1.5 block">Name *</label>
-                  <input {...register('name')} className="input-field" placeholder="Your name" />
+                  <input {...register('name')} maxLength={PUBLIC_FORM_LIMITS.name} className="input-field" placeholder="Your name" />
                   {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name.message}</p>}
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 mb-1.5 block">Email *</label>
-                  <input {...register('email')} className="input-field" placeholder="email@example.com" />
+                  <input {...register('email')} maxLength={PUBLIC_FORM_LIMITS.email} className="input-field" placeholder="email@example.com" />
                   {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email.message}</p>}
                 </div>
               </div>
 
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">Phone (optional)</label>
-                <input {...register('phone')} className="input-field" placeholder="01XXXXXXXXX" />
+                <input {...register('phone')} maxLength={PUBLIC_FORM_LIMITS.phone} className="input-field" placeholder="01XXXXXXXXX" />
               </div>
 
               <div>
                 <label className="text-xs text-slate-400 mb-1.5 block">Message *</label>
-                <textarea {...register('message')} className="input-field" rows={5}
+                <textarea {...register('message')} maxLength={PUBLIC_FORM_LIMITS.message} className="input-field" rows={5}
                   placeholder="আপনার বার্তা লিখুন…" />
                 {errors.message && <p className="text-red-400 text-xs mt-1">{errors.message.message}</p>}
               </div>

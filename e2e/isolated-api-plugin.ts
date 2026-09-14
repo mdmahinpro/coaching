@@ -1,23 +1,35 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Plugin, ViteDevServer } from 'vite';
 import { createRequire } from 'node:module';
 const isolatedConfig = createRequire(import.meta.url)('./isolated-config.cjs');
 
 const ROUTES: Record<string, string> = {
+  // Mirrors netlify.toml so every serverless endpoint the app calls is
+  // exercised by the isolated combined admin+student audit, not just the
+  // avatar/stats subset that predated the full netlify redirect set.
+  '/api/admissions': '/netlify/functions/admissions.ts',
+  '/api/contact': '/netlify/functions/contact.ts',
+  '/api/send-sms': '/netlify/functions/send-sms.ts',
+  '/api/send-email': '/netlify/functions/send-email.ts',
+  '/api/messaging-readiness': '/netlify/functions/messaging-readiness.ts',
+  '/api/messaging-configuration': '/netlify/functions/messaging-configuration.ts',
+  '/api/messaging-test-send': '/netlify/functions/messaging-test-send.ts',
+  '/api/process-messaging-jobs': '/netlify/functions/process-messaging-jobs.ts',
+  '/api/resend-webhook': '/netlify/functions/resend-webhook.ts',
+  '/api/mim-dlr-sync': '/netlify/functions/mim-dlr-sync.ts',
   '/api/upload-avatar': '/netlify/functions/upload-avatar.ts',
+  '/api/upload-public-asset': '/netlify/functions/upload-public-asset.ts',
   '/api/retrieve-avatar': '/netlify/functions/retrieve-avatar.ts',
   '/api/home-stats': '/netlify/functions/home-stats.ts',
 };
 const MAX_BODY_BYTES = 4 * 1024 * 1024; // enough for a base64-encoded 2 MiB image
 
-function sendJson(res: ServerResponse, status: number, body: unknown) {
+function sendJson(res: import('node:http').ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.end(JSON.stringify(body));
 }
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: import('node:http').IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     let tooLarge = false;
@@ -42,7 +54,7 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on('error', reject);
   });
 }
-function headers(req: IncomingMessage): Record<string, string> {
+function headers(req: import('node:http').IncomingMessage): Record<string, string> {
   return Object.fromEntries(
     Object.entries(req.headers)
       .filter(([, value]) => value !== undefined)
@@ -50,11 +62,11 @@ function headers(req: IncomingMessage): Record<string, string> {
   );
 }
 
-export function isolatedApiPlugin(): Plugin {
+export function isolatedApiPlugin(): import('vite').Plugin {
   return {
     name: 'isolated-api-runtime',
     enforce: 'pre',
-    configureServer(server: ViteDevServer) {
+    configureServer(server: import('vite').ViteDevServer) {
       server.middlewares.use(async (req, res, next) => {
         let pathname: string;
         let url: URL;
@@ -114,9 +126,12 @@ export function isolatedApiPlugin(): Plugin {
             ? await readBody(req)
             : null;
           const query = Object.fromEntries(url.searchParams.entries());
+          // Faithfully simulate Netlify: public-form functions require a
+          // trusted client-IP header to derive the submitter's address.
+          const hdrs = { ...headers(req), 'x-nf-client-connection-ip': '127.0.0.1' };
           const result = await mod.handler({
             httpMethod: req.method,
-            headers: headers(req),
+            headers: hdrs,
             body,
             queryStringParameters: Object.keys(query).length ? query : null,
           });

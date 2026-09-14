@@ -1,0 +1,519 @@
+{
+  "generatedAt": "2026-09-13T12:41:34.882Z",
+  "checks": [
+    {
+      "viewport": "phone-320",
+      "route": "/admin/dashboard",
+      "pathname": "/admin/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 385,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/students",
+      "pathname": "/admin/students",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 101,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/batches",
+      "pathname": "/admin/batches",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 69,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/teachers",
+      "pathname": "/admin/teachers",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 72,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/fees",
+      "pathname": "/admin/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 193,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/exams",
+      "pathname": "/admin/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 100,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/results",
+      "pathname": "/admin/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 70,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/notices",
+      "pathname": "/admin/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 209,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/admissions",
+      "pathname": "/admin/admissions",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 123,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/sms",
+      "pathname": "/admin/sms",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 433,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/reports",
+      "pathname": "/admin/reports",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 164,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/settings",
+      "pathname": "/admin/settings",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1137,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/backup",
+      "pathname": "/admin/backup",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 684,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/dashboard",
+      "pathname": "/portal/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 224,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/fees",
+      "pathname": "/portal/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 92,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/exams",
+      "pathname": "/portal/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 62,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/results",
+      "pathname": "/portal/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 101,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/notices",
+      "pathname": "/portal/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 93,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/profile",
+      "pathname": "/portal/profile",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 434,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/dashboard",
+      "pathname": "/admin/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 648,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/students",
+      "pathname": "/admin/students",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 383,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/batches",
+      "pathname": "/admin/batches",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 332,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/teachers",
+      "pathname": "/admin/teachers",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 335,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/fees",
+      "pathname": "/admin/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 456,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/exams",
+      "pathname": "/admin/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 363,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/results",
+      "pathname": "/admin/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 333,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/notices",
+      "pathname": "/admin/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 472,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/admissions",
+      "pathname": "/admin/admissions",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 386,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/sms",
+      "pathname": "/admin/sms",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 696,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/reports",
+      "pathname": "/admin/reports",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 454,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/settings",
+      "pathname": "/admin/settings",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1400,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/backup",
+      "pathname": "/admin/backup",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 947,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/dashboard",
+      "pathname": "/portal/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 288,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/fees",
+      "pathname": "/portal/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 156,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/exams",
+      "pathname": "/portal/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 126,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/results",
+      "pathname": "/portal/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 165,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/notices",
+      "pathname": "/portal/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 157,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/profile",
+      "pathname": "/portal/profile",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 498,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/dashboard",
+      "pathname": "/admin/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 648,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/students",
+      "pathname": "/admin/students",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 383,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/batches",
+      "pathname": "/admin/batches",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 332,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/teachers",
+      "pathname": "/admin/teachers",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 335,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/fees",
+      "pathname": "/admin/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 456,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/exams",
+      "pathname": "/admin/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 363,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/results",
+      "pathname": "/admin/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 333,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/notices",
+      "pathname": "/admin/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 472,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/admissions",
+      "pathname": "/admin/admissions",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 386,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/sms",
+      "pathname": "/admin/sms",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 696,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/reports",
+      "pathname": "/admin/reports",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 454,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/settings",
+      "pathname": "/admin/settings",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1400,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/backup",
+      "pathname": "/admin/backup",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 947,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/dashboard",
+      "pathname": "/portal/dashboard",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 288,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/fees",
+      "pathname": "/portal/fees",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 156,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/exams",
+      "pathname": "/portal/exams",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 126,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/results",
+      "pathname": "/portal/results",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 165,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/notices",
+      "pathname": "/portal/notices",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 157,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/profile",
+      "pathname": "/portal/profile",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 498,
+      "consoleErrors": []
+    }
+  ],
+  "failures": []
+}

@@ -1,7 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleHomeStats } from './stats-core';
 
-const PROJECT = 'https://hjzwbicauyxffrmdhvgy.supabase.co';
+const PROJECT_REF = 'hjzwbicauyxffrmdhvgy';
+const PROJECT = `https://${PROJECT_REF}.supabase.co`;
+
+beforeEach(() => {
+  vi.stubEnv('SUPABASE_URL', PROJECT);
+  vi.stubEnv('SUPABASE_ANON_KEY', 'sb_publishable_test_anon_key');
+  vi.stubEnv('EXPECTED_SUPABASE_PROJECT_REF', PROJECT_REF);
+  vi.stubEnv('ENVIRONMENT_KIND', 'test');
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -9,6 +17,15 @@ afterEach(() => {
 });
 
 describe('handleHomeStats', () => {
+  it('refuses lookup before I/O when the server project identity mismatches', async () => {
+    vi.stubEnv('EXPECTED_SUPABASE_PROJECT_REF', 'bbbbbbbbbbbbbbbbbbbb');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-key');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await handleHomeStats()).status).toBe(503);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('returns 503 when server configuration is missing', async () => {
     vi.stubEnv('SUPABASE_URL', '');
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');

@@ -19,6 +19,8 @@ const ALL_TYPES = ['all', 'general', 'exam', 'fee', 'holiday', 'result', 'event'
 
 export default function PortalNoticePage() {
   const { student } = useStudentStore();
+  const studentId = student?.id;
+  const studentToken = student?.token;
   const [notices, setNotices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -44,7 +46,7 @@ export default function PortalNoticePage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, student?.id, student?.token]);
+  }, [filter]);
 
   useEffect(() => {
     load();
@@ -52,7 +54,7 @@ export default function PortalNoticePage() {
 
   // Load the server-side read receipts once per session/student.
   useEffect(() => {
-    if (!student) {
+    if (!studentId) {
       return;
     }
     fetchNoticeReads().then(
@@ -61,7 +63,7 @@ export default function PortalNoticePage() {
         handleSupabaseError(err);
       }
     );
-  }, [student?.id, student?.token]);
+  }, [studentId, studentToken]);
 
   const markRead = (id: string) => {
     if (readIds.includes(id)) {

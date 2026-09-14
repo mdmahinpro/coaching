@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { updatePhoto, changePassword, updateEmail } from '@/lib/portalApi';
 import { resolveAvatarUrl } from '@/lib/avatarRetrieval';
-import { env } from '@/lib/env';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
 import { Camera, Save, Lock, Loader2, User, Phone, Mail, BookOpen, Hash } from 'lucide-react';
@@ -21,10 +20,8 @@ export default function PortalProfilePage() {
     // Full public URLs (including the stored upload result) display directly;
     // the validated original reference resolves against the configured project.
     if (student?.photo_url && student.token) {
-      resolveAvatarUrl(student.photo_url, student.token, {
-        supabaseUrl: env.VITE_SUPABASE_URL,
-      }).then((u) => {
-        if (active && u) setPhotoPreview(u);
+      resolveAvatarUrl(student.photo_url, student.token).then((u) => {
+        if (active && u) {setPhotoPreview(u);}
       });
     }
     return () => {
@@ -108,7 +105,7 @@ export default function PortalProfilePage() {
       }
       const bytes = new Uint8Array(await blob.arrayBuffer());
       let binary = '';
-      for (const byte of bytes) binary += String.fromCharCode(byte);
+      for (const byte of bytes) {binary += String.fromCharCode(byte);}
       const data = `base64,${btoa(binary)}`;
       const response = await fetch('/api/upload-avatar', {
         method: 'POST',
@@ -122,23 +119,21 @@ export default function PortalProfilePage() {
         toast.error('আপলোড ব্যর্থ হয়েছে');
         return;
       }
-      const payload = (await response.json()) as { path?: string; publicUrl?: string };
-      // Original public-bucket flow: persist the project-bound public URL of
-      // the uploaded object. `path` is kept as a fallback for old responses.
-      const publicUrl = payload?.publicUrl;
-      if (!publicUrl) {
+      const payload = (await response.json()) as { avatarRef?: string };
+      const avatarRef = payload?.avatarRef;
+      if (!avatarRef) {
         toast.error('আপলোড ব্যর্থ হয়েছে');
         return;
       }
       try {
-        await updatePhoto(publicUrl);
+        await updatePhoto(avatarRef);
       } catch {
         toast.error('আপডেট ব্যর্থ হয়েছে');
         return;
       }
-      // The stored value is a full public URL, so it displays directly.
-      setPhotoPreview(publicUrl);
-      setStudent({ ...student, photo_url: publicUrl });
+      const signedUrl = await resolveAvatarUrl(avatarRef, student.token ?? '');
+      setPhotoPreview(signedUrl);
+      setStudent({ ...student, photo_url: avatarRef });
       toast.success('ছবি আপডেট হয়েছে');
     } catch (err) {
       handleSupabaseError(err);

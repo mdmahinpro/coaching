@@ -184,14 +184,19 @@ function childEnvironment(config, parent = process.env) {
       delete env[key];
     }
   }
+  const projectRef = new URL(config.url).hostname.split('.')[0];
   Object.assign(env, {
     E2E_DISPOSABLE_SUPABASE_URL: config.url,
     E2E_DISPOSABLE_SUPABASE_ANON_KEY: config.anonKey,
     SUPABASE_URL: config.url,
     SUPABASE_ANON_KEY: config.anonKey,
     SUPABASE_SERVICE_ROLE_KEY: config.serviceKey,
+    EXPECTED_SUPABASE_PROJECT_REF: projectRef,
+    ENVIRONMENT_KIND: 'test',
     VITE_SUPABASE_URL: config.url,
     VITE_SUPABASE_ANON_KEY: config.anonKey,
+    VITE_EXPECTED_SUPABASE_PROJECT_REF: projectRef,
+    VITE_ENVIRONMENT_KIND: 'test',
     VITE_SITE_URL: `http://127.0.0.1:${config.port}`,
     ISOLATED_PORT: String(config.port),
     TECHELY_ISOLATED_RUNTIME: '1',

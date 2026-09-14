@@ -10,6 +10,8 @@ import { Link } from 'react-router-dom';
 
 export default function PortalDashboardPage() {
   const { student } = useStudentStore();
+  const studentId = student?.id;
+  const studentBatchId = student?.batch_id;
   const [feeStatus, setFeeStatus] = useState<{ pending: number; total: number }>({
     pending: 0,
     total: 0,
@@ -24,7 +26,7 @@ export default function PortalDashboardPage() {
   const [readNotices, setReadNotices] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!student) {
+    if (!studentId) {
       return;
     }
     const load = async () => {
@@ -63,7 +65,7 @@ export default function PortalDashboardPage() {
             if (end !== null && now >= end) {
               return false;
             }
-            return isExamForBatch(e, student?.batch_id) && (e.status === 'active' || e.status === 'paused');
+            return isExamForBatch(e, studentBatchId) && (e.status === 'active' || e.status === 'paused');
           })
         );
 
@@ -103,7 +105,7 @@ export default function PortalDashboardPage() {
       }
     };
     load();
-  }, [student?.id, student?.token, student?.batch_id]);
+  }, [studentBatchId, studentId]);
 
   const STATS = [
     {

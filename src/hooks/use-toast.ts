@@ -119,6 +119,7 @@ export const reducer = (state: State, action: Action): State => {
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
       };
   }
+  return state;
 };
 
 const listeners: Array<(state: State) => void> = [];

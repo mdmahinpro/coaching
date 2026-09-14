@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Users, BookOpen, Award, TrendingUp } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { Logo } from '@/components/shared/Logo';
@@ -39,6 +39,7 @@ const codeLines = [
 
 export function HeroSection() {
   const { settings } = useSettingsStore();
+  const prefersReducedMotion = useReducedMotion();
   const { ref: statsRef, isVisible: statsVisible } = useIntersection(
     { threshold: 0.3 },
     settings.showHomeStats
@@ -52,14 +53,9 @@ export function HeroSection() {
       return { ok: false }; // skipped when the admin disabled auto-from-DB
     }
     const results = await Promise.all([
-      // Students is a private table: count it through the secured server
-      // aggregate endpoint, never as anon.
-      fetch('/api/home-stats')
-        .then(async (r) => {
-          if (!r.ok) {return null;}
-          const body = (await r.json()) as { students?: unknown } | null;
-          return body?.students;
-        }),
+      // Students is a private table: count it through the SECURITY DEFINER
+      // home_stats() RPC (aggregate counts only), never as an anon SELECT.
+      supabase.rpc('home_stats'),
       supabase
         .from('teachers')
         .select('id', { count: 'exact', head: true })
@@ -72,10 +68,12 @@ export function HeroSection() {
     if (!results) {
       return { ok: false };
     }
-    const [studentsCount, t, b] = results;
+    const [statsRpc, t, b] = results;
+    const stats = (statsRpc?.data ?? null) as { students?: unknown } | null;
+    const studentsCount = stats?.students;
     // Only explicit nonnegative integers are counts. Missing/invalid values
     // and query failures are unavailable, not an empty database.
-    if (t.error || b.error || !isCount(studentsCount) || !isCount(t.count) || !isCount(b.count)) {
+    if (statsRpc?.error || t.error || b.error || !isCount(studentsCount) || !isCount(t.count) || !isCount(b.count)) {
       return { ok: false };
     }
     return {
@@ -100,10 +98,10 @@ export function HeroSection() {
   ];
 
   const counts = [
-    useCountUp(resolved.students, 1600, statsVisible && settings.showHomeStats),
-    useCountUp(resolved.batches, 1200, statsVisible && settings.showHomeStats),
-    useCountUp(resolved.teachers, 1000, statsVisible && settings.showHomeStats),
-    useCountUp(resolved.successRate, 1400, statsVisible && settings.showHomeStats),
+    useCountUp(resolved.students, 1600, !prefersReducedMotion && statsVisible && settings.showHomeStats),
+    useCountUp(resolved.batches, 1200, !prefersReducedMotion && statsVisible && settings.showHomeStats),
+    useCountUp(resolved.teachers, 1000, !prefersReducedMotion && statsVisible && settings.showHomeStats),
+    useCountUp(resolved.successRate, 1400, !prefersReducedMotion && statsVisible && settings.showHomeStats),
   ];
 
   return (
@@ -188,7 +186,7 @@ export function HeroSection() {
                     <div className={`font-inter font-black text-2xl sm:text-3xl ${s.color} mb-0.5`}>
                       {resolved.failed && s.fromDb
                         ? '—'
-                        : `${counts[i].toLocaleString()}${s.suffix}`}
+                        : `${(prefersReducedMotion ? s.value : counts[i]).toLocaleString()}${s.suffix}`}
                     </div>
                     <div className="font-hind text-slate-500 text-xs sm:text-sm">{s.label}</div>
                   </div>

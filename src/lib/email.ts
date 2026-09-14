@@ -1,34 +1,32 @@
-import { supabase } from './supabase';
+import { messagingIdempotencyKey, sendMessage } from './messaging';
 
 export async function sendEmail(
   emails: string | string[],
   subject: string,
   html: string,
-  templateType = 'custom'
+  templateType = 'custom',
+  options: { idempotencyKey?: string; dryRun?: boolean } = {}
 ) {
-  const list = Array.isArray(emails) ? emails : [emails];
-  const { data: { session } } = await supabase.auth.getSession();
-  const response = await fetch('/api/send-email', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-    },
-    body: JSON.stringify({ emails: list, subject, html, templateType }),
+  const recipients = Array.isArray(emails) ? emails : [emails];
+  return sendMessage({
+    channel: 'email', recipients, subject, message: html, templateType,
+    idempotencyKey: options.idempotencyKey ?? messagingIdempotencyKey(`email:${templateType}`, `${recipients.join('|')}|${subject}|${html}`),
+    dryRun: options.dryRun,
   });
-  const result = await response.json() as { status: string; sent: number; failed?: number; raw?: unknown };
-  await supabase.from('email_logs').insert(list.map((email) => ({
-    email,
-    subject,
-    template_type: templateType,
-    status: result.status,
-    response: result.raw ?? null,
-  })));
-  return result;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character] ?? character);
 }
 
 export function emailTemplate(title: string, body: string, institute: string) {
-  return `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;background:#0f172a;color:#e2e8f0;padding:28px;border-radius:16px"><h2 style="color:#38bdf8;margin-top:0">${institute}</h2><h3 style="color:#fff">${title}</h3><p style="white-space:pre-line;line-height:1.7">${body}</p><hr style="border:0;border-top:1px solid #334155"/><p style="color:#94a3b8;font-size:12px">এই বার্তাটি স্বয়ংক্রিয়ভাবে পাঠানো হয়েছে।</p></div>`;
+  return `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;background:#0f172a;color:#e2e8f0;padding:28px;border-radius:16px"><h2 style="color:#38bdf8;margin-top:0">${escapeHtml(institute)}</h2><h3 style="color:#fff">${escapeHtml(title)}</h3><p style="white-space:pre-line;line-height:1.7">${escapeHtml(body)}</p><hr style="border:0;border-top:1px solid #334155"/><p style="color:#94a3b8;font-size:12px">এই বার্তাটি স্বয়ংক্রিয়ভাবে পাঠানো হয়েছে।</p></div>`;
 }
 
 export const EMAIL_TEMPLATES = {

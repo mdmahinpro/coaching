@@ -125,7 +125,7 @@ export default function PortalLoginPage() {
           <div className="mt-6 space-y-2 text-center">
             <p className="text-slate-500 text-xs">
               নতুন ভর্তি হতে চান?{' '}
-              <Link to="/portal/signup" className="text-sky-400 hover:underline">
+              <Link to="/admission" className="text-sky-400 hover:underline">
                 আবেদন করুন
               </Link>
             </p>

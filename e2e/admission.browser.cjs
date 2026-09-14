@@ -1,14 +1,12 @@
 /* End-to-end admission flow (live supabase + dev server):
-   1. Student completes the portal signup form (all fields) → reference shown.
-   2. Row persisted with reference_no/gender/class_level.
-   3. Admin approves → student created with reference as default password.
-   4. Student logs into the portal with phone + reference.
-   5. Admin Settings → Class Levels editor: add a level → persists.
-   6. Backend sanity: students row exists, bcrypt password matches reference.
+   1. Retired /portal/signup redirects to the supported /admission flow.
+   2. Student completes the server-backed admission form → reference shown.
+   3. Row persisted with reference_no/gender/class_level.
+   4. Admin approves → student created with reference as default password.
+   5. Student logs into the portal with phone + reference.
+   6. Admin Settings → Class Levels editor: add a level → persists.
 */
 const puppeteer = require('puppeteer-core');
-const fs = require('fs');
-const path = require('path');
 const {
   requireDisposableTarget,
   assertAppTargetsDisposable,
@@ -26,17 +24,6 @@ const step = (n, ok, d = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${d ? '  :: ' + d : ''}`);
 };
 
-const setInput = (el, val) => {
-  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-  set.call(el, val);
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-};
-const setSelect = (sel, val) => {
-  const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-  set.call(sel, val);
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
-};
-
 (async () => {
   const browser = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--no-sandbox', '--disable-gpu'] });
   const page = await browser.newPage();
@@ -46,78 +33,87 @@ const setSelect = (sel, val) => {
   await assertServerEndpointsDisposable(BASE, target.url);
 
   const uniq = String(Date.now()).slice(-8);
-  const phone = '0187' + uniq.slice(0, 8).padEnd(8, '0').slice(0, 8);
+  const studentPhone = `018${uniq}`;
+  const guardianPhone = `019${uniq}`;
   let observedRef = null;
   const ADM_NAME_BASE = 'E2E Admission '; // prefix — full name built with a timestamp
 
-  // ── 1. Public portal signup ───────────────────────────────────────────────
+  // ── 1. Retired signup route redirects to the supported admission form ─────
   await page.goto(BASE + '/portal/signup', { waitUntil: 'networkidle2', timeout: 20000 });
-  // Wait until the form's name input and the class select actually exist.
-  await page.waitForSelector('input[placeholder="আপনার নাম"]', { timeout: 20000 });
-  await page.waitForSelector('select option:nth-child(2)', { timeout: 20000 });
-  await new Promise((r) => setTimeout(r, 400));
+  await page.waitForFunction(() => location.pathname === '/admission', { timeout: 20000 });
+  step('Signup: retired route redirects to /admission', new URL(page.url()).pathname === '/admission');
 
-  // Discovery returns primitive facts only (DOM elements don't survive
-  // evaluate's return-value serialization); the fill pass re-queries the DOM.
-  const fields = await page.evaluate(() => {
-    const els = Array.from(document.querySelectorAll('input'));
-    const byPh = (ph) => !!els.find((i) => i.placeholder === ph);
-    const selects = Array.from(document.querySelectorAll('select'));
-    const classOpts = (() => {
-      try { return Array.from(selects[0]?.options ?? []).map((o) => o.text.trim()).filter(Boolean); } catch { return []; }
-    })();
-    return {
-      hasName: byPh('আপনার নাম'),
-      hasGuardian: byPh('অভিভাবকের নাম'),
-      phoneCount: els.filter((i) => i.placeholder === '01XXXXXXXXX').length,
-      hasEmail: byPh('email@example.com'),
-      hasAddress: !!document.querySelector('textarea[placeholder="বাসার ঠিকানা"]'),
-      selectCount: selects.length,
-      classOpts,
-    };
-  });
-  console.log('[fields debug]', JSON.stringify(fields).slice(0, 260));
+  // ── 2. Public, server-backed admission form ───────────────────────────────
+  await page.waitForSelector('input[name="name"]', { timeout: 20000 });
+  const fields = await page.evaluate(() => ({
+    hasName: !!document.querySelector('input[name="name"]'),
+    hasGuardian: !!document.querySelector('input[name="guardian_name"]'),
+    hasStudentPhone: !!document.querySelector('input[name="phone"]'),
+    hasGuardianPhone: !!document.querySelector('input[name="guardian_phone"]'),
+    hasEmail: !!document.querySelector('input[name="email"]'),
+    hasAddress: !!document.querySelector('input[name="address"]'),
+    hasClass: !!document.querySelector('select[name="class_level"]'),
+    hasGender: !!document.querySelector('select[name="gender"]'),
+  }));
   step(
-    'Signup: all required fields render',
-    !!(fields.hasName && fields.hasGuardian && fields.phoneCount >= 2 && fields.hasEmail && fields.hasAddress && fields.selectCount >= 3 && fields.classOpts.length > 1),
-    `phones=${fields.phoneCount} selects=${fields.selectCount} classes=${fields.classOpts.length}`
+    'Admission: current personal fields render',
+    Object.values(fields).every(Boolean),
+    JSON.stringify(fields)
   );
 
-  // Fill everything a student record needs (except status + photo).
-  const filledName = await page.evaluate((prefix) => {
-    const els = Array.from(document.querySelectorAll('input'));
-    const byPh = (ph) => els.find((i) => i.placeholder === ph);
-    const selects = Array.from(document.querySelectorAll('select'));
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    const setTa = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    const name = byPh('আপনার নাম');
-    const guardian = byPh('অভিভাবকের নাম');
-    const phones = els.filter((i) => i.placeholder === '01XXXXXXXXX');
-    const email = byPh('email@example.com');
-    const address = document.querySelector('textarea[placeholder="বাসার ঠিকানা"]');
+  // Fill the current first step using stable field names.
+  const filledName = await page.evaluate(([prefix, phone, guardian]) => {
+    const setValue = (selector, value) => {
+      const input = document.querySelector(selector);
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      set.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const setSelect = (selector, value) => {
+      const select = document.querySelector(selector);
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+      set.call(select, value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
     const fullName = prefix + Date.now().toString().slice(-8);
-    set.call(name, fullName); name.dispatchEvent(new Event('input', { bubbles: true }));
-    set.call(guardian, 'E2E Guardian'); guardian.dispatchEvent(new Event('input', { bubbles: true }));
-    set.call(phones[0], '01931110001'); phones[0].dispatchEvent(new Event('input', { bubbles: true })); // guardian phone
-    set.call(phones[1], '01931110002'); phones[1].dispatchEvent(new Event('input', { bubbles: true })); // student phone
-    set.call(email, 'e2e-adm@example.com'); email.dispatchEvent(new Event('input', { bubbles: true }));
-    if (address) { setTa.call(address, 'E2E House, Dhaka'); address.dispatchEvent(new Event('input', { bubbles: true })); }
-    const sset = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-    if (selects[0]) { sset.call(selects[0], selects[0].options[1]?.value || ''); selects[0].dispatchEvent(new Event('change', { bubbles: true })); }
-    if (selects[1]) { sset.call(selects[1], selects[1].options[1]?.value || ''); selects[1].dispatchEvent(new Event('change', { bubbles: true })); }
-    if (selects[2]) { sset.call(selects[2], selects[2].options[1]?.value || ''); selects[2].dispatchEvent(new Event('change', { bubbles: true })); }
+    setValue('input[name="name"]', fullName);
+    setValue('input[name="email"]', `e2e-adm-${Date.now()}@example.com`);
+    setValue('input[name="phone"]', phone);
+    setValue('input[name="guardian_name"]', 'E2E Guardian');
+    setValue('input[name="guardian_phone"]', guardian);
+    setValue('input[name="address"]', 'E2E House, Dhaka');
+    const classSelect = document.querySelector('select[name="class_level"]');
+    setSelect('select[name="class_level"]', classSelect.options[1]?.value || '');
+    setSelect('select[name="gender"]', 'male');
     return fullName;
-  }, ADM_NAME_BASE);
+  }, [ADM_NAME_BASE, studentPhone, guardianPhone]);
 
-  await new Promise((r) => setTimeout(r, 400));
   await page.evaluate(() => {
-    const b = Array.from(document.querySelectorAll('button')).find((x) => x.textContent.includes('আবেদন জমা দিন'));
-    if (b) b.click();
+    const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent.includes('Next'));
+    if (button) button.click();
   });
-  await new Promise((r) => setTimeout(r, 3000));
+  await page.waitForSelector('select[name="batch_id"] option:nth-child(2)', { timeout: 20000 });
+  await page.evaluate(() => {
+    const select = document.querySelector('select[name="batch_id"]');
+    const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+    set.call(select, select.options[1].value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const message = document.querySelector('textarea[name="message"]');
+    const setTextarea = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setTextarea.call(message, 'Disposable admission end-to-end check');
+    message.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await page.evaluate(() => {
+    const review = Array.from(document.querySelectorAll('button')).find((item) => item.textContent.includes('Review'));
+    if (review) review.click();
+  });
+  await page.waitForSelector('button[type="submit"]', { timeout: 10000 });
+  await page.click('button[type="submit"]');
+  await page.waitForFunction(() => /আবেদন সফল|জমা দিতে সমস্যা/.test(document.body.innerText), { timeout: 20000 });
   const body = await page.evaluate(() => document.body.innerText);
-  const refMatch = body.match(/APP-[A-Z0-9]{6}/);
-  step('Signup: success screen with reference number', body.includes('আবেদন সফল') && !!refMatch, refMatch?.[0] ?? (body.includes('সমস্যা') ? 'DB error' : 'no-ref'));
+  const refMatch = body.match(/APP-[A-Z0-9_-]{12}/);
+  step('Admission: server-backed submission returns reference', body.includes('আবেদন সফল') && !!refMatch, refMatch?.[0] ?? (body.includes('সমস্যা') ? 'submission error' : 'no-ref'));
   observedRef = refMatch?.[0] ?? null;
 
   // ── 3. Admin: row persisted + approve → default password = reference ───────
@@ -144,7 +140,7 @@ const setSelect = (sel, val) => {
       .limit(1);
     return data?.[0] ?? null;
   }, observedRef || '__none__');
-  step('Signup: row persisted w/ reference + gender + class + guardian', !!(persisted && persisted.reference_no && persisted.gender && persisted.class_level && persisted.guardian_phone), JSON.stringify(persisted && { ref: persisted.reference_no, gender: persisted.gender, cls: persisted.class_level }));
+  step('Admission: row persisted w/ reference + gender + class + guardian', !!(persisted && persisted.reference_no && persisted.gender && persisted.class_level && persisted.guardian_phone), JSON.stringify(persisted && { ref: persisted.reference_no, gender: persisted.gender, cls: persisted.class_level }));
 
   await adminPage.goto(BASE + '/admin/admissions', { waitUntil: 'networkidle2', timeout: 20000 });
   await new Promise((r) => setTimeout(r, 1500));
@@ -210,7 +206,6 @@ const setSelect = (sel, val) => {
   }
 
   // ── 4. Student login: phone + reference ────────────────────────────────────
-  const studentPhone = '01931110002'; // second phone field = student
   const stu = await browser.newPage();
   await stu.goto(BASE + '/portal/login', { waitUntil: 'networkidle2', timeout: 20000 });
   await new Promise((r) => setTimeout(r, 800));
@@ -281,7 +276,7 @@ const setSelect = (sel, val) => {
   await new Promise((r) => setTimeout(r, 2000));
 
   // Cleanup DB rows created by this run (admission + student + associated).
-  await page.evaluate(async (r) => {
+  await page.evaluate(async ([r, phone]) => {
     const { supabase } = await import('/src/lib/supabase.ts');
     if (r) {
       const { data } = await supabase.from('admission_requests').select('id').eq('reference_no', r).maybeSingle();
@@ -289,13 +284,13 @@ const setSelect = (sel, val) => {
         await supabase.from('admission_requests').delete().eq('id', data.id);
       }
     }
-    const { data: stu } = await supabase.from('students').select('id').eq('phone', '01931110002').limit(1);
+    const { data: stu } = await supabase.from('students').select('id').eq('phone', phone).limit(1);
     for (const s of stu ?? []) {
       await supabase.from('fees').delete().eq('student_id', s.id);
       await supabase.from('student_sessions').delete().eq('student_id', s.id);
       await supabase.from('students').delete().eq('id', s.id);
     }
-  }, observedRef);
+  }, [observedRef, studentPhone]);
 
   await browser.close();
   const passed = results.filter(Boolean).length;

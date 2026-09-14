@@ -5,7 +5,6 @@ import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Save,
-  Smartphone,
   BarChart2,
   Share2,
   Palette,
@@ -30,11 +29,13 @@ import {
 } from 'lucide-react';
 import { applyThemeColor, cn } from '@/lib/utils';
 import { classLevelList } from '@/store/useSettingsStore';
-import { sendSMS } from '@/lib/sms';
+import { MessagingProviderSettings } from '@/components/admin/MessagingProviderSettings';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { Avatar } from '@/components/shared/Avatar';
+import { uploadPublicAsset } from '@/lib/storageUploads';
 
 type Tab = 'institute' | 'payment' | 'sms' | 'stats' | 'social' | 'appearance' | 'admins';
+
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'institute', label: 'Institute', icon: Building },
   { id: 'payment', label: 'Payment', icon: CreditCard },
@@ -98,7 +99,10 @@ function SiteImageUpload({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <label htmlFor={`site-${label.toLowerCase()}`} className="btn-outline text-xs py-2 px-3 cursor-pointer inline-flex items-center gap-1.5">
+          <label
+            htmlFor={`site-${label.toLowerCase()}`}
+            className="btn-outline text-xs py-2 px-3 cursor-pointer inline-flex items-center gap-1.5"
+          >
             {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
             {uploading ? 'Uploading…' : 'Upload Image'}
           </label>
@@ -202,10 +206,6 @@ export default function SettingsPage() {
   const [form, setForm] = useState({ ...settings });
   const [saving, setSaving] = useState(false);
 
-  // SMS test
-  const [testPhone, setTestPhone] = useState('');
-  const [sendingTest, setSendingTest] = useState(false);
-
   // Stats auto-load
   const [loadingStats, setLoadingStats] = useState(false);
 
@@ -222,8 +222,14 @@ export default function SettingsPage() {
   const [loadingAdmins, setLoadingAdmins] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [feedbackRows, setFeedbackRows] = useState<any[]>([]);
-  const [feedbackForm, setFeedbackForm] = useState({ name: '', grade: '', content: '', rating: 5, image_url: '', is_published: true });
-  const [providerSecrets, setProviderSecrets] = useState({ smsKey: '', smsEndpoint: '', smsSender: '', emailKey: '', emailEndpoint: '', emailFrom: '' });
+  const [feedbackForm, setFeedbackForm] = useState({
+    name: '',
+    grade: '',
+    content: '',
+    rating: 5,
+    image_url: '',
+    is_published: true,
+  });
   // Admin profile picture
   const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -311,25 +317,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleTestSMS = async () => {
-    if (!testPhone) {
-      toast.error('Test phone number required');
-      return;
-    }
-    setSendingTest(true);
-    try {
-      await sendSMS(
-        testPhone,
-        `📱 Test SMS from ${form.centerName}. MIMSMS API is working!`,
-        'custom'
-      );
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setSendingTest(false);
-    }
-  };
-
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!curPw) {
@@ -394,24 +381,12 @@ export default function SettingsPage() {
   };
 
   const loadFeedback = async () => {
-    const { data } = await supabase.from('feedback').select('*').order('sort_order').order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('feedback')
+      .select('*')
+      .order('sort_order')
+      .order('created_at', { ascending: false });
     setFeedbackRows(data ?? []);
-  };
-
-  const loadProviderSecrets = async () => {
-    const { data } = await supabase.from('provider_secrets').select('provider,endpoint,sender_id,from_email').in('provider', ['sms', 'email']);
-    const sms = data?.find((x) => x.provider === 'sms');
-    const email = data?.find((x) => x.provider === 'email');
-    setProviderSecrets((p) => ({ ...p, smsEndpoint: sms?.endpoint ?? '', smsSender: sms?.sender_id ?? '', emailEndpoint: email?.endpoint ?? '', emailFrom: email?.from_email ?? '' }));
-  };
-  const saveProviderSecrets = async () => {
-    const rows = [
-      { provider: 'sms', ...(providerSecrets.smsKey ? { api_key: providerSecrets.smsKey } : {}), endpoint: providerSecrets.smsEndpoint, sender_id: providerSecrets.smsSender },
-      { provider: 'email', ...(providerSecrets.emailKey ? { api_key: providerSecrets.emailKey } : {}), endpoint: providerSecrets.emailEndpoint, from_email: providerSecrets.emailFrom },
-    ];
-    const { error } = await supabase.from('provider_secrets').upsert(rows, { onConflict: 'provider' });
-    if (error) toast.error(error.message);
-    else { toast.success('Provider settings saved'); setProviderSecrets((p) => ({ ...p, smsKey: '', emailKey: '' })); }
   };
 
   const saveFeedback = async () => {
@@ -420,26 +395,42 @@ export default function SettingsPage() {
       return;
     }
     const { error } = await supabase.from('feedback').insert(feedbackForm);
-    if (error) toast.error(error.message);
-    else { toast.success('Feedback saved'); setFeedbackForm({ name: '', grade: '', content: '', rating: 5, image_url: '', is_published: true }); loadFeedback(); }
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Feedback saved');
+      setFeedbackForm({
+        name: '',
+        grade: '',
+        content: '',
+        rating: 5,
+        image_url: '',
+        is_published: true,
+      });
+      loadFeedback();
+    }
   };
 
   useEffect(() => {
-    if (tab === 'institute') loadFeedback();
-    if (tab === 'sms') loadProviderSecrets();
+    if (tab === 'institute') {
+      loadFeedback();
+    }
   }, [tab]);
 
   const uploadFeedbackImage = async (file: File) => {
-    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type) || file.size > 5 * 1024 * 1024) {
-      toast.error('Use JPG, PNG, or WebP under 5 MB');
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type) || file.size > 2 * 1024 * 1024) {
+      toast.error('Use JPG, PNG, or WebP under 2 MB');
       return;
     }
-    const path = `feedback/${crypto.randomUUID()}.${file.type === 'image/png' ? 'png' : 'jpg'}`;
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
-    if (error) toast.error(error.message);
-    else {
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      setFeedbackForm((p) => ({ ...p, image_url: data.publicUrl }));
+    try {
+      const imageUrl = await uploadPublicAsset(
+        'feedback',
+        file,
+        file.type as 'image/jpeg' | 'image/png' | 'image/webp'
+      );
+      setFeedbackForm((p) => ({ ...p, image_url: imageUrl }));
+    } catch (err) {
+      handleSupabaseError(err);
     }
   };
 
@@ -494,22 +485,15 @@ export default function SettingsPage() {
         return;
       }
       const blob = await compressImage(file);
-      const path = `admins/${user.id}-photo.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-      if (upErr) {
-        throw upErr;
-      }
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = await uploadPublicAsset('admins', blob, 'image/jpeg');
       // Persist on the auth user; the header/sidebar read it from user_metadata.
       const { error: metaErr } = await supabase.auth.updateUser({
-        data: { photo_url: data.publicUrl },
+        data: { photo_url: publicUrl },
       });
       if (metaErr) {
         throw metaErr;
       }
-      setAdminPhotoUrl(`${data.publicUrl}?t=${Date.now()}`);
+      setAdminPhotoUrl(`${publicUrl}?t=${Date.now()}`);
       toast.success('Profile picture updated');
     } catch (err) {
       handleSupabaseError(err);
@@ -519,7 +503,7 @@ export default function SettingsPage() {
     }
   };
 
-  /** Upload a site logo or banner to the shared avatars bucket → public URL. */
+  /** Upload a site logo or banner through the admin-authenticated public-assets route. */
   const handleSiteImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     kind: 'logo' | 'banner'
@@ -528,31 +512,26 @@ export default function SettingsPage() {
     if (!file) {
       return;
     }
-    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
-      toast.error('Unsupported image. Use PNG, JPG, WebP, or SVG.');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error('Unsupported image. Use PNG, JPG, or WebP.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error(`${kind === 'logo' ? 'Logo' : 'Banner'} must be under 5 MB. Choose a smaller image.`);
+      toast.error(
+        `${kind === 'logo' ? 'Logo' : 'Banner'} must be under 5 MB. Choose a smaller image.`
+      );
       return;
     }
     setUploadingImg(kind);
     try {
-      const isSvg = file.type === 'image/svg+xml';
-      const preserveAlpha = kind === 'logo' && !isSvg && file.type !== 'image/jpeg';
+      const preserveAlpha = kind === 'logo' && file.type !== 'image/jpeg';
       const outputType = preserveAlpha ? 'image/png' : 'image/jpeg';
-      const blob = isSvg ? file : await compressImage(file, outputType);
-      const ext = isSvg ? 'svg' : preserveAlpha ? 'png' : 'jpg';
-      const path = `site/${kind}-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, blob, { upsert: true, contentType: isSvg ? file.type : outputType });
-      if (upErr) {
-        throw upErr;
-      }
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', data.publicUrl);
-      toast.success(kind === 'logo' ? 'Logo set — now save settings' : 'Banner set — now save settings');
+      const blob = await compressImage(file, outputType);
+      const publicUrl = await uploadPublicAsset('site', blob, outputType);
+      set(kind === 'logo' ? 'logoUrl' : 'bannerUrl', publicUrl);
+      toast.success(
+        kind === 'logo' ? 'Logo set — now save settings' : 'Banner set — now save settings'
+      );
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -679,7 +658,8 @@ export default function SettingsPage() {
                     placeholder="https://www.google.com/maps/embed?pb=…"
                   />
                   <p className="text-slate-500 text-xs mt-1">
-                    Paste the iframe HTML, iframe src, or normal Google Maps URL. The app will normalize it safely.
+                    Paste the iframe HTML, iframe src, or normal Google Maps URL. The app will
+                    normalize it safely.
                   </p>
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
@@ -943,66 +923,8 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ── SMS ── */}
-          {tab === 'sms' && (
-            <div className="card p-5 space-y-4">
-              <h3 className="font-semibold text-white text-sm flex items-center gap-2">
-                <Smartphone size={15} className="text-violet-400" /> MIMSMS Configuration
-              </h3>
-              <div className="card-glass p-3 text-xs text-slate-300 leading-relaxed">
-                The SMS API key is stored securely on the server and never exposed to the browser.
-                You can configure provider, endpoint, sender ID, and API keys below. Keys are
-                masked and never returned after saving.
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="SMS Provider"><input className="input-field" value={form.smsProvider} onChange={(e) => set('smsProvider', e.target.value)} placeholder="mimsms or custom" /></Field>
-                <Field label="SMS Sender ID"><input className="input-field" value={providerSecrets.smsSender} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsSender: e.target.value }))} placeholder="YourSchool" /></Field>
-                <Field label="SMS Endpoint"><input className="input-field" type="url" value={providerSecrets.smsEndpoint} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsEndpoint: e.target.value }))} placeholder="https://provider.example/send" /></Field>
-                <Field label="SMS API Key"><input className="input-field" type="password" value={providerSecrets.smsKey} onChange={(e) => setProviderSecrets((p) => ({ ...p, smsKey: e.target.value }))} placeholder="Leave blank to keep current key" /></Field>
-                <Field label="Email Provider"><input className="input-field" value={form.emailProvider} onChange={(e) => set('emailProvider', e.target.value)} placeholder="resend or custom" /></Field>
-                <Field label="Email Endpoint"><input className="input-field" type="url" value={providerSecrets.emailEndpoint} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailEndpoint: e.target.value }))} placeholder="https://api.resend.com/emails" /></Field>
-                <Field label="Email From"><input className="input-field" type="email" value={providerSecrets.emailFrom} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailFrom: e.target.value }))} placeholder="office@school.com" /></Field>
-                <Field label="Email API Key"><input className="input-field" type="password" value={providerSecrets.emailKey} onChange={(e) => setProviderSecrets((p) => ({ ...p, emailKey: e.target.value }))} placeholder="Leave blank to keep current key" /></Field>
-              </div>
-              <button type="button" onClick={saveProviderSecrets} className="btn-primary text-sm">Save provider settings</button>
-              <p className="text-xs text-slate-500">Provider keys are stored in protected provider_secrets and are never returned to the browser.</p>
-              <div className="border-t border-white/5 pt-4">
-                <p className="text-xs text-slate-400 mb-2">
-                  Send a test SMS to verify configuration:
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.target.value)}
-                    className="input-field flex-1"
-                    placeholder="01XXXXXXXXX"
-                    type="tel"
-                  />
-                  <button
-                    onClick={handleTestSMS}
-                    disabled={sendingTest}
-                    className="btn-outline text-sm px-4 shrink-0"
-                  >
-                    {sendingTest ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Send size={13} />
-                    )}{' '}
-                    Test
-                  </button>
-                </div>
-              </div>
-              <div className="card-glass p-3 text-xs text-slate-400 font-hind">
-                <p>
-                  API: <code className="text-sky-400 text-xs">https://api.mimsms.com/smsapi</code>
-                </p>
-                <p className="mt-1">
-                  Without a server API key, SMS will be logged as &apos;pending&apos; in the
-                  sms_logs table.
-                </p>
-              </div>
-            </div>
-          )}
+          {/* ── Messaging providers ── */}
+          {tab === 'sms' && <MessagingProviderSettings />}
 
           {/* ── Stats ── */}
           {tab === 'stats' && (
@@ -1102,9 +1024,9 @@ export default function SettingsPage() {
                 <Share2 size={15} className="text-sky-400" /> Social Media
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Paste the complete public page URL. After saving, the enabled links
-                appear as icons in the public website footer. WhatsApp is managed in
-                the Institute tab using the international phone number.
+                Paste the complete public page URL. After saving, the enabled links appear as icons
+                in the public website footer. WhatsApp is managed in the Institute tab using the
+                international phone number.
               </p>
               <Field label="Facebook URL">
                 <input
@@ -1157,20 +1079,86 @@ export default function SettingsPage() {
 
           {tab === 'institute' && (
             <div className="card p-5 space-y-4">
-              <h3 className="font-semibold text-white text-sm">Student Feedback / Success Stories</h3>
-              <p className="text-xs text-slate-500">Only published feedback appears on the homepage. Upload an optional student photo.</p>
+              <h3 className="font-semibold text-white text-sm">
+                Student Feedback / Success Stories
+              </h3>
+              <p className="text-xs text-slate-500">
+                Only published feedback appears on the homepage. Upload an optional student photo.
+              </p>
               <div className="grid grid-cols-2 gap-3">
-                <input className="input-field" placeholder="Student name" value={feedbackForm.name} onChange={(e) => setFeedbackForm((p) => ({ ...p, name: e.target.value }))} />
-                <input className="input-field" placeholder="SSC 2025 — GPA 5.00" value={feedbackForm.grade} onChange={(e) => setFeedbackForm((p) => ({ ...p, grade: e.target.value }))} />
+                <input
+                  className="input-field"
+                  placeholder="Student name"
+                  value={feedbackForm.name}
+                  onChange={(e) => setFeedbackForm((p) => ({ ...p, name: e.target.value }))}
+                />
+                <input
+                  className="input-field"
+                  placeholder="SSC 2025 — GPA 5.00"
+                  value={feedbackForm.grade}
+                  onChange={(e) => setFeedbackForm((p) => ({ ...p, grade: e.target.value }))}
+                />
               </div>
-              <textarea className="input-field" rows={3} placeholder="Student feedback" value={feedbackForm.content} onChange={(e) => setFeedbackForm((p) => ({ ...p, content: e.target.value }))} />
+              <textarea
+                className="input-field"
+                rows={3}
+                placeholder="Student feedback"
+                value={feedbackForm.content}
+                onChange={(e) => setFeedbackForm((p) => ({ ...p, content: e.target.value }))}
+              />
               <div className="flex items-center gap-3">
-                <input type="number" min={1} max={5} className="input-field w-24" value={feedbackForm.rating} onChange={(e) => setFeedbackForm((p) => ({ ...p, rating: Number(e.target.value) }))} />
-                <label className="btn-outline text-xs py-2 px-3 cursor-pointer">Upload image<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFeedbackImage(e.target.files[0])} /></label>
-                <button type="button" onClick={saveFeedback} className="btn-primary text-xs px-4 py-2">Add feedback</button>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  className="input-field w-24"
+                  value={feedbackForm.rating}
+                  onChange={(e) =>
+                    setFeedbackForm((p) => ({ ...p, rating: Number(e.target.value) }))
+                  }
+                />
+                <label className="btn-outline text-xs py-2 px-3 cursor-pointer">
+                  Upload image
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && uploadFeedbackImage(e.target.files[0])}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={saveFeedback}
+                  className="btn-primary text-xs px-4 py-2"
+                >
+                  Add feedback
+                </button>
               </div>
               <div className="space-y-2">
-                {feedbackRows.map((row) => <div key={row.id} className="flex items-center gap-3 rounded-lg border border-white/10 p-3"><span className="flex-1 text-sm text-white">{row.name}<span className="block text-xs text-slate-500">{row.content}</span></span><button type="button" className="btn-outline text-xs px-2 py-1" onClick={async () => { await supabase.from('feedback').update({ is_published: !row.is_published }).eq('id', row.id); loadFeedback(); }}>{row.is_published ? 'Unpublish' : 'Publish'}</button></div>)}
+                {feedbackRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-3 rounded-lg border border-white/10 p-3"
+                  >
+                    <span className="flex-1 text-sm text-white">
+                      {row.name}
+                      <span className="block text-xs text-slate-500">{row.content}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-outline text-xs px-2 py-1"
+                      onClick={async () => {
+                        await supabase
+                          .from('feedback')
+                          .update({ is_published: !row.is_published })
+                          .eq('id', row.id);
+                        loadFeedback();
+                      }}
+                    >
+                      {row.is_published ? 'Unpublish' : 'Publish'}
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1195,7 +1183,8 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-white font-medium">{form.primaryColor}</p>
                     <p className="text-slate-400 text-xs mt-1">
-                      Changes buttons, links, focus rings, active states, badges, and glows throughout the app.
+                      Changes buttons, links, focus rings, active states, badges, and glows
+                      throughout the app.
                     </p>
                   </div>
                 </div>
@@ -1212,35 +1201,40 @@ export default function SettingsPage() {
                           : 'border-white/10 bg-white/[0.03] hover:border-white/30'
                       )}
                     >
-                      <span className="block h-1.5 rounded-full mb-1" style={{ backgroundColor: preset.color }} />
+                      <span
+                        className="block h-1.5 rounded-full mb-1"
+                        style={{ backgroundColor: preset.color }}
+                      />
                       <span className="block text-[11px] text-white">{preset.name}</span>
                       <span className="block text-[10px] text-slate-500">{preset.description}</span>
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="pt-3 border-t border-white/10">
+                <label className="text-xs text-slate-400 mb-2 block">Button Style</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {BUTTON_STYLES.map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => set('buttonStyle', style.id)}
+                      className={cn(
+                        'rounded-xl border px-2.5 py-2 text-left transition-all',
+                        form.buttonStyle === style.id
+                          ? 'border-white/70 bg-white/10'
+                          : 'border-white/10 bg-white/[0.03] hover:border-white/30'
+                      )}
+                    >
+                      <span className="block text-xs text-white">{style.name}</span>
+                      <span className="block text-[10px] text-slate-500 mt-0.5">
+                        {style.description}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <div className="pt-3 border-t border-white/10">
-                  <label className="text-xs text-slate-400 mb-2 block">Button Style</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {BUTTON_STYLES.map((style) => (
-                      <button
-                        key={style.id}
-                        type="button"
-                        onClick={() => set('buttonStyle', style.id)}
-                        className={cn(
-                          'rounded-xl border px-2.5 py-2 text-left transition-all',
-                          form.buttonStyle === style.id
-                            ? 'border-white/70 bg-white/10'
-                            : 'border-white/10 bg-white/[0.03] hover:border-white/30'
-                        )}
-                      >
-                        <span className="block text-xs text-white">{style.name}</span>
-                        <span className="block text-[10px] text-slate-500 mt-0.5">{style.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="card-glass p-4 border border-sky-400/10">
+              </div>
+              <div className="card-glass p-4 border border-sky-400/10">
                 <p className="text-xs text-slate-400 font-hind">
                   Preview buttons with current color:
                 </p>
@@ -1287,7 +1281,7 @@ export default function SettingsPage() {
                     <input
                       id="admin-photo-input"
                       type="file"
-                       accept="image/png,image/jpeg,image/webp"
+                      accept="image/png,image/jpeg,image/webp"
                       className="hidden"
                       onChange={handleAdminPhotoChange}
                     />
@@ -1296,10 +1290,10 @@ export default function SettingsPage() {
                     <p className="text-white text-sm font-medium">{adminEmail || 'Admin'}</p>
                     <span className="badge-green text-xs">Active</span>
                   </div>
-                  </div>
-                  <p className="text-slate-500 text-[11px] mt-2">
-                    JPG/PNG/WebP · original max 5 MB · resized to 1024 px before upload
-                  </p>
+                </div>
+                <p className="text-slate-500 text-[11px] mt-2">
+                  JPG/PNG/WebP · original max 5 MB · resized to 1024 px before upload
+                </p>
 
                 <form
                   onSubmit={handleChangePassword}

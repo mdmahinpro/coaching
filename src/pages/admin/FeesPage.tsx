@@ -25,6 +25,7 @@ import {
 import { useDebounce } from '@/hooks/useDebounce';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS } from '@/lib/sms';
+import { formatMessagingResult, messagingIdempotencyKey } from '@/lib/messaging';
 import { generateReceipt } from '@/lib/pdf';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { logError } from '@/utils/logger';
@@ -698,7 +699,12 @@ function RecordPaymentTab({ batches }: { batches: { id: string; name: string }[]
     if (sendSMSFlag && selectedStudent.phone) {
       try {
         const msg = `প্রিয় ${selectedStudent.name}, ৳${finalAmount} ফি গ্রহণ করা হয়েছে। রশিদ: ${receiptNo}। ধন্যবাদ - ${settings.centerName}`;
-        await sendSMS(selectedStudent.phone, msg, 'FEE_PAID');
+        const receiptMessage = await sendSMS(selectedStudent.phone, msg, 'FEE_PAID', {
+          idempotencyKey: messagingIdempotencyKey('fee-receipt', selectedFee.id),
+        });
+        toast(receiptMessage.accepted > 0
+          ? `Receipt message: ${formatMessagingResult(receiptMessage)}`
+          : `Payment recorded; receipt message: ${formatMessagingResult(receiptMessage)}`);
       } catch (err) {
         handleSupabaseError(err);
       }
@@ -1122,8 +1128,10 @@ function DueReportTab({ batches }: { batches: any[] }) {
     }
     setSending(fee.id);
     const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-    const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
-    toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${fee.student.name}`);
+    const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER', {
+      idempotencyKey: messagingIdempotencyKey('fee-reminder', fee.id),
+    });
+    toast(`${fee.student.name}: ${formatMessagingResult(res)}`);
     setSending(null);
   };
 
@@ -1133,11 +1141,18 @@ function DueReportTab({ batches }: { batches: any[] }) {
       return;
     }
     setBulkSending(true);
-    for (const fee of targets) {
+    const results = await Promise.all(targets.map((fee) => {
       const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-      await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
-    }
-    toast.success(`SMS sent to ${targets.length} students`);
+      return sendSMS(fee.student.phone, msg, 'FEE_REMINDER', {
+        idempotencyKey: messagingIdempotencyKey('fee-reminder', fee.id),
+      });
+    }));
+    const totals = results.reduce((sum, result) => ({
+      accepted: sum.accepted + result.accepted,
+      failed: sum.failed + result.failed,
+      pending: sum.pending + result.pending,
+    }), { accepted: 0, failed: 0, pending: 0 });
+    toast(`Accepted ${totals.accepted}, failed ${totals.failed}, pending ${totals.pending}`);
     setBulkSending(false);
     setSelected(new Set());
   };
@@ -1406,16 +1421,8 @@ function AuditLogTab() {
   );
 
   useEffect(() => {
-    setPage(0);
-    setLogs([]);
-    load(true);
-  }, [filter]);
-
-  useEffect(() => {
-    if (page > 0) {
-      load();
-    }
-  }, [page]);
+    load(page === 0);
+  }, [load, page]);
 
   const formatDetail = (log: any): string => {
     if (log.action === 'payment_recorded' && log.new_data) {
@@ -1454,7 +1461,7 @@ function AuditLogTab() {
           {FILTER_OPTIONS.map((f) => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id)}
+              onClick={() => { setFilter(f.id); setPage(0); setLogs([]); }}
               className={`filter-pill ${filter === f.id ? 'active' : ''}`}
             >
               {f.label}

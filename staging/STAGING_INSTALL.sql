@@ -5505,325 +5505,6 @@ $fn$;
 REVOKE ALL ON FUNCTION admin_restore_backup(JSONB) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION admin_restore_backup(JSONB) TO authenticated;
 
--- === Migration: keep_alive_cron.sql ===
--- Enable the pg_cron extension
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-
--- Create the heartbeat table
-CREATE TABLE IF NOT EXISTS database_keepalive (
-    id INT PRIMARY KEY,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Insert the initial record
-INSERT INTO database_keepalive (id, created_at)
-VALUES (1, NOW())
-ON CONFLICT (id) DO UPDATE SET created_at = NOW();
-
--- Schedule the daily task to run at midnight every day
--- This refreshes the timestamp on the existing row
-SELECT cron.schedule('daily-heartbeat', '0 0 * * *', $$ UPDATE database_keepalive SET created_at = NOW() WHERE id = 1; $$);
-
--- === Migration: automated_backups.sql ===
--- Automated backup system using pg_cron
--- This creates a table to store backup snapshots and schedules
--- daily automated backups of all application tables.
-
--- 1. Create the backups table
-CREATE TABLE IF NOT EXISTS backups (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    backup_date TIMESTAMPTZ DEFAULT NOW(),
-    institute_name TEXT DEFAULT 'CoachingCenter',
-    tables JSONB NOT NULL,
-    record_count INT DEFAULT 0,
-    triggered_by TEXT DEFAULT 'cron',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 2. Create an index on backup_date for efficient querying
-CREATE INDEX IF NOT EXISTS idx_backups_date ON backups(backup_date);
-
--- 3. Create the backup function
-CREATE OR REPLACE FUNCTION create_automated_backup()
-RETURNS VOID AS $$
-DECLARE
-    payload JSONB;
-    total_records INT := 0;
-    institute_val TEXT;
-BEGIN
-    -- Get institute name
-    SELECT value INTO institute_val
-    FROM site_settings
-    WHERE key = 'institute_name'
-    LIMIT 1;
-
-    IF institute_val IS NULL THEN
-        institute_val := 'CoachingCenter';
-    END IF;
-
-    -- Build backup payload from all tables
-    payload := jsonb_build_object(
-        'backup_version', '1.0',
-        'backup_date', NOW(),
-        'institute', institute_val,
-        'tables', jsonb_build_object(
-            'site_settings', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM site_settings) t),
-            'batches', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM batches) t),
-            'teachers', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM teachers) t),
-            'students', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM students) t),
-            'fees', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM fees) t),
-            'notices', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM notices) t),
-            'exams', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM exams) t),
-            'mcq_questions', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM mcq_questions) t),
-            'mcq_submissions', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM mcq_submissions) t),
-            'sms_logs', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM sms_logs) t),
-            'admission_requests', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM admission_requests) t)
-        )
-    );
-
-    -- Count total records
-    SELECT COALESCE(SUM(jsonb_array_length(value)), 0) INTO total_records
-    FROM jsonb_each(payload->'tables');
-
-    -- Insert backup
-    INSERT INTO backups (institute_name, tables, record_count, triggered_by)
-    VALUES (institute_val, payload, total_records, 'cron');
-END;
-$$ LANGUAGE plpgsql;
-
--- 4. Schedule daily automated backup at midnight
-SELECT cron.schedule(
-    'daily-automated-backup',
-    '0 0 * * *',
-    $$ SELECT create_automated_backup(); $$
-);
-
--- === Migration: 20250905000001_backups_admin_rls.sql ===
--- Hardened RLS for the backups table.
---
--- The legacy source file backup_rls_policies.sql used a broad
--- "Allow auth all backups" policy (FOR ALL TO authenticated USING (true)),
--- which does not survive the reviewed security model. Backups contain full
--- business snapshots (students, fees, payment records), so access must be
--- gated on is_admin() exactly like feedback, email_logs, and provider_secrets.
--- This migration runs after automated_backups.sql (which creates the table).
-
-ALTER TABLE public.backups ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS backups_admin_all ON public.backups;
-CREATE POLICY backups_admin_all ON public.backups
-  FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
-
--- === Migration: 20250905000002_backup_coverage.sql ===
--- Automated backup coverage hardening
--- Apply after automated_backups.sql. This replaces the backup function while
--- preserving the existing backups table and cron job.
-
-CREATE OR REPLACE FUNCTION create_automated_backup()
-RETURNS VOID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $$
-DECLARE
-    tables_payload JSONB;
-    total_records INTEGER := 0;
-    institute_val TEXT;
-BEGIN
-    SELECT value INTO institute_val
-    FROM site_settings
-    WHERE key = 'institute_name'
-    LIMIT 1;
-
-    institute_val := COALESCE(institute_val, 'CoachingCenter');
-
-    -- Durable business and audit data only. Session tokens, exam tokens,
-    -- admin roster, password hashes, and provider secrets are intentionally
-    -- excluded from portable backups for security.
-    tables_payload := jsonb_build_object(
-        'site_settings', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM site_settings) t),
-        'batches', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM batches) t),
-        'teachers', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM teachers) t),
-        'students', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM students) t),
-        'fees', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM fees) t),
-        'payment_approvals', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM payment_approvals) t),
-        'fee_audit_logs', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM fee_audit_logs) t),
-        'notices', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM notices) t),
-        'exams', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM exams) t),
-        'mcq_questions', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM mcq_questions) t),
-        'mcq_submissions', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM mcq_submissions) t),
-        'sms_logs', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM sms_logs) t),
-        'admission_requests', (SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb) FROM (SELECT * FROM admission_requests) t)
-    );
-
-    SELECT COALESCE(SUM(jsonb_array_length(value)), 0)
-    INTO total_records
-    FROM jsonb_each(tables_payload);
-
-    INSERT INTO backups (institute_name, tables, record_count, triggered_by)
-    VALUES (institute_val, tables_payload, total_records, 'cron');
-END;
-$$;
-
-REVOKE ALL ON FUNCTION create_automated_backup() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION create_automated_backup() TO service_role;
-
--- Replace the named schedule safely when this migration is re-run.
-DO $$
-DECLARE
-    existing_job_id BIGINT;
-BEGIN
-    SELECT jobid INTO existing_job_id
-    FROM cron.job
-    WHERE jobname = 'daily-automated-backup'
-    LIMIT 1;
-
-    IF existing_job_id IS NOT NULL THEN
-        PERFORM cron.unschedule(existing_job_id);
-    END IF;
-
-    PERFORM cron.schedule(
-        'daily-automated-backup',
-        '0 0 * * *',
-        $cron$ SELECT create_automated_backup(); $cron$
-    );
-END;
-$$;
-
--- === Migration: 20250905000003_backup_restore_coverage.sql ===
--- Extend the transactional restore allowlist/order to match
--- 20250905000002_backup_coverage.sql and manual BackupPage coverage.
-
-CREATE OR REPLACE FUNCTION admin_restore_backup(p_tables JSONB)
-RETURNS TABLE (table_name TEXT, rows_restored INTEGER)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
-AS $fn$
-DECLARE
-  v_key       TEXT;
-  v_rows      JSONB;
-  v_cols      TEXT[];
-  v_defs      TEXT[];
-  v_sample    JSONB;
-  v_ins       TEXT;
-  v_def       TEXT;
-  v_delete_order TEXT[] := ARRAY[
-    'payment_approvals','fee_audit_logs','admission_requests',
-    'mcq_submissions','mcq_questions','sms_logs','notices','exams',
-    'fees','students','teachers','batches','site_settings'
-  ];
-  v_insert_order TEXT[] := ARRAY[
-    'site_settings','batches','teachers','students','fees',
-    'fee_audit_logs','notices','exams','mcq_questions','mcq_submissions',
-    'sms_logs','admission_requests','payment_approvals'
-  ];
-  v_count INTEGER;
-BEGIN
-  IF NOT is_admin() THEN
-    RAISE EXCEPTION 'Admin authorization required';
-  END IF;
-  IF p_tables IS NULL OR jsonb_typeof(p_tables) <> 'object' THEN
-    RAISE EXCEPTION 'no tables supplied' USING ERRCODE = '22023';
-  END IF;
-
-  FOR v_key IN SELECT jsonb_object_keys(p_tables) LOOP
-    IF NOT (v_key = ANY(v_insert_order)) THEN
-      RAISE EXCEPTION 'disallowed table in restore: %', v_key USING ERRCODE = '22023';
-    END IF;
-    IF jsonb_typeof(p_tables -> v_key) <> 'array' THEN
-      RAISE EXCEPTION 'malformed rows for table: %', v_key USING ERRCODE = '22023';
-    END IF;
-  END LOOP;
-
-  FOREACH v_key IN ARRAY v_delete_order LOOP
-    IF p_tables ? v_key THEN
-      EXECUTE format('DELETE FROM %I', v_key);
-    END IF;
-  END LOOP;
-
-  FOREACH v_key IN ARRAY v_insert_order LOOP
-    IF NOT p_tables ? v_key THEN CONTINUE; END IF;
-    v_rows := p_tables -> v_key;
-    v_count := jsonb_array_length(v_rows);
-    IF v_count = 0 THEN CONTINUE; END IF;
-    v_sample := v_rows -> 0;
-
-    SELECT array_agg(c.column_name ORDER BY c.ordinal_position) INTO v_cols
-    FROM information_schema.columns c
-    WHERE c.table_schema = 'public'
-      AND c.table_name = v_key
-      AND c.column_name IN (SELECT jsonb_object_keys(v_sample));
-    IF v_cols IS NULL OR array_length(v_cols, 1) IS NULL THEN CONTINUE; END IF;
-
-    SELECT array_agg(
-      c.column_name || ' ' ||
-      CASE
-        WHEN c.data_type = 'ARRAY' THEN c.udt_name
-        WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
-        ELSE c.data_type
-      END
-      ORDER BY c.ordinal_position
-    ) INTO v_defs
-    FROM information_schema.columns c
-    WHERE c.table_schema = 'public'
-      AND c.table_name = v_key
-      AND c.column_name = ANY(v_cols);
-
-    v_def := array_to_string(v_defs, ', ');
-    v_ins := array_to_string(v_cols, ', ');
-    BEGIN
-      EXECUTE format(
-        'INSERT INTO %I (%s) SELECT %s FROM jsonb_to_recordset($1::jsonb) AS x(%s)',
-        v_key, v_ins, v_ins, v_def
-      ) USING v_rows::text;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE EXCEPTION 'restore failed on table %: %', v_key, SQLERRM;
-    END;
-
-    table_name := v_key;
-    rows_restored := v_count;
-    RETURN NEXT;
-  END LOOP;
-END;
-$fn$;
-
-REVOKE ALL ON FUNCTION admin_restore_backup(JSONB) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION admin_restore_backup(JSONB) TO authenticated;
-
--- === Migration: 20250905000004_admin_backup_now.sql ===
--- Admin-triggered automated backup verification.
--- Lets an administrator create and inspect a snapshot immediately without
--- waiting for the midnight pg_cron schedule.
-
-CREATE OR REPLACE FUNCTION admin_create_backup_now()
-RETURNS TABLE (
-  id UUID,
-  backup_date TIMESTAMPTZ,
-  institute_name TEXT,
-  record_count INTEGER,
-  triggered_by TEXT
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $fn$
-BEGIN
-  IF NOT is_admin() THEN
-    RAISE EXCEPTION 'Admin authorization required';
-  END IF;
-
-  PERFORM create_automated_backup();
-
-  RETURN QUERY
-  SELECT b.id, b.backup_date, b.institute_name, b.record_count, b.triggered_by
-  FROM backups b
-  ORDER BY b.backup_date DESC
-  LIMIT 1;
-END;
-$fn$;
-
-REVOKE ALL ON FUNCTION admin_create_backup_now() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION admin_create_backup_now() TO authenticated;
-
 -- === Migration: 20250905000005_feedback_email.sql ===
 -- Published student feedback, email delivery logs, and student email updates.
 
@@ -6427,6 +6108,2009 @@ $fn$;
 REVOKE ALL ON FUNCTION public.exam_submit(TEXT, JSONB, INTEGER, INTEGER) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.exam_submit(TEXT, JSONB, INTEGER, INTEGER) TO anon, authenticated;
 
+-- === Migration: 20250910000001_fee_audit_logs_admin_rls.sql ===
+-- ============================================================
+--  fee_audit_logs: restore admin-write + admin-read RLS
+-- ============================================================
+-- `fee_audit_logs` was created out of band (support-tables migration 20250817
+-- deliberately omitted policies: "security migrations apply the reviewed final
+-- access model later"), but the hardening migration 20250824000000 (H2c) never
+-- added it to its is_admin()-gated loop, which only covered the 12 core tables
+-- plus the session/token tables. The result: the table is RLS-enabled with no
+-- usable policy for the `authenticated` role.
+--
+-- Symptom (verified on the disposable target):
+--   authenticated  INSERT  -> 42501 "new row violates row-level security policy"
+--   -> the admin "Record Payment" UI marks the fee paid but silently fails to
+--      write its mandatory `payment_recorded` audit entry (logFeeAudit swallows
+--      the error), and the Audit Log tab cannot fetch entries.
+--
+-- Fix: apply the exact canonical policy every other core table gets, gated by
+-- is_admin(). Admins keep full CRUD (record payment audit + audit tab read +
+-- e2e cleanup); anon / non-admin users remain fully denied.
+
+ALTER TABLE public.fee_audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Remove any legacy permissive all-authenticated policy first so behavior is
+-- deterministic regardless of what the out-of-band schema left behind.
+DROP POLICY IF EXISTS "Allow auth all fee_audit_logs" ON public.fee_audit_logs;
+DROP POLICY IF EXISTS "admin_all_fee_audit_logs"     ON public.fee_audit_logs;
+DROP POLICY IF EXISTS "admin_read_fee_audit_logs"    ON public.fee_audit_logs;
+
+CREATE POLICY "admin_all_fee_audit_logs"
+  ON public.fee_audit_logs
+  FOR ALL TO authenticated
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
+-- Deny anonymous/public table access to the financial audit trail.
+REVOKE ALL ON public.fee_audit_logs FROM PUBLIC, anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.fee_audit_logs TO authenticated;
+
+-- === Migration: 20250911000001_atomic_exam_deletion.sql ===
+-- Atomic, admin-only exam deletion.
+-- Deleting the parent relies on the existing ON DELETE CASCADE foreign keys for
+-- questions, submissions and exam tokens, so every related write commits or
+-- rolls back as one transaction.
+
+CREATE OR REPLACE FUNCTION public.admin_delete_exam(p_exam_id UUID)
+RETURNS TABLE (
+  questions_removed BIGINT,
+  submissions_removed BIGINT,
+  tokens_removed BIGINT,
+  exam_removed BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_questions BIGINT := 0;
+  v_submissions BIGINT := 0;
+  v_tokens BIGINT := 0;
+  v_exam_removed BOOLEAN := false;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Admin authorization required';
+  END IF;
+
+  -- Serialize concurrent deletion attempts and return a truthful not-found result.
+  PERFORM 1 FROM public.exams WHERE id = p_exam_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 0::BIGINT, 0::BIGINT, 0::BIGINT, false;
+    RETURN;
+  END IF;
+
+  IF TO_REGCLASS('public.mcq_questions') IS NOT NULL THEN
+    SELECT count(*) INTO v_questions
+    FROM public.mcq_questions
+    WHERE exam_id = p_exam_id;
+  END IF;
+
+  IF TO_REGCLASS('public.mcq_submissions') IS NOT NULL THEN
+    SELECT count(*) INTO v_submissions
+    FROM public.mcq_submissions
+    WHERE exam_id = p_exam_id;
+  END IF;
+
+  IF TO_REGCLASS('public.exam_tokens') IS NOT NULL THEN
+    SELECT count(*) INTO v_tokens
+    FROM public.exam_tokens
+    WHERE exam_id = p_exam_id;
+  END IF;
+
+  DELETE FROM public.exams WHERE id = p_exam_id;
+  v_exam_removed := FOUND;
+
+  RETURN QUERY SELECT v_questions, v_submissions, v_tokens, v_exam_removed;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION public.admin_delete_exam(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_delete_exam(UUID) TO authenticated;
+
+-- === Migration: 20250912000001_student_auth_hardening.sql ===
+-- Serialize student login attempts, remove legacy plaintext authentication, and
+-- retain the existing opaque-session RPC contract. This migration is data-only
+-- plus a CREATE OR REPLACE of public.verify_student_login(text, text).
+
+-- pgcrypto may be installed in public (fresh installs) or extensions (managed
+-- Supabase projects); cover both without hard-coding its deployment schema.
+SET search_path = public, extensions;
+
+-- Hash every non-empty legacy password before removing plaintext comparison.
+-- Already-valid bcrypt values are left untouched.
+UPDATE public.students AS s
+SET password = crypt(s.password, gen_salt('bf'))
+WHERE s.password IS NOT NULL
+  AND btrim(s.password) <> ''
+  AND s.password !~ '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$';
+
+-- Store historical attempt keys in the same canonical form used by the RPC so
+-- attempts made with cosmetic phone formatting cannot evade the shared budget.
+UPDATE public.login_attempts AS la
+SET phone_number = regexp_replace(btrim(la.phone_number), '[^0-9]', '', 'g')
+WHERE la.phone_number IS DISTINCT FROM
+      regexp_replace(btrim(la.phone_number), '[^0-9]', '', 'g');
+
+CREATE OR REPLACE FUNCTION public.verify_student_login(
+  p_phone    TEXT,
+  p_password TEXT
+)
+RETURNS TABLE (
+  id             UUID,
+  name           TEXT,
+  student_id     TEXT,
+  phone          TEXT,
+  email          TEXT,
+  guardian_name  TEXT,
+  guardian_phone TEXT,
+  address        TEXT,
+  class_level    TEXT,
+  gender         TEXT,
+  batch_id       UUID,
+  status         TEXT,
+  is_approved    BOOLEAN,
+  photo_url      TEXT,
+  created_at     TIMESTAMPTZ,
+  session_token  TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $function$
+DECLARE
+  v_phone        TEXT := regexp_replace(btrim(coalesce(p_phone, '')), '[^0-9]', '', 'g');
+  v_failed_count INTEGER;
+  v_id           UUID;
+  v_token        TEXT;
+BEGIN
+  -- Serialize the complete check/authenticate/record sequence for one normalized
+  -- phone. The transaction-scoped lock is released on either commit or failure.
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(v_phone, 0)
+  );
+
+  -- Deliberately allow catalog/table errors to propagate: inability to evaluate
+  -- the budget must never degrade into an authentication bypass (fail closed).
+  SELECT count(*) INTO v_failed_count
+  FROM public.login_attempts AS la
+  WHERE la.phone_number = v_phone
+    AND la.success = false
+    AND la.attempt_time > clock_timestamp() - interval '15 minutes';
+
+  IF v_failed_count >= 5 THEN
+    RAISE EXCEPTION 'Too many failed attempts. Please try again later.';
+  END IF;
+
+  SELECT s.id INTO v_id
+  FROM public.students AS s
+  WHERE regexp_replace(btrim(s.phone), '[^0-9]', '', 'g') = v_phone
+    AND s.password ~ '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+    AND s.password = crypt(p_password, s.password)
+  ORDER BY s.id
+  LIMIT 1;
+
+  IF v_id IS NULL THEN
+    -- Return an empty result instead of raising after this insert: an exception
+    -- would roll the attempt back with the surrounding RPC transaction.
+    INSERT INTO public.login_attempts (phone_number, attempt_time, success)
+    VALUES (v_phone, clock_timestamp(), false);
+    RETURN;
+  END IF;
+
+  INSERT INTO public.login_attempts (phone_number, attempt_time, success)
+  VALUES (v_phone, clock_timestamp(), true);
+
+  -- Preserve opaque-session behavior: only _issue_student_session creates the
+  -- token, and only that token is returned to the caller.
+  v_token := public._issue_student_session(v_id);
+
+  RETURN QUERY
+  SELECT
+    s.id, s.name, s.student_id, s.phone,
+    s.email, s.guardian_name, s.guardian_phone, s.address,
+    s.class_level, s.gender, s.batch_id,
+    s.status, s.is_approved, s.photo_url, s.created_at,
+    v_token
+  FROM public.students AS s
+  WHERE s.id = v_id;
+END;
+$function$;
+
+GRANT EXECUTE ON FUNCTION public.verify_student_login(TEXT, TEXT) TO anon, authenticated;
+
+RESET search_path;
+
+-- === Migration: 20250913000001_private_avatars_public_assets.sql ===
+-- Reconcile storage with the production server boundaries.
+-- Student photos are private service-role-only objects. Intentionally public
+-- branding, teacher, feedback and admin images live in a separate public bucket
+-- and are also service-role-only for writes (via /api/upload-public-asset).
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'avatars', 'avatars', false, 2097152,
+  ARRAY['image/jpeg','image/png','image/webp']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = false,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'public-assets', 'public-assets', true, 2097152,
+  ARRAY['image/jpeg','image/png','image/webp']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = true,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+-- Remove every historical browser write/read policy for the old mixed bucket.
+DROP POLICY IF EXISTS "avatars_public_read" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_anon_insert" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_anon_update" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_anon_delete" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_anon_upload" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_auth_insert" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_auth_update" ON storage.objects;
+DROP POLICY IF EXISTS "avatars_auth_delete" ON storage.objects;
+
+-- Deliberately create no INSERT/UPDATE/DELETE policy for either bucket. Public
+-- means unauthenticated reads only; all writes require the server service role.
+
+-- Normalize legacy student public URLs to opaque private references. The server
+-- retrieval endpoint supports these refs and signs only the caller-authorized
+-- student's canonical object path.
+UPDATE public.students
+SET photo_url = regexp_replace(
+  photo_url,
+  '^https://[^/]+/storage/v1/object/public/avatars/(students/[0-9a-fA-F-]{36}-photo\.jpg)(\?.*)?$',
+  'avatars/\1'
+)
+WHERE photo_url ~ '^https://[^/]+/storage/v1/object/public/avatars/students/[0-9a-fA-F-]{36}-photo\.jpg(\?.*)?$';
+
+-- === Migration: 20250914000001_public_form_abuse_prevention.sql ===
+-- Public admission/contact submissions: service-role-only atomic insert + durable rate limits.
+CREATE TABLE IF NOT EXISTS public.public_form_rate_events (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  form_type TEXT NOT NULL CHECK (form_type IN ('admission', 'contact')),
+  ip_hash BYTEA NOT NULL,
+  phone_hash BYTEA,
+  email_hash BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE INDEX IF NOT EXISTS public_form_rate_events_ip_idx
+  ON public.public_form_rate_events (form_type, ip_hash, created_at DESC);
+CREATE INDEX IF NOT EXISTS public_form_rate_events_phone_idx
+  ON public.public_form_rate_events (form_type, phone_hash, created_at DESC)
+  WHERE phone_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS public_form_rate_events_email_idx
+  ON public.public_form_rate_events (form_type, email_hash, created_at DESC);
+
+ALTER TABLE public.public_form_rate_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.public_form_rate_events FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.public_form_rate_events_id_seq FROM PUBLIC, anon, authenticated;
+
+-- Direct anonymous inserts are replaced by the serverless endpoints and this RPC.
+DROP POLICY IF EXISTS "anon_insert_admission_requests" ON public.admission_requests;
+DROP POLICY IF EXISTS "anon_insert_contact_messages" ON public.contact_messages;
+REVOKE INSERT ON public.admission_requests FROM anon;
+REVOKE INSERT ON public.contact_messages FROM anon;
+
+CREATE UNIQUE INDEX IF NOT EXISTS admission_requests_reference_no_unique
+  ON public.admission_requests (reference_no) WHERE reference_no IS NOT NULL;
+
+-- Database-side limits remain authoritative even if a handler validation regression occurs.
+ALTER TABLE public.admission_requests
+  ADD CONSTRAINT admission_requests_public_lengths CHECK (
+    char_length(name) BETWEEN 2 AND 120
+    AND email IS NOT NULL AND char_length(email) BETWEEN 3 AND 254
+    AND phone IS NOT NULL AND char_length(phone) BETWEEN 8 AND 32
+    AND guardian_name IS NOT NULL AND char_length(guardian_name) BETWEEN 2 AND 120
+    AND guardian_phone IS NOT NULL AND char_length(guardian_phone) BETWEEN 8 AND 32
+    AND (address IS NULL OR char_length(address) <= 500)
+    AND (class_level IS NULL OR char_length(class_level) <= 80)
+    AND (gender IS NULL OR gender IN ('male', 'female', 'other'))
+    AND (message IS NULL OR char_length(message) <= 2000)
+    AND status IN ('pending', 'approved', 'rejected')
+    AND reference_no ~ '^APP-[A-Z0-9_-]{12}$'
+  ) NOT VALID;
+
+ALTER TABLE public.contact_messages
+  ADD CONSTRAINT contact_messages_public_lengths CHECK (
+    char_length(name) BETWEEN 2 AND 120
+    AND char_length(email) BETWEEN 3 AND 254
+    AND char_length(phone) <= 32
+    AND message IS NOT NULL AND char_length(message) BETWEEN 10 AND 2000
+  ) NOT VALID;
+
+CREATE OR REPLACE FUNCTION public.submit_public_form(
+  p_form_type TEXT,
+  p_client_ip INET,
+  p_payload JSONB,
+  p_reference_no TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, extensions
+AS $function$
+DECLARE
+  v_now TIMESTAMPTZ := clock_timestamp();
+  v_ip_hash BYTEA;
+  v_phone_hash BYTEA;
+  v_email_hash BYTEA;
+  v_phone TEXT;
+  v_email TEXT;
+  v_id UUID;
+  v_ip_limit INTEGER;
+  v_identity_limit INTEGER;
+BEGIN
+  IF p_form_type NOT IN ('admission', 'contact') OR p_client_ip IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'invalid_public_form';
+  END IF;
+
+  v_phone := regexp_replace(coalesce(p_payload->>'phone', ''), '[^0-9+]', '', 'g');
+  v_email := lower(btrim(coalesce(p_payload->>'email', '')));
+  IF v_email = '' THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'invalid_public_form';
+  END IF;
+
+  v_ip_hash := digest(host(p_client_ip), 'sha256');
+  v_phone_hash := CASE WHEN v_phone = '' THEN NULL ELSE digest(v_phone, 'sha256') END;
+  v_email_hash := digest(v_email, 'sha256');
+  v_ip_limit := CASE p_form_type WHEN 'admission' THEN 5 ELSE 10 END;
+  v_identity_limit := CASE p_form_type WHEN 'admission' THEN 3 ELSE 5 END;
+
+  -- Serialize contenders for all three counters before counting and inserting.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_form_type || ':ip:' || encode(v_ip_hash, 'hex'), 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_form_type || ':email:' || encode(v_email_hash, 'hex'), 0));
+  IF v_phone_hash IS NOT NULL THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended(p_form_type || ':phone:' || encode(v_phone_hash, 'hex'), 0));
+  END IF;
+
+  IF (SELECT count(*) FROM public.public_form_rate_events
+      WHERE form_type = p_form_type AND ip_hash = v_ip_hash AND created_at > v_now - interval '1 hour') >= v_ip_limit
+    OR (SELECT count(*) FROM public.public_form_rate_events
+      WHERE form_type = p_form_type AND email_hash = v_email_hash AND created_at > v_now - interval '24 hours') >= v_identity_limit
+    OR (v_phone_hash IS NOT NULL AND (SELECT count(*) FROM public.public_form_rate_events
+      WHERE form_type = p_form_type AND phone_hash = v_phone_hash AND created_at > v_now - interval '24 hours') >= v_identity_limit)
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'rate_limited';
+  END IF;
+
+  IF p_form_type = 'admission' THEN
+    IF p_reference_no IS NULL OR p_reference_no !~ '^APP-[A-Z0-9_-]{12}$' THEN
+      RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'invalid_public_form';
+    END IF;
+    INSERT INTO public.admission_requests (
+      name, email, phone, guardian_name, guardian_phone, address,
+      class_level, gender, batch_id, message, reference_no
+    ) VALUES (
+      p_payload->>'name', v_email, p_payload->>'phone', p_payload->>'guardian_name',
+      p_payload->>'guardian_phone', nullif(p_payload->>'address', ''),
+      nullif(p_payload->>'class_level', ''), nullif(p_payload->>'gender', ''),
+      (p_payload->>'batch_id')::uuid, nullif(p_payload->>'message', ''), p_reference_no
+    ) RETURNING id INTO v_id;
+  ELSE
+    INSERT INTO public.contact_messages (name, email, phone, message)
+    VALUES (p_payload->>'name', v_email, coalesce(p_payload->>'phone', ''), p_payload->>'message')
+    RETURNING id INTO v_id;
+  END IF;
+
+  INSERT INTO public.public_form_rate_events (form_type, ip_hash, phone_hash, email_hash, created_at)
+  VALUES (p_form_type, v_ip_hash, v_phone_hash, v_email_hash, v_now);
+
+  -- Opportunistic bounded-retention cleanup; rate events contain hashes only.
+  DELETE FROM public.public_form_rate_events WHERE created_at < v_now - interval '2 days';
+  RETURN jsonb_build_object('ok', true, 'id', v_id);
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.submit_public_form(TEXT, INET, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_public_form(TEXT, INET, JSONB, TEXT) TO service_role;
+
+-- === Migration: 20250915000001_durable_message_outbox.sql ===
+-- Durable server-only message outbox, delivery state, and admission notification.
+-- No provider credentials or raw provider responses belong in these tables.
+
+
+DO $do$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typname = 'message_channel') THEN
+    CREATE TYPE public.message_channel AS ENUM ('sms', 'email');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typname = 'message_job_status') THEN
+    CREATE TYPE public.message_job_status AS ENUM ('queued', 'processing', 'completed', 'partially_failed', 'failed', 'cancelled');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typname = 'message_delivery_status') THEN
+    CREATE TYPE public.message_delivery_status AS ENUM ('pending', 'processing', 'accepted', 'delivered', 'failed', 'bounced');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typname = 'message_attempt_outcome') THEN
+    CREATE TYPE public.message_attempt_outcome AS ENUM ('accepted', 'delivered', 'failed', 'bounced');
+  END IF;
+END
+$do$;
+
+CREATE TABLE public.messaging_configuration (
+  channel public.message_channel PRIMARY KEY,
+  provider_name TEXT NOT NULL CHECK (provider_name ~ '^[a-z0-9][a-z0-9_-]{0,63}$'),
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  sender_label TEXT CHECK (sender_label IS NULL OR char_length(sender_label) BETWEEN 1 AND 100),
+  max_attempts SMALLINT NOT NULL DEFAULT 5 CHECK (max_attempts BETWEEN 1 AND 20),
+  base_retry_seconds INTEGER NOT NULL DEFAULT 60 CHECK (base_retry_seconds BETWEEN 5 AND 86400),
+  lease_seconds INTEGER NOT NULL DEFAULT 120 CHECK (lease_seconds BETWEEN 15 AND 3600),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (lower(provider_name) !~ '(secret|token|password|api.?key|credential)'),
+  CHECK (sender_label IS NULL OR lower(sender_label) !~ '(secret|token|password|api.?key|credential)')
+);
+
+COMMENT ON TABLE public.messaging_configuration IS
+  'Non-secret operational messaging settings only. Provider credentials remain server-side and must never be stored here.';
+
+CREATE TABLE public.message_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  idempotency_key TEXT NOT NULL UNIQUE CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+  channel public.message_channel NOT NULL,
+  status public.message_job_status NOT NULL DEFAULT 'queued',
+  source_type TEXT NOT NULL CHECK (source_type ~ '^[a-z][a-z0-9_.-]{0,63}$'),
+  source_id UUID,
+  content JSONB NOT NULL CHECK (jsonb_typeof(content) = 'object' AND content <> '{}'::jsonb),
+  recipient_count INTEGER NOT NULL DEFAULT 0 CHECK (recipient_count >= 0),
+  accepted_count INTEGER NOT NULL DEFAULT 0 CHECK (accepted_count >= 0),
+  delivered_count INTEGER NOT NULL DEFAULT 0 CHECK (delivered_count >= 0),
+  failed_count INTEGER NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
+  bounced_count INTEGER NOT NULL DEFAULT 0 CHECK (bounced_count >= 0),
+  available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (accepted_count + delivered_count + failed_count + bounced_count <= recipient_count),
+  CHECK (content ? 'body'),
+  CHECK (NOT (content ?| ARRAY['password', 'reference_no', 'default_password', 'api_key', 'secret', 'token', 'provider_response']))
+);
+
+COMMENT ON COLUMN public.message_jobs.content IS
+  'Rendered message fields only; passwords, admission references, provider responses, and credentials are forbidden.';
+
+CREATE TABLE public.message_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.message_jobs(id) ON DELETE CASCADE,
+  recipient TEXT NOT NULL CHECK (char_length(recipient) BETWEEN 3 AND 320),
+  status public.message_delivery_status NOT NULL DEFAULT 'pending',
+  provider_message_id TEXT CHECK (provider_message_id IS NULL OR char_length(provider_message_id) <= 255),
+  attempt_count SMALLINT NOT NULL DEFAULT 0 CHECK (attempt_count BETWEEN 0 AND 20),
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  locked_at TIMESTAMPTZ,
+  locked_by TEXT CHECK (locked_by IS NULL OR char_length(locked_by) BETWEEN 1 AND 100),
+  accepted_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ,
+  failed_at TIMESTAMPTZ,
+  bounced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (job_id, recipient)
+);
+
+CREATE TABLE public.message_attempts (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  delivery_id UUID NOT NULL REFERENCES public.message_deliveries(id) ON DELETE CASCADE,
+  attempt_no SMALLINT NOT NULL CHECK (attempt_no BETWEEN 1 AND 20),
+  outcome public.message_attempt_outcome NOT NULL,
+  provider_message_id TEXT CHECK (provider_message_id IS NULL OR char_length(provider_message_id) <= 255),
+  failure_category TEXT CHECK (failure_category IS NULL OR failure_category IN ('configuration', 'authentication', 'rate_limit', 'provider', 'network', 'invalid_recipient', 'unknown')),
+  failure_code TEXT CHECK (failure_code IS NULL OR failure_code ~ '^[A-Za-z0-9_.:-]{1,100}$'),
+  failure_message TEXT CHECK (
+    failure_message IS NULL OR
+    (char_length(failure_message) <= 500 AND lower(failure_message) !~ '(authorization|bearer|api.?key|password|secret|token|credential|provider.response)')
+  ),
+  retryable BOOLEAN NOT NULL DEFAULT false,
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (delivery_id, attempt_no),
+  CHECK ((outcome IN ('failed', 'bounced')) OR (failure_category IS NULL AND failure_code IS NULL AND failure_message IS NULL))
+);
+
+COMMENT ON TABLE public.message_attempts IS
+  'Sanitized attempt audit only: never store request bodies, recipient values, credentials, headers, or raw provider responses.';
+
+CREATE INDEX message_jobs_ready_idx ON public.message_jobs (available_at, created_at)
+  WHERE status IN ('queued', 'processing');
+CREATE INDEX message_jobs_source_idx ON public.message_jobs (source_type, source_id, created_at DESC);
+CREATE INDEX message_jobs_created_at_idx ON public.message_jobs (created_at DESC);
+CREATE INDEX message_deliveries_claim_idx ON public.message_deliveries (next_attempt_at, created_at)
+  WHERE status IN ('pending', 'processing');
+CREATE INDEX message_deliveries_job_status_idx ON public.message_deliveries (job_id, status);
+CREATE INDEX message_deliveries_created_at_idx ON public.message_deliveries (created_at DESC);
+CREATE INDEX message_attempts_delivery_idx ON public.message_attempts (delivery_id, attempt_no DESC);
+CREATE INDEX message_attempts_created_at_idx ON public.message_attempts (created_at DESC);
+
+ALTER TABLE public.messaging_configuration ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_attempts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY messaging_configuration_admin_read ON public.messaging_configuration
+  FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY message_jobs_admin_read ON public.message_jobs
+  FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY message_deliveries_admin_read ON public.message_deliveries
+  FOR SELECT TO authenticated USING (public.is_admin());
+CREATE POLICY message_attempts_admin_read ON public.message_attempts
+  FOR SELECT TO authenticated USING (public.is_admin());
+
+REVOKE ALL ON TABLE public.messaging_configuration, public.message_jobs, public.message_deliveries, public.message_attempts FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.messaging_configuration, public.message_jobs, public.message_deliveries, public.message_attempts TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.messaging_configuration, public.message_jobs, public.message_deliveries, public.message_attempts TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.message_attempts_id_seq TO service_role;
+
+-- Provider credentials are server-only. Remove the legacy browser-admin policy and
+-- every direct browser grant; service_role remains the sole SQL API role allowed.
+ALTER TABLE public.provider_secrets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS provider_secrets_admin_all ON public.provider_secrets;
+REVOKE ALL ON TABLE public.provider_secrets FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.provider_secrets TO service_role;
+
+CREATE OR REPLACE FUNCTION public.enqueue_message_job(
+  p_idempotency_key TEXT,
+  p_channel public.message_channel,
+  p_source_type TEXT,
+  p_source_id UUID,
+  p_content JSONB,
+  p_recipients TEXT[],
+  p_available_at TIMESTAMPTZ DEFAULT now()
+)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_job_id UUID;
+  v_recipients TEXT[];
+BEGIN
+  SELECT COALESCE(array_agg(recipient ORDER BY recipient), ARRAY[]::TEXT[])
+    INTO v_recipients
+  FROM (
+    SELECT DISTINCT btrim(value) AS recipient
+    FROM unnest(COALESCE(p_recipients, ARRAY[]::TEXT[])) AS value
+    WHERE btrim(value) <> ''
+  ) AS normalized;
+
+  IF cardinality(v_recipients) = 0 THEN
+    RAISE EXCEPTION 'At least one recipient is required';
+  END IF;
+
+  INSERT INTO public.message_jobs (
+    idempotency_key, channel, source_type, source_id, content, recipient_count, available_at
+  ) VALUES (
+    p_idempotency_key, p_channel, p_source_type, p_source_id, p_content,
+    cardinality(v_recipients), COALESCE(p_available_at, now())
+  )
+  ON CONFLICT (idempotency_key) DO NOTHING
+  RETURNING id INTO v_job_id;
+
+  IF v_job_id IS NULL THEN
+    SELECT id INTO v_job_id
+    FROM public.message_jobs
+    WHERE idempotency_key = p_idempotency_key;
+    RETURN v_job_id;
+  END IF;
+
+  INSERT INTO public.message_deliveries (job_id, recipient, next_attempt_at)
+  SELECT v_job_id, recipient, COALESCE(p_available_at, now())
+  FROM unnest(v_recipients) AS recipient;
+
+  RETURN v_job_id;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.claim_message_deliveries(
+  p_worker_id TEXT,
+  p_limit INTEGER DEFAULT 25,
+  p_lease_seconds INTEGER DEFAULT 120
+)
+RETURNS TABLE (
+  delivery_id UUID,
+  job_id UUID,
+  channel public.message_channel,
+  recipient TEXT,
+  content JSONB,
+  attempt_no SMALLINT
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+BEGIN
+  IF btrim(COALESCE(p_worker_id, '')) = '' OR char_length(p_worker_id) > 100 THEN
+    RAISE EXCEPTION 'Invalid worker id';
+  END IF;
+  IF p_limit NOT BETWEEN 1 AND 100 OR p_lease_seconds NOT BETWEEN 15 AND 3600 THEN
+    RAISE EXCEPTION 'Invalid claim limits';
+  END IF;
+
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT d.id
+    FROM public.message_deliveries AS d
+    JOIN public.message_jobs AS j ON j.id = d.job_id
+    LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+    WHERE j.status IN ('queued', 'processing')
+      AND j.available_at <= now()
+      AND COALESCE(c.enabled, false)
+      AND d.attempt_count < COALESCE(c.max_attempts, 5)
+      AND (
+        (d.status = 'pending' AND d.next_attempt_at <= now()) OR
+        (d.status = 'processing' AND d.locked_at < now() - make_interval(secs => p_lease_seconds))
+      )
+    ORDER BY d.next_attempt_at, d.created_at
+    FOR UPDATE OF d SKIP LOCKED
+    LIMIT p_limit
+  ), claimed AS (
+    UPDATE public.message_deliveries AS d
+    SET status = 'processing',
+        attempt_count = d.attempt_count + 1,
+        locked_at = now(),
+        locked_by = p_worker_id,
+        updated_at = now()
+    FROM candidates AS x
+    WHERE d.id = x.id
+    RETURNING d.id, d.job_id, d.recipient, d.attempt_count
+  ), touched_jobs AS (
+    UPDATE public.message_jobs AS j
+    SET status = 'processing', started_at = COALESCE(j.started_at, now()), updated_at = now()
+    WHERE j.id IN (SELECT c.job_id FROM claimed AS c)
+    RETURNING j.id
+  )
+  SELECT c.id, c.job_id, j.channel, c.recipient, j.content, c.attempt_count
+  FROM claimed AS c
+  JOIN public.message_jobs AS j ON j.id = c.job_id;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.record_message_attempt(
+  p_delivery_id UUID,
+  p_worker_id TEXT,
+  p_outcome public.message_attempt_outcome,
+  p_provider_message_id TEXT DEFAULT NULL,
+  p_failure_category TEXT DEFAULT NULL,
+  p_failure_code TEXT DEFAULT NULL,
+  p_failure_message TEXT DEFAULT NULL,
+  p_retryable BOOLEAN DEFAULT false,
+  p_next_attempt_at TIMESTAMPTZ DEFAULT NULL
+)
+RETURNS public.message_delivery_status
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_max_attempts SMALLINT;
+  v_status public.message_delivery_status;
+  v_job_status public.message_job_status;
+BEGIN
+  SELECT d.*
+    INTO v_delivery
+  FROM public.message_deliveries AS d
+  WHERE d.id = p_delivery_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+
+  SELECT COALESCE(c.max_attempts, 5)
+    INTO v_max_attempts
+  FROM public.message_jobs AS j
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE j.id = v_delivery.job_id;
+  IF v_delivery.status <> 'processing' OR v_delivery.locked_by IS DISTINCT FROM p_worker_id THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  INSERT INTO public.message_attempts (
+    delivery_id, attempt_no, outcome, provider_message_id,
+    failure_category, failure_code, failure_message, retryable
+  ) VALUES (
+    v_delivery.id, v_delivery.attempt_count, p_outcome, p_provider_message_id,
+    p_failure_category, p_failure_code, p_failure_message, p_retryable
+  );
+
+  v_status := CASE
+    WHEN p_outcome = 'accepted' THEN 'accepted'::public.message_delivery_status
+    WHEN p_outcome = 'delivered' THEN 'delivered'::public.message_delivery_status
+    WHEN p_outcome = 'bounced' THEN 'bounced'::public.message_delivery_status
+    WHEN p_retryable AND v_delivery.attempt_count < v_max_attempts THEN 'pending'::public.message_delivery_status
+    ELSE 'failed'::public.message_delivery_status
+  END;
+
+  UPDATE public.message_deliveries
+  SET status = v_status,
+      provider_message_id = COALESCE(p_provider_message_id, provider_message_id),
+      next_attempt_at = CASE WHEN v_status = 'pending' THEN COALESCE(p_next_attempt_at, now() + interval '1 minute') ELSE next_attempt_at END,
+      locked_at = NULL,
+      locked_by = NULL,
+      accepted_at = CASE WHEN v_status = 'accepted' THEN now() ELSE accepted_at END,
+      delivered_at = CASE WHEN v_status = 'delivered' THEN now() ELSE delivered_at END,
+      failed_at = CASE WHEN v_status = 'failed' THEN now() ELSE failed_at END,
+      bounced_at = CASE WHEN v_status = 'bounced' THEN now() ELSE bounced_at END,
+      updated_at = now()
+  WHERE id = v_delivery.id;
+
+  SELECT CASE
+    WHEN count(*) FILTER (WHERE status IN ('pending', 'processing')) > 0 THEN 'processing'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) = count(*) THEN 'failed'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END
+  INTO v_job_status
+  FROM public.message_deliveries
+  WHERE job_id = v_delivery.job_id;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      completed_at = CASE WHEN v_job_status IN ('completed', 'partially_failed', 'failed') THEN COALESCE(j.completed_at, now()) ELSE NULL END,
+      updated_at = now()
+  FROM (
+    SELECT
+      count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN v_status;
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.enqueue_message_job(TEXT, public.message_channel, TEXT, UUID, JSONB, TEXT[], TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.claim_message_deliveries(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.enqueue_message_job(TEXT, public.message_channel, TEXT, UUID, JSONB, TEXT[], TIMESTAMPTZ) TO service_role;
+GRANT EXECUTE ON FUNCTION public.claim_message_deliveries(TEXT, INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) TO service_role;
+
+-- Preserve the existing RPC signature/return contract while making student creation,
+-- approval, and credential notification one transaction. The notification never
+-- repeats the admission reference or password.
+CREATE OR REPLACE FUNCTION public.admin_approve_admission(
+  p_admission_id UUID,
+  p_student_id TEXT,
+  p_password TEXT
+)
+RETURNS TABLE (student_id TEXT, student_uuid UUID, status TEXT, created BOOLEAN)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  a public.admission_requests%ROWTYPE;
+  s public.students%ROWTYPE;
+  v_channel public.message_channel;
+  v_recipient TEXT;
+  v_job_id UUID;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin authorization required'; END IF;
+
+  SELECT * INTO a FROM public.admission_requests WHERE id = p_admission_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Admission not found'; END IF;
+
+  IF a.status <> 'pending' THEN
+    SELECT * INTO s FROM public.students WHERE phone = a.phone ORDER BY created_at DESC LIMIT 1;
+    IF s.id IS NULL THEN RAISE EXCEPTION 'Admission is already processed but student is missing'; END IF;
+    RETURN QUERY SELECT s.student_id, s.id, a.status, false;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.students (
+    name, phone, student_id, password, email, guardian_name, guardian_phone,
+    address, class_level, gender, batch_id, status, is_approved, photo_url
+  ) VALUES (
+    a.name, a.phone, p_student_id, crypt(p_password, gen_salt('bf')), a.email,
+    a.guardian_name, a.guardian_phone, a.address, a.class_level, a.gender,
+    a.batch_id, 'active', true, NULL
+  )
+  RETURNING * INTO s;
+
+  IF a.batch_id IS NOT NULL THEN PERFORM public.increment_enrolled(a.batch_id); END IF;
+  UPDATE public.admission_requests SET status = 'approved' WHERE id = a.id;
+
+  IF NULLIF(btrim(a.phone), '') IS NOT NULL THEN
+    v_channel := 'sms';
+    v_recipient := btrim(a.phone);
+  ELSIF NULLIF(btrim(a.email), '') IS NOT NULL THEN
+    v_channel := 'email';
+    v_recipient := btrim(a.email);
+  ELSE
+    RAISE EXCEPTION 'Admission has no notification recipient';
+  END IF;
+
+  v_job_id := public.enqueue_message_job(
+    'admission-approved:' || a.id::TEXT,
+    v_channel,
+    'admission_approval',
+    a.id,
+    jsonb_build_object(
+      'subject', 'Admission approved',
+      'body', format('Your admission is approved. Student ID: %s. Use the admission reference you already saved as your initial password. For security, the reference is not repeated in this message.', s.student_id)
+    ),
+    ARRAY[v_recipient],
+    now()
+  );
+
+  RETURN QUERY SELECT s.student_id, s.id, 'approved'::TEXT, true;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Student already exists or generated student ID is already used';
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.admin_approve_admission(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_approve_admission(UUID, TEXT, TEXT) TO authenticated;
+
+-- Defense in depth for historical/portable backup payloads. This helper can be
+-- installed before or after the optional backup subsystem.
+CREATE OR REPLACE FUNCTION public._backup_redact_message_tables(p_tables JSONB)
+RETURNS JSONB
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
+AS $fn$
+  SELECT (CASE WHEN jsonb_typeof(p_tables) = 'object' THEN p_tables ELSE '{}'::jsonb END)
+    - 'provider_secrets'
+    - 'message_jobs'
+    - 'message_deliveries'
+    - 'message_attempts'
+    - 'messaging_configuration'
+$fn$;
+
+REVOKE ALL ON FUNCTION public._backup_redact_message_tables(JSONB) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public._backup_redact_message_tables(JSONB) TO service_role;
+
+DO $do$
+BEGIN
+  IF to_regclass('public.backups') IS NOT NULL THEN
+    UPDATE public.backups
+    SET tables = CASE
+      WHEN jsonb_typeof(tables -> 'tables') = 'object' THEN
+        tables || jsonb_build_object('tables', public._backup_redact_message_tables(tables -> 'tables'))
+      ELSE public._backup_redact_message_tables(tables)
+    END
+    WHERE tables ?| ARRAY['provider_secrets', 'message_jobs', 'message_deliveries', 'message_attempts', 'messaging_configuration']
+       OR (jsonb_typeof(tables -> 'tables') = 'object' AND (tables -> 'tables') ?| ARRAY['provider_secrets', 'message_jobs', 'message_deliveries', 'message_attempts', 'messaging_configuration']);
+  END IF;
+END
+$do$;
+
+-- === Migration: 20250915000002_messaging_worker_heartbeat.sql ===
+-- Persist scheduler liveness without storing host credentials or request metadata.
+
+CREATE TABLE public.messaging_worker_heartbeat (
+  id TEXT PRIMARY KEY CHECK (id = 'messaging-worker'),
+  last_success_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.messaging_worker_heartbeat IS
+  'Non-secret liveness marker updated only after successful messaging queue worker runs.';
+
+INSERT INTO public.messaging_worker_heartbeat (id) VALUES ('messaging-worker');
+
+ALTER TABLE public.messaging_worker_heartbeat ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.messaging_worker_heartbeat FROM PUBLIC, anon, authenticated;
+GRANT SELECT, UPDATE ON TABLE public.messaging_worker_heartbeat TO service_role;
+
+-- === Migration: 20250915000003_messaging_channel_claims.sql ===
+-- Seed non-secret messaging defaults and require channel-scoped delivery claims.
+
+
+INSERT INTO public.messaging_configuration (
+  channel,
+  provider_name,
+  enabled
+) VALUES
+  ('sms'::public.message_channel, 'mim', true),
+  ('email'::public.message_channel, 'resend', true)
+ON CONFLICT (channel) DO UPDATE
+SET provider_name = EXCLUDED.provider_name,
+    enabled = EXCLUDED.enabled,
+    updated_at = now();
+
+REVOKE ALL ON FUNCTION public.claim_message_deliveries(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated, service_role;
+DROP FUNCTION public.claim_message_deliveries(TEXT, INTEGER, INTEGER);
+
+CREATE OR REPLACE FUNCTION public.claim_message_deliveries(
+  p_worker_id TEXT,
+  p_channel public.message_channel,
+  p_limit INTEGER DEFAULT 25,
+  p_lease_seconds INTEGER DEFAULT 120
+)
+RETURNS TABLE (
+  delivery_id UUID,
+  job_id UUID,
+  channel public.message_channel,
+  recipient TEXT,
+  content JSONB,
+  attempt_no SMALLINT
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+BEGIN
+  IF btrim(COALESCE(p_worker_id, '')) = '' OR char_length(p_worker_id) > 100 THEN
+    RAISE EXCEPTION 'Invalid worker id';
+  END IF;
+  IF p_channel IS NULL THEN
+    RAISE EXCEPTION 'Message channel is required';
+  END IF;
+  IF p_limit NOT BETWEEN 1 AND 100 OR p_lease_seconds NOT BETWEEN 15 AND 3600 THEN
+    RAISE EXCEPTION 'Invalid claim limits';
+  END IF;
+
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT d.id
+    FROM public.message_deliveries AS d
+    JOIN public.message_jobs AS j ON j.id = d.job_id
+    JOIN public.messaging_configuration AS c ON c.channel = j.channel
+    WHERE j.channel = p_channel
+      AND j.status IN ('queued', 'processing')
+      AND j.available_at <= now()
+      AND c.enabled
+      AND d.attempt_count < c.max_attempts
+      AND (
+        (d.status = 'pending' AND d.next_attempt_at <= now()) OR
+        (d.status = 'processing' AND d.locked_at < now() - make_interval(secs => p_lease_seconds))
+      )
+    ORDER BY d.next_attempt_at, d.created_at
+    FOR UPDATE OF d SKIP LOCKED
+    LIMIT p_limit
+  ), claimed AS (
+    UPDATE public.message_deliveries AS d
+    SET status = 'processing',
+        attempt_count = d.attempt_count + 1,
+        locked_at = now(),
+        locked_by = p_worker_id,
+        updated_at = now()
+    FROM candidates AS x
+    WHERE d.id = x.id
+    RETURNING d.id, d.job_id, d.recipient, d.attempt_count
+  ), touched_jobs AS (
+    UPDATE public.message_jobs AS j
+    SET status = 'processing', started_at = COALESCE(j.started_at, now()), updated_at = now()
+    WHERE j.id IN (SELECT c.job_id FROM claimed AS c)
+    RETURNING j.id
+  )
+  SELECT c.id, c.job_id, j.channel, c.recipient, j.content, c.attempt_count
+  FROM claimed AS c
+  JOIN public.message_jobs AS j ON j.id = c.job_id;
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.claim_message_deliveries(TEXT, public.message_channel, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_message_deliveries(TEXT, public.message_channel, INTEGER, INTEGER) TO service_role;
+
+-- === Migration: 20250915000004_messaging_ambiguous_outcomes.sql ===
+-- Make ambiguous provider outcomes explicit and terminal until an operator reviews them.
+
+
+ALTER TYPE public.message_delivery_status ADD VALUE IF NOT EXISTS 'unknown';
+ALTER TYPE public.message_job_status ADD VALUE IF NOT EXISTS 'requires_review';
+
+ALTER TABLE public.message_jobs
+  ADD COLUMN IF NOT EXISTS unknown_count INTEGER NOT NULL DEFAULT 0 CHECK (unknown_count >= 0);
+
+ALTER TABLE public.message_jobs DROP CONSTRAINT IF EXISTS message_jobs_count_check;
+ALTER TABLE public.message_jobs
+  ADD CONSTRAINT message_jobs_count_check
+  CHECK (accepted_count + delivered_count + failed_count + bounced_count + unknown_count <= recipient_count);
+
+COMMENT ON COLUMN public.message_jobs.unknown_count IS
+  'Deliveries with an ambiguous provider outcome that require operator review and must not be retried automatically.';
+
+-- PostgreSQL cannot resolve a newly-added enum label until this transaction commits.
+-- Defer PL/pgSQL body validation; the function is compiled on first use after commit.
+SET LOCAL check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.record_message_attempt(
+  p_delivery_id UUID,
+  p_worker_id TEXT,
+  p_outcome public.message_attempt_outcome,
+  p_provider_message_id TEXT DEFAULT NULL,
+  p_failure_category TEXT DEFAULT NULL,
+  p_failure_code TEXT DEFAULT NULL,
+  p_failure_message TEXT DEFAULT NULL,
+  p_retryable BOOLEAN DEFAULT false,
+  p_next_attempt_at TIMESTAMPTZ DEFAULT NULL
+)
+RETURNS public.message_delivery_status
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_max_attempts SMALLINT;
+  v_status public.message_delivery_status;
+  v_job_status public.message_job_status;
+BEGIN
+  SELECT d.* INTO v_delivery
+  FROM public.message_deliveries AS d
+  WHERE d.id = p_delivery_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+
+  SELECT COALESCE(c.max_attempts, 5) INTO v_max_attempts
+  FROM public.message_jobs AS j
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE j.id = v_delivery.job_id;
+
+  IF v_delivery.status <> 'processing' OR v_delivery.locked_by IS DISTINCT FROM p_worker_id THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  INSERT INTO public.message_attempts (
+    delivery_id, attempt_no, outcome, provider_message_id,
+    failure_category, failure_code, failure_message, retryable
+  ) VALUES (
+    v_delivery.id, v_delivery.attempt_count, p_outcome, p_provider_message_id,
+    p_failure_category, p_failure_code, p_failure_message, p_retryable
+  );
+
+  v_status := CASE
+    WHEN p_outcome = 'accepted' THEN 'accepted'::public.message_delivery_status
+    WHEN p_outcome = 'delivered' THEN 'delivered'::public.message_delivery_status
+    WHEN p_outcome = 'bounced' THEN 'bounced'::public.message_delivery_status
+    WHEN p_retryable AND v_delivery.attempt_count < v_max_attempts THEN 'pending'::public.message_delivery_status
+    WHEN p_failure_category = 'unknown' THEN 'unknown'::public.message_delivery_status
+    ELSE 'failed'::public.message_delivery_status
+  END;
+
+  UPDATE public.message_deliveries
+  SET status = v_status,
+      provider_message_id = COALESCE(p_provider_message_id, provider_message_id),
+      next_attempt_at = CASE WHEN v_status = 'pending' THEN COALESCE(p_next_attempt_at, now() + interval '1 minute') ELSE next_attempt_at END,
+      locked_at = NULL,
+      locked_by = NULL,
+      accepted_at = CASE WHEN v_status = 'accepted' THEN now() ELSE accepted_at END,
+      delivered_at = CASE WHEN v_status = 'delivered' THEN now() ELSE delivered_at END,
+      failed_at = CASE WHEN v_status = 'failed' THEN now() ELSE failed_at END,
+      bounced_at = CASE WHEN v_status = 'bounced' THEN now() ELSE bounced_at END,
+      updated_at = now()
+  WHERE id = v_delivery.id;
+
+  SELECT CASE
+    WHEN count(*) FILTER (WHERE status = 'unknown') > 0 THEN 'requires_review'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('pending', 'processing')) > 0 THEN 'processing'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) = count(*) THEN 'failed'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END INTO v_job_status
+  FROM public.message_deliveries
+  WHERE job_id = v_delivery.job_id;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      unknown_count = a.unknown_count,
+      completed_at = CASE WHEN v_job_status IN ('completed', 'partially_failed', 'failed', 'requires_review') THEN COALESCE(j.completed_at, now()) ELSE NULL END,
+      updated_at = now()
+  FROM (
+    SELECT
+      count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count,
+      count(*) FILTER (WHERE status = 'unknown')::INTEGER AS unknown_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN v_status;
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) TO service_role;
+
+-- === Migration: 20250915000005_atomic_message_attempts.sql ===
+-- Make every provider attempt finalization atomic and require a real lease for inline sends.
+
+
+ALTER TYPE public.message_attempt_outcome ADD VALUE IF NOT EXISTS 'unknown';
+
+ALTER TABLE public.message_attempts
+  DROP CONSTRAINT IF EXISTS message_attempts_check;
+ALTER TABLE public.message_attempts
+  DROP CONSTRAINT IF EXISTS message_attempts_outcome_fields_check;
+ALTER TABLE public.message_attempts
+  ADD CONSTRAINT message_attempts_outcome_fields_check
+  CHECK ((outcome NOT IN ('accepted', 'delivered')) OR
+    (failure_category IS NULL AND failure_code IS NULL AND failure_message IS NULL));
+
+-- PostgreSQL cannot resolve a newly-added enum label until this transaction commits.
+SET LOCAL check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.claim_message_job_delivery(
+  p_job_id UUID,
+  p_worker_id TEXT,
+  p_lease_seconds INTEGER DEFAULT 120
+)
+RETURNS TABLE (
+  delivery_id UUID,
+  job_id UUID,
+  channel public.message_channel,
+  recipient TEXT,
+  content JSONB,
+  attempt_no SMALLINT
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+BEGIN
+  IF p_job_id IS NULL THEN RAISE EXCEPTION 'Message job is required'; END IF;
+  IF btrim(COALESCE(p_worker_id, '')) = '' OR char_length(p_worker_id) > 100 THEN
+    RAISE EXCEPTION 'Invalid worker id';
+  END IF;
+  IF p_lease_seconds NOT BETWEEN 15 AND 3600 THEN RAISE EXCEPTION 'Invalid lease duration'; END IF;
+
+  RETURN QUERY
+  WITH candidate AS (
+    SELECT d.id
+    FROM public.message_deliveries AS d
+    JOIN public.message_jobs AS j ON j.id = d.job_id
+    JOIN public.messaging_configuration AS c ON c.channel = j.channel
+    WHERE d.job_id = p_job_id
+      AND j.status IN ('queued', 'processing')
+      AND j.available_at <= now()
+      AND c.enabled
+      AND d.status = 'pending'
+      AND d.next_attempt_at <= now()
+      AND d.attempt_count < c.max_attempts
+    ORDER BY d.created_at
+    FOR UPDATE OF d SKIP LOCKED
+    LIMIT 1
+  ), claimed AS (
+    UPDATE public.message_deliveries AS d
+    SET status = 'processing',
+        attempt_count = d.attempt_count + 1,
+        locked_at = now(),
+        locked_by = p_worker_id,
+        updated_at = now()
+    FROM candidate AS x
+    WHERE d.id = x.id
+    RETURNING d.id, d.job_id, d.recipient, d.attempt_count
+  ), touched_job AS (
+    UPDATE public.message_jobs AS j
+    SET status = 'processing', started_at = COALESCE(j.started_at, now()), updated_at = now()
+    WHERE j.id IN (SELECT c.job_id FROM claimed AS c)
+    RETURNING j.id
+  )
+  SELECT c.id, c.job_id, j.channel, c.recipient, j.content, c.attempt_count
+  FROM claimed AS c
+  JOIN public.message_jobs AS j ON j.id = c.job_id;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.record_message_attempt(
+  p_delivery_id UUID,
+  p_worker_id TEXT,
+  p_outcome public.message_attempt_outcome,
+  p_provider_message_id TEXT DEFAULT NULL,
+  p_failure_category TEXT DEFAULT NULL,
+  p_failure_code TEXT DEFAULT NULL,
+  p_failure_message TEXT DEFAULT NULL,
+  p_retryable BOOLEAN DEFAULT false,
+  p_next_attempt_at TIMESTAMPTZ DEFAULT NULL
+)
+RETURNS public.message_delivery_status
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_max_attempts SMALLINT;
+  v_status public.message_delivery_status;
+  v_job_status public.message_job_status;
+  v_provider_message_id TEXT;
+  v_failure_category TEXT;
+  v_failure_code TEXT;
+  v_failure_message TEXT;
+BEGIN
+  SELECT d.* INTO v_delivery
+  FROM public.message_deliveries AS d
+  WHERE d.id = p_delivery_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+  IF v_delivery.status <> 'processing' OR v_delivery.locked_by IS DISTINCT FROM p_worker_id THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  -- Serialize aggregate refreshes for deliveries in the same job so the last
+  -- committer always observes every previously committed terminal transition.
+  PERFORM 1 FROM public.message_jobs AS j WHERE j.id = v_delivery.job_id FOR UPDATE;
+
+  SELECT COALESCE(c.max_attempts, 5) INTO v_max_attempts
+  FROM public.message_jobs AS j
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE j.id = v_delivery.job_id;
+
+  v_provider_message_id := NULLIF(left(btrim(COALESCE(p_provider_message_id, '')), 255), '');
+  IF p_outcome IN ('accepted', 'delivered') THEN
+    v_failure_category := NULL;
+    v_failure_code := NULL;
+    v_failure_message := NULL;
+  ELSE
+    v_failure_category := CASE WHEN p_failure_category IN
+      ('configuration', 'authentication', 'rate_limit', 'provider', 'network', 'invalid_recipient', 'unknown')
+      THEN p_failure_category ELSE 'unknown' END;
+    v_failure_code := CASE
+      WHEN p_failure_code ~ '^[A-Za-z0-9_.:-]{1,100}$' THEN p_failure_code
+      ELSE 'unknown' END;
+    v_failure_message := CASE
+      WHEN p_failure_message IS NULL THEN NULL
+      WHEN lower(p_failure_message) ~ '(authorization|bearer|api.?key|password|secret|token|credential|provider.response)'
+        THEN 'Provider attempt failed (details redacted)'
+      ELSE left(p_failure_message, 500) END;
+  END IF;
+
+  INSERT INTO public.message_attempts (
+    delivery_id, attempt_no, outcome, provider_message_id,
+    failure_category, failure_code, failure_message, retryable
+  ) VALUES (
+    v_delivery.id, v_delivery.attempt_count, p_outcome, v_provider_message_id,
+    v_failure_category, v_failure_code, v_failure_message, p_retryable
+  );
+
+  v_status := CASE
+    WHEN p_outcome = 'accepted' THEN 'accepted'::public.message_delivery_status
+    WHEN p_outcome = 'delivered' THEN 'delivered'::public.message_delivery_status
+    WHEN p_outcome = 'bounced' THEN 'bounced'::public.message_delivery_status
+    WHEN p_outcome = 'unknown' THEN 'unknown'::public.message_delivery_status
+    WHEN p_retryable AND v_delivery.attempt_count < v_max_attempts THEN 'pending'::public.message_delivery_status
+    ELSE 'failed'::public.message_delivery_status
+  END;
+
+  UPDATE public.message_deliveries
+  SET status = v_status,
+      provider_message_id = COALESCE(v_provider_message_id, provider_message_id),
+      next_attempt_at = CASE WHEN v_status = 'pending' THEN COALESCE(p_next_attempt_at, now() + interval '1 minute') ELSE next_attempt_at END,
+      locked_at = NULL,
+      locked_by = NULL,
+      accepted_at = CASE WHEN v_status = 'accepted' THEN now() ELSE accepted_at END,
+      delivered_at = CASE WHEN v_status = 'delivered' THEN now() ELSE delivered_at END,
+      failed_at = CASE WHEN v_status = 'failed' THEN now() ELSE failed_at END,
+      bounced_at = CASE WHEN v_status = 'bounced' THEN now() ELSE bounced_at END,
+      updated_at = now()
+  WHERE id = v_delivery.id;
+
+  SELECT CASE
+    WHEN count(*) FILTER (WHERE status = 'unknown') > 0 THEN 'requires_review'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('pending', 'processing')) > 0 THEN 'processing'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) = count(*) THEN 'failed'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END INTO v_job_status
+  FROM public.message_deliveries
+  WHERE job_id = v_delivery.job_id;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      unknown_count = a.unknown_count,
+      completed_at = CASE WHEN v_job_status IN ('completed', 'partially_failed', 'failed', 'requires_review')
+        THEN COALESCE(j.completed_at, now()) ELSE NULL END,
+      updated_at = now()
+  FROM (
+    SELECT count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count,
+      count(*) FILTER (WHERE status = 'unknown')::INTEGER AS unknown_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN v_status;
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.claim_message_job_delivery(UUID, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_message_job_delivery(UUID, TEXT, INTEGER) TO service_role;
+REVOKE ALL ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) TO service_role;
+
+-- === Migration: 20250915000006_atomic_message_job_aggregate.sql ===
+-- Replace stale read-then-write aggregate refreshes with one serialized database operation.
+
+
+CREATE OR REPLACE FUNCTION public.refresh_message_job_aggregate(
+  p_job_id UUID
+)
+RETURNS TABLE (
+  job_id UUID,
+  status TEXT,
+  total INTEGER,
+  accepted INTEGER,
+  failed INTEGER,
+  pending INTEGER,
+  unknown INTEGER,
+  requires_review BOOLEAN,
+  dry_run BOOLEAN
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_job public.message_jobs%ROWTYPE;
+  v_recipient_count INTEGER;
+  v_accepted_count INTEGER;
+  v_delivered_count INTEGER;
+  v_failed_count INTEGER;
+  v_bounced_count INTEGER;
+  v_pending_count INTEGER;
+  v_unknown_count INTEGER;
+  v_job_status public.message_job_status;
+BEGIN
+  IF p_job_id IS NULL THEN RAISE EXCEPTION 'Message job is required'; END IF;
+
+  -- Every aggregate writer for a job serializes on this row. Counts are read only
+  -- after the lock is held, so an older snapshot can never overwrite newer totals.
+  SELECT j.* INTO v_job
+  FROM public.message_jobs AS j
+  WHERE j.id = p_job_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message job not found'; END IF;
+
+  SELECT
+    count(*)::INTEGER,
+    count(*) FILTER (WHERE d.status = 'accepted')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'delivered')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'failed')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'bounced')::INTEGER,
+    count(*) FILTER (WHERE d.status IN ('pending', 'processing'))::INTEGER,
+    count(*) FILTER (WHERE d.status = 'unknown')::INTEGER
+  INTO
+    v_recipient_count,
+    v_accepted_count,
+    v_delivered_count,
+    v_failed_count,
+    v_bounced_count,
+    v_pending_count,
+    v_unknown_count
+  FROM public.message_deliveries AS d
+  WHERE d.job_id = p_job_id;
+
+  v_job_status := CASE
+    WHEN v_job.source_type = 'api_dry_run' THEN 'cancelled'::public.message_job_status
+    WHEN v_unknown_count > 0 THEN 'requires_review'::public.message_job_status
+    WHEN v_pending_count > 0 THEN 'processing'::public.message_job_status
+    WHEN v_recipient_count > 0 AND v_failed_count + v_bounced_count = v_recipient_count THEN 'failed'::public.message_job_status
+    WHEN v_failed_count + v_bounced_count > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status,
+      recipient_count = v_recipient_count,
+      accepted_count = v_accepted_count,
+      delivered_count = v_delivered_count,
+      failed_count = v_failed_count,
+      bounced_count = v_bounced_count,
+      unknown_count = v_unknown_count,
+      completed_at = CASE
+        WHEN v_job_status IN ('completed', 'partially_failed', 'failed', 'requires_review', 'cancelled')
+          THEN COALESCE(j.completed_at, now())
+        ELSE NULL
+      END,
+      updated_at = now()
+  WHERE j.id = p_job_id;
+
+  RETURN QUERY SELECT
+    p_job_id,
+    CASE
+      WHEN v_job.source_type = 'api_dry_run' THEN 'dry_run'
+      WHEN v_job_status = 'partially_failed' THEN 'partial'
+      ELSE v_job_status::TEXT
+    END,
+    v_recipient_count,
+    v_accepted_count + v_delivered_count,
+    v_failed_count + v_bounced_count,
+    v_pending_count,
+    v_unknown_count,
+    v_unknown_count > 0,
+    v_job.source_type = 'api_dry_run';
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.refresh_message_job_aggregate(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_message_job_aggregate(UUID) TO service_role;
+
+-- === Migration: 20250915000007_non_idempotent_sms_dispatch.sql ===
+-- Fence non-idempotent MIM provider I/O behind a durable, non-reclaimable state.
+
+
+ALTER TYPE public.message_delivery_status ADD VALUE IF NOT EXISTS 'dispatching';
+
+-- PostgreSQL cannot resolve a newly-added enum label until this transaction commits.
+SET LOCAL check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.begin_non_idempotent_dispatch(
+  p_delivery_id UUID,
+  p_worker_id TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_channel public.message_channel;
+  v_lease_seconds INTEGER;
+BEGIN
+  IF p_delivery_id IS NULL THEN RAISE EXCEPTION 'Message delivery is required'; END IF;
+  IF btrim(COALESCE(p_worker_id, '')) = '' OR char_length(p_worker_id) > 100 THEN
+    RAISE EXCEPTION 'Invalid worker id';
+  END IF;
+
+  SELECT d, j.channel, COALESCE(c.lease_seconds, 120)
+    INTO v_delivery, v_channel, v_lease_seconds
+  FROM public.message_deliveries AS d
+  JOIN public.message_jobs AS j ON j.id = d.job_id
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE d.id = p_delivery_id
+  FOR UPDATE OF d;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+  IF v_channel <> 'sms'::public.message_channel THEN
+    RAISE EXCEPTION 'Non-idempotent dispatch is only valid for SMS';
+  END IF;
+  IF v_delivery.status <> 'processing'::public.message_delivery_status
+     OR v_delivery.locked_by IS DISTINCT FROM p_worker_id
+     OR v_delivery.locked_at IS NULL
+     OR v_delivery.locked_at < now() - make_interval(secs => v_lease_seconds) THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  -- Once this commits, claim RPCs cannot reclaim the row: they only select pending
+  -- or expired processing rows. A worker crash after this point requires review.
+  UPDATE public.message_deliveries AS d
+  SET status = 'dispatching'::public.message_delivery_status,
+      updated_at = now()
+  WHERE d.id = v_delivery.id;
+
+  -- Serialize every aggregate writer for the job and expose the unknown outcome
+  -- before any non-idempotent provider request can begin.
+  PERFORM 1 FROM public.message_jobs AS j WHERE j.id = v_delivery.job_id FOR UPDATE;
+  UPDATE public.message_jobs AS j
+  SET status = 'requires_review'::public.message_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      unknown_count = a.unknown_count,
+      completed_at = COALESCE(j.completed_at, now()),
+      updated_at = now()
+  FROM (
+    SELECT count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count,
+      count(*) FILTER (WHERE status IN ('unknown', 'dispatching'))::INTEGER AS unknown_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN true;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.record_message_attempt(
+  p_delivery_id UUID,
+  p_worker_id TEXT,
+  p_outcome public.message_attempt_outcome,
+  p_provider_message_id TEXT DEFAULT NULL,
+  p_failure_category TEXT DEFAULT NULL,
+  p_failure_code TEXT DEFAULT NULL,
+  p_failure_message TEXT DEFAULT NULL,
+  p_retryable BOOLEAN DEFAULT false,
+  p_next_attempt_at TIMESTAMPTZ DEFAULT NULL
+)
+RETURNS public.message_delivery_status
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_max_attempts SMALLINT;
+  v_status public.message_delivery_status;
+  v_job_status public.message_job_status;
+  v_provider_message_id TEXT;
+  v_failure_category TEXT;
+  v_failure_code TEXT;
+  v_failure_message TEXT;
+BEGIN
+  SELECT d.* INTO v_delivery
+  FROM public.message_deliveries AS d
+  WHERE d.id = p_delivery_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+  IF v_delivery.status NOT IN ('processing'::public.message_delivery_status, 'dispatching'::public.message_delivery_status)
+     OR v_delivery.locked_by IS DISTINCT FROM p_worker_id THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  PERFORM 1 FROM public.message_jobs AS j WHERE j.id = v_delivery.job_id FOR UPDATE;
+
+  SELECT COALESCE(c.max_attempts, 5) INTO v_max_attempts
+  FROM public.message_jobs AS j
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE j.id = v_delivery.job_id;
+
+  v_provider_message_id := NULLIF(left(btrim(COALESCE(p_provider_message_id, '')), 255), '');
+  IF p_outcome IN ('accepted', 'delivered') THEN
+    v_failure_category := NULL;
+    v_failure_code := NULL;
+    v_failure_message := NULL;
+  ELSE
+    v_failure_category := CASE WHEN p_failure_category IN
+      ('configuration', 'authentication', 'rate_limit', 'provider', 'network', 'invalid_recipient', 'unknown')
+      THEN p_failure_category ELSE 'unknown' END;
+    v_failure_code := CASE WHEN p_failure_code ~ '^[A-Za-z0-9_.:-]{1,100}$' THEN p_failure_code ELSE 'unknown' END;
+    v_failure_message := CASE
+      WHEN p_failure_message IS NULL THEN NULL
+      WHEN lower(p_failure_message) ~ '(authorization|bearer|api.?key|password|secret|token|credential|provider.response)'
+        THEN 'Provider attempt failed (details redacted)'
+      ELSE left(p_failure_message, 500) END;
+  END IF;
+
+  INSERT INTO public.message_attempts (
+    delivery_id, attempt_no, outcome, provider_message_id,
+    failure_category, failure_code, failure_message, retryable
+  ) VALUES (
+    v_delivery.id, v_delivery.attempt_count, p_outcome, v_provider_message_id,
+    v_failure_category, v_failure_code, v_failure_message, p_retryable
+  );
+
+  v_status := CASE
+    WHEN p_outcome = 'accepted' THEN 'accepted'::public.message_delivery_status
+    WHEN p_outcome = 'delivered' THEN 'delivered'::public.message_delivery_status
+    WHEN p_outcome = 'bounced' THEN 'bounced'::public.message_delivery_status
+    WHEN p_outcome = 'unknown' THEN 'unknown'::public.message_delivery_status
+    WHEN p_retryable AND v_delivery.status <> 'dispatching'::public.message_delivery_status
+      AND v_delivery.attempt_count < v_max_attempts THEN 'pending'::public.message_delivery_status
+    ELSE 'failed'::public.message_delivery_status
+  END;
+
+  UPDATE public.message_deliveries
+  SET status = v_status,
+      provider_message_id = COALESCE(v_provider_message_id, provider_message_id),
+      next_attempt_at = CASE WHEN v_status = 'pending' THEN COALESCE(p_next_attempt_at, now() + interval '1 minute') ELSE next_attempt_at END,
+      locked_at = NULL,
+      locked_by = NULL,
+      accepted_at = CASE WHEN v_status = 'accepted' THEN now() ELSE accepted_at END,
+      delivered_at = CASE WHEN v_status = 'delivered' THEN now() ELSE delivered_at END,
+      failed_at = CASE WHEN v_status = 'failed' THEN now() ELSE failed_at END,
+      bounced_at = CASE WHEN v_status = 'bounced' THEN now() ELSE bounced_at END,
+      updated_at = now()
+  WHERE id = v_delivery.id;
+
+  SELECT CASE
+    WHEN count(*) FILTER (WHERE status IN ('unknown', 'dispatching')) > 0 THEN 'requires_review'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('pending', 'processing')) > 0 THEN 'processing'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) = count(*) THEN 'failed'::public.message_job_status
+    WHEN count(*) FILTER (WHERE status IN ('failed', 'bounced')) > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END INTO v_job_status
+  FROM public.message_deliveries
+  WHERE job_id = v_delivery.job_id;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      unknown_count = a.unknown_count,
+      completed_at = CASE WHEN v_job_status IN ('completed', 'partially_failed', 'failed', 'requires_review')
+        THEN COALESCE(j.completed_at, now()) ELSE NULL END,
+      updated_at = now()
+  FROM (
+    SELECT count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count,
+      count(*) FILTER (WHERE status IN ('unknown', 'dispatching'))::INTEGER AS unknown_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN v_status;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.refresh_message_job_aggregate(
+  p_job_id UUID
+)
+RETURNS TABLE (
+  job_id UUID,
+  status TEXT,
+  total INTEGER,
+  accepted INTEGER,
+  failed INTEGER,
+  pending INTEGER,
+  unknown INTEGER,
+  requires_review BOOLEAN,
+  dry_run BOOLEAN
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_job public.message_jobs%ROWTYPE;
+  v_recipient_count INTEGER;
+  v_accepted_count INTEGER;
+  v_delivered_count INTEGER;
+  v_failed_count INTEGER;
+  v_bounced_count INTEGER;
+  v_pending_count INTEGER;
+  v_unknown_count INTEGER;
+  v_job_status public.message_job_status;
+BEGIN
+  IF p_job_id IS NULL THEN RAISE EXCEPTION 'Message job is required'; END IF;
+  SELECT j.* INTO v_job FROM public.message_jobs AS j WHERE j.id = p_job_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message job not found'; END IF;
+
+  SELECT count(*)::INTEGER,
+    count(*) FILTER (WHERE d.status = 'accepted')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'delivered')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'failed')::INTEGER,
+    count(*) FILTER (WHERE d.status = 'bounced')::INTEGER,
+    count(*) FILTER (WHERE d.status IN ('pending', 'processing'))::INTEGER,
+    count(*) FILTER (WHERE d.status IN ('unknown', 'dispatching'))::INTEGER
+  INTO v_recipient_count, v_accepted_count, v_delivered_count, v_failed_count,
+    v_bounced_count, v_pending_count, v_unknown_count
+  FROM public.message_deliveries AS d
+  WHERE d.job_id = p_job_id;
+
+  v_job_status := CASE
+    WHEN v_job.source_type = 'api_dry_run' THEN 'cancelled'::public.message_job_status
+    WHEN v_unknown_count > 0 THEN 'requires_review'::public.message_job_status
+    WHEN v_pending_count > 0 THEN 'processing'::public.message_job_status
+    WHEN v_recipient_count > 0 AND v_failed_count + v_bounced_count = v_recipient_count THEN 'failed'::public.message_job_status
+    WHEN v_failed_count + v_bounced_count > 0 THEN 'partially_failed'::public.message_job_status
+    ELSE 'completed'::public.message_job_status
+  END;
+
+  UPDATE public.message_jobs AS j
+  SET status = v_job_status, recipient_count = v_recipient_count,
+      accepted_count = v_accepted_count, delivered_count = v_delivered_count,
+      failed_count = v_failed_count, bounced_count = v_bounced_count,
+      unknown_count = v_unknown_count,
+      completed_at = CASE WHEN v_job_status IN ('completed', 'partially_failed', 'failed', 'requires_review', 'cancelled')
+        THEN COALESCE(j.completed_at, now()) ELSE NULL END,
+      updated_at = now()
+  WHERE j.id = p_job_id;
+
+  RETURN QUERY SELECT p_job_id,
+    CASE WHEN v_job.source_type = 'api_dry_run' THEN 'dry_run'
+      WHEN v_job_status = 'partially_failed' THEN 'partial' ELSE v_job_status::TEXT END,
+    v_recipient_count, v_accepted_count + v_delivered_count,
+    v_failed_count + v_bounced_count, v_pending_count, v_unknown_count,
+    v_unknown_count > 0, v_job.source_type = 'api_dry_run';
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.begin_non_idempotent_dispatch(UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.begin_non_idempotent_dispatch(UUID, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.record_message_attempt(UUID, TEXT, public.message_attempt_outcome, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ) TO service_role;
+REVOKE ALL ON FUNCTION public.refresh_message_job_aggregate(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.refresh_message_job_aggregate(UUID) TO service_role;
+
+-- === Migration: 20250915000008_provider_neutral_messaging.sql ===
+-- Authoritative provider-neutral messaging contract: safe configuration, versioned encrypted credentials, immutable job snapshots.
+
+CREATE OR REPLACE FUNCTION public._messaging_safe_path(p_path TEXT)
+RETURNS BOOLEAN LANGUAGE sql IMMUTABLE STRICT SET search_path = pg_catalog AS $fn$
+  SELECT char_length(p_path) BETWEEN 1 AND 256
+    AND p_path ~ '^[A-Za-z][A-Za-z0-9_-]{0,63}(\.[A-Za-z][A-Za-z0-9_-]{0,63})*$'
+    AND p_path !~* '(^|\.)(__proto__|prototype|constructor|password|passwd|secret|token|api_?key|apikey|credential|authorization|cookie|private_?key)(\.|$)'
+    AND p_path !~ E'[\r\n]'
+$fn$;
+
+CREATE OR REPLACE FUNCTION public._messaging_safe_header(p_name TEXT)
+RETURNS BOOLEAN LANGUAGE sql IMMUTABLE STRICT SET search_path = pg_catalog AS $fn$
+  SELECT char_length(p_name) BETWEEN 1 AND 128
+    AND p_name ~ '^[!#$%&''*+.^_`|~0-9A-Za-z-]+$'
+    AND lower(p_name) <> ALL (ARRAY['authorization','proxy-authorization','cookie','set-cookie','host','content-length','connection','transfer-encoding','te','trailer','upgrade','keep-alive','proxy-authenticate','proxy-connection'])
+    AND p_name !~* '(password|passwd|secret|token|api.?key|credential)'
+$fn$;
+
+CREATE OR REPLACE FUNCTION public._messaging_provider_config_valid(p_channel public.message_channel, p_provider TEXT, p_config JSONB)
+RETURNS BOOLEAN LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public AS $fn$
+DECLARE v_key TEXT; v_value JSONB; v_auth JSONB; v_idem JSONB; v_endpoint TEXT;
+BEGIN
+  IF jsonb_typeof(p_config) <> 'object' OR p_config ->> 'providerName' IS DISTINCT FROM p_provider
+    OR p_config::TEXT ~* '(-----BEGIN|bearer[[:space:]]+[A-Za-z0-9._~+/-]{8}|(^|[^a-z])(sk|pk|api)[_-][A-Za-z0-9_-]{12}|eyJ[A-Za-z0-9_-]{8,}\.|[A-Fa-f0-9]{32,}|eval[[:space:]]*\(|function[[:space:]]*\(|<%|\{\{)'
+    OR p_config::TEXT ~ E'[\r\n]' THEN RETURN false; END IF;
+  IF p_provider = 'mim' THEN
+    RETURN p_channel = 'sms' AND p_config ?& ARRAY['providerName','userName','senderName']
+      AND NOT p_config ?| ARRAY['endpoint','auth','idempotency','fieldMappings','acceptedStatuses','success','providerIdPath','from']
+      AND (SELECT count(*) = 3 FROM jsonb_object_keys(p_config))
+      AND p_config ->> 'userName' ~ '^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,99}$'
+      AND p_config ->> 'senderName' ~ '^[A-Za-z0-9]{1,11}$';
+  ELSIF p_provider = 'resend' THEN
+    RETURN p_channel = 'email' AND (SELECT count(*) = 2 FROM jsonb_object_keys(p_config))
+      AND p_config ?& ARRAY['providerName','from'] AND char_length(p_config ->> 'from') BETWEEN 1 AND 320;
+  ELSIF p_provider <> 'custom' THEN RETURN false; END IF;
+  IF NOT p_config ?& ARRAY['providerName','endpoint','method','idempotency','fieldMappings','acceptedStatuses','providerIdPath']
+    OR p_config ?| ARRAY['headers','body','bodyTemplate','script']
+    OR EXISTS (SELECT 1 FROM jsonb_object_keys(p_config) k WHERE k <> ALL(ARRAY['providerName','endpoint','method','auth','idempotency','fieldMappings','acceptedStatuses','success','providerIdPath','senderIdentity']))
+    OR p_config ->> 'method' <> 'POST' THEN RETURN false; END IF;
+  v_endpoint := p_config ->> 'endpoint';
+  IF char_length(v_endpoint) NOT BETWEEN 12 AND 2048 OR v_endpoint !~ '^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~!$&''()*+,;=:@%/-]*$'
+    OR v_endpoint ~ '(^https://[^/]*@|[?#]|://[^/]+:[0-9]+/)' THEN RETURN false; END IF;
+  IF jsonb_typeof(p_config -> 'fieldMappings') <> 'object' OR p_config -> 'fieldMappings' = '{}'::jsonb THEN RETURN false; END IF;
+  FOR v_key, v_value IN SELECT * FROM jsonb_each(p_config -> 'fieldMappings') LOOP
+    IF v_key <> ALL(ARRAY['recipient','message','subject','html','text','sender']) OR jsonb_typeof(v_value) <> 'string' OR NOT public._messaging_safe_path(v_value #>> '{}') THEN RETURN false; END IF;
+  END LOOP;
+  v_auth := p_config -> 'auth';
+  IF v_auth IS NOT NULL THEN
+    IF jsonb_typeof(v_auth) <> 'object' OR v_auth ->> 'placement' NOT IN ('header','body') THEN RETURN false; END IF;
+    IF v_auth ->> 'placement' = 'header' AND (NOT public._messaging_safe_header(v_auth ->> 'name') OR (v_auth ? 'path')) THEN RETURN false; END IF;
+    IF v_auth ->> 'placement' = 'body' AND (NOT public._messaging_safe_path(v_auth ->> 'path') OR v_auth ?| ARRAY['name','scheme']) THEN RETURN false; END IF;
+  END IF;
+  v_idem := p_config -> 'idempotency';
+  IF jsonb_typeof(v_idem) <> 'object' OR v_idem ->> 'placement' NOT IN ('header','body','none') THEN RETURN false; END IF;
+  IF v_idem ->> 'placement' = 'header' AND NOT public._messaging_safe_header(v_idem ->> 'name') THEN RETURN false; END IF;
+  IF v_idem ->> 'placement' = 'body' AND NOT public._messaging_safe_path(v_idem ->> 'path') THEN RETURN false; END IF;
+  IF jsonb_typeof(p_config -> 'acceptedStatuses') <> 'array' OR jsonb_array_length(p_config -> 'acceptedStatuses') NOT BETWEEN 1 AND 20
+    OR EXISTS (SELECT 1 FROM jsonb_array_elements(p_config -> 'acceptedStatuses') x WHERE jsonb_typeof(x) <> 'number' OR (x #>> '{}')::INTEGER NOT BETWEEN 200 AND 599) THEN RETURN false; END IF;
+  IF NOT public._messaging_safe_path(p_config ->> 'providerIdPath') THEN RETURN false; END IF;
+  IF p_config ? 'success' AND (jsonb_typeof(p_config -> 'success') <> 'object' OR NOT (p_config -> 'success') ?& ARRAY['path','value'] OR NOT public._messaging_safe_path(p_config #>> '{success,path}') OR jsonb_typeof(p_config #> '{success,value}') NOT IN ('string','number','boolean','null')) THEN RETURN false; END IF;
+  RETURN true;
+END $fn$;
+
+ALTER TABLE public.messaging_configuration
+  ADD COLUMN provider_config JSONB,
+  ADD COLUMN config_revision UUID;
+UPDATE public.messaging_configuration SET
+  provider_config = CASE channel
+    WHEN 'sms'::public.message_channel THEN jsonb_build_object('providerName','mim','userName','configure-me','senderName',COALESCE(NULLIF(sender_label,''),'MIM'))
+    ELSE jsonb_build_object('providerName','resend','from',COALESCE(NULLIF(sender_label,''),'configure@example.invalid')) END,
+  config_revision = gen_random_uuid();
+-- Legacy rows are safe placeholders only and remain disabled until the service-role configuration API saves reviewed metadata.
+UPDATE public.messaging_configuration SET enabled = false;
+ALTER TABLE public.messaging_configuration
+  ALTER COLUMN provider_config SET NOT NULL,
+  ALTER COLUMN config_revision SET NOT NULL,
+  ALTER COLUMN config_revision SET DEFAULT gen_random_uuid(),
+  DROP COLUMN sender_label,
+  ADD CONSTRAINT messaging_configuration_provider_config_check CHECK (public._messaging_provider_config_valid(channel, provider_name, provider_config));
+COMMENT ON COLUMN public.messaging_configuration.provider_config IS 'Safe non-secret built-in/custom provider metadata only.';
+
+CREATE TABLE public.messaging_provider_credentials (
+  channel public.message_channel NOT NULL,
+  provider_name TEXT NOT NULL,
+  config_revision UUID NOT NULL,
+  ciphertext TEXT NOT NULL CHECK (ciphertext ~ '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$' AND char_length(ciphertext) BETWEEN 4 AND 90000),
+  iv TEXT NOT NULL CHECK (iv ~ '^[A-Za-z0-9+/]{16}==$'),
+  auth_tag TEXT NOT NULL CHECK (auth_tag ~ '^[A-Za-z0-9+/]{22}==$'),
+  key_id TEXT NOT NULL CHECK (key_id ~ '^[A-Za-z0-9._-]{1,64}$'),
+  fingerprint TEXT NOT NULL CHECK (fingerprint ~ '^[a-f0-9]{64}$'),
+  hint TEXT CHECK (hint IS NULL OR (char_length(hint) BETWEEN 1 AND 16 AND hint !~ E'[\r\n]')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (channel, provider_name, config_revision)
+);
+ALTER TABLE public.messaging_provider_credentials ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.messaging_provider_credentials FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.messaging_provider_credentials TO service_role;
+COMMENT ON TABLE public.messaging_provider_credentials IS 'Versioned AES-256-GCM material. Canonical base64 TEXT; service-role only.';
+
+ALTER TABLE public.message_jobs ADD COLUMN provider_name TEXT, ADD COLUMN provider_config_snapshot JSONB, ADD COLUMN provider_config_revision UUID;
+UPDATE public.message_jobs j SET provider_name = c.provider_name, provider_config_snapshot = c.provider_config, provider_config_revision = c.config_revision FROM public.messaging_configuration c WHERE c.channel = j.channel;
+DELETE FROM public.message_jobs WHERE provider_name IS NULL;
+ALTER TABLE public.message_jobs ALTER COLUMN provider_name SET NOT NULL, ALTER COLUMN provider_config_snapshot SET NOT NULL, ALTER COLUMN provider_config_revision SET NOT NULL,
+  ADD CONSTRAINT message_jobs_provider_snapshot_check CHECK (public._messaging_provider_config_valid(channel, provider_name, provider_config_snapshot));
+COMMENT ON COLUMN public.message_jobs.provider_config_snapshot IS 'Immutable safe provider configuration captured atomically at enqueue; no credentials.';
+
+CREATE OR REPLACE FUNCTION public.enqueue_message_job(p_idempotency_key TEXT, p_channel public.message_channel, p_source_type TEXT, p_source_id UUID, p_content JSONB, p_recipients TEXT[], p_available_at TIMESTAMPTZ DEFAULT now()) RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $fn$
+DECLARE v_job_id UUID; v_recipients TEXT[]; v_config public.messaging_configuration%ROWTYPE;
+BEGIN
+  SELECT * INTO v_config FROM public.messaging_configuration WHERE channel = p_channel AND enabled FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'No enabled messaging provider is configured for channel %', p_channel; END IF;
+  SELECT COALESCE(array_agg(recipient ORDER BY recipient), ARRAY[]::TEXT[]) INTO v_recipients FROM (SELECT DISTINCT btrim(value) recipient FROM unnest(COALESCE(p_recipients, ARRAY[]::TEXT[])) value WHERE btrim(value) <> '') normalized;
+  IF cardinality(v_recipients) = 0 THEN RAISE EXCEPTION 'At least one recipient is required'; END IF;
+  INSERT INTO public.message_jobs(idempotency_key,channel,source_type,source_id,content,recipient_count,available_at,provider_name,provider_config_snapshot,provider_config_revision)
+  VALUES(p_idempotency_key,p_channel,p_source_type,p_source_id,p_content,cardinality(v_recipients),COALESCE(p_available_at,now()),v_config.provider_name,v_config.provider_config,v_config.config_revision)
+  ON CONFLICT(idempotency_key) DO NOTHING RETURNING id INTO v_job_id;
+  IF v_job_id IS NULL THEN SELECT id INTO v_job_id FROM public.message_jobs WHERE idempotency_key=p_idempotency_key; RETURN v_job_id; END IF;
+  INSERT INTO public.message_deliveries(job_id,recipient,next_attempt_at) SELECT v_job_id,recipient,COALESCE(p_available_at,now()) FROM unnest(v_recipients) recipient;
+  RETURN v_job_id;
+END $fn$;
+
+-- Service-role RPC: server validates metadata and performs encryption/re-encryption before this atomic write.
+CREATE OR REPLACE FUNCTION public.save_messaging_configuration(
+ p_channel public.message_channel,p_provider_name TEXT,p_enabled BOOLEAN,p_provider_config JSONB,p_config_revision UUID,p_secret_action TEXT,
+ p_ciphertext TEXT,p_iv TEXT,p_auth_tag TEXT,p_key_id TEXT,p_fingerprint TEXT,p_hint TEXT) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,extensions AS $fn$
+DECLARE v_old_provider TEXT;
+BEGIN
+  IF auth.role() <> 'service_role' THEN RAISE EXCEPTION 'service role required'; END IF;
+  IF p_secret_action NOT IN ('preserve','replace','remove') OR NOT public._messaging_provider_config_valid(p_channel,p_provider_name,p_provider_config) THEN RAISE EXCEPTION 'invalid configuration'; END IF;
+  SELECT provider_name INTO v_old_provider FROM public.messaging_configuration WHERE channel=p_channel FOR UPDATE;
+  IF p_secret_action='preserve' AND v_old_provider IS NOT NULL AND v_old_provider<>p_provider_name THEN RAISE EXCEPTION 'cannot preserve across providers'; END IF;
+  IF p_secret_action='remove' THEN
+    IF EXISTS(SELECT 1 FROM public.message_jobs WHERE channel=p_channel AND provider_name=COALESCE(v_old_provider,p_provider_name) AND status IN ('queued','processing','requires_review')) THEN RAISE EXCEPTION 'credential versions referenced by nonterminal jobs'; END IF;
+    DELETE FROM public.messaging_provider_credentials WHERE channel=p_channel AND provider_name=COALESCE(v_old_provider,p_provider_name);
+  END IF;
+  INSERT INTO public.messaging_configuration(channel,provider_name,enabled,provider_config,config_revision)
+  VALUES(p_channel,p_provider_name,p_enabled,p_provider_config,p_config_revision)
+  ON CONFLICT(channel) DO UPDATE SET provider_name=EXCLUDED.provider_name,enabled=EXCLUDED.enabled,provider_config=EXCLUDED.provider_config,config_revision=EXCLUDED.config_revision,updated_at=now();
+  IF p_secret_action IN ('preserve','replace') AND p_ciphertext IS NOT NULL THEN
+    INSERT INTO public.messaging_provider_credentials(channel,provider_name,config_revision,ciphertext,iv,auth_tag,key_id,fingerprint,hint)
+    VALUES(p_channel,p_provider_name,p_config_revision,p_ciphertext,p_iv,p_auth_tag,p_key_id,p_fingerprint,p_hint);
+  END IF;
+END $fn$;
+
+CREATE OR REPLACE FUNCTION public.remove_messaging_configuration(p_channel public.message_channel) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
+BEGIN
+  IF auth.role() <> 'service_role' THEN RAISE EXCEPTION 'service role required'; END IF;
+  PERFORM 1 FROM public.messaging_configuration WHERE channel=p_channel FOR UPDATE;
+  IF EXISTS(SELECT 1 FROM public.message_jobs WHERE channel=p_channel AND status IN ('queued','processing','requires_review')) THEN RAISE EXCEPTION 'provider referenced by nonterminal jobs'; END IF;
+  DELETE FROM public.messaging_provider_credentials WHERE channel=p_channel;
+  DELETE FROM public.messaging_configuration WHERE channel=p_channel;
+END $fn$;
+
+-- Replace claims so workers receive the exact provider snapshot revision.
+DROP FUNCTION public.claim_message_deliveries(TEXT, public.message_channel, INTEGER, INTEGER);
+CREATE FUNCTION public.claim_message_deliveries(p_worker_id TEXT,p_channel public.message_channel,p_limit INTEGER DEFAULT 25,p_lease_seconds INTEGER DEFAULT 120)
+RETURNS TABLE(delivery_id UUID,job_id UUID,channel public.message_channel,recipient TEXT,content JSONB,attempt_no SMALLINT,provider_name TEXT,provider_config_snapshot JSONB,provider_config_revision UUID)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
+BEGIN
+ RETURN QUERY WITH candidates AS (SELECT d.id FROM public.message_deliveries d JOIN public.message_jobs j ON j.id=d.job_id WHERE j.channel=p_channel AND j.status IN ('queued','processing') AND j.available_at<=now() AND ((d.status='pending' AND d.next_attempt_at<=now()) OR (d.status='processing' AND d.locked_at<now()-make_interval(secs=>p_lease_seconds))) ORDER BY d.next_attempt_at,d.created_at FOR UPDATE OF d SKIP LOCKED LIMIT p_limit), claimed AS (UPDATE public.message_deliveries d SET status='processing',attempt_count=d.attempt_count+1,locked_at=now(),locked_by=p_worker_id,updated_at=now() FROM candidates x WHERE d.id=x.id RETURNING d.id,d.job_id,d.recipient,d.attempt_count) SELECT x.id,x.job_id,j.channel,x.recipient,j.content,x.attempt_count,j.provider_name,j.provider_config_snapshot,j.provider_config_revision FROM claimed x JOIN public.message_jobs j ON j.id=x.job_id;
+END $fn$;
+DROP FUNCTION public.claim_message_job_delivery(UUID,TEXT,INTEGER);
+CREATE FUNCTION public.claim_message_job_delivery(p_job_id UUID,p_worker_id TEXT,p_lease_seconds INTEGER DEFAULT 120)
+RETURNS TABLE(delivery_id UUID,job_id UUID,channel public.message_channel,recipient TEXT,content JSONB,attempt_no SMALLINT,provider_name TEXT,provider_config_snapshot JSONB,provider_config_revision UUID)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
+BEGIN
+ RETURN QUERY WITH candidate AS (SELECT d.id FROM public.message_deliveries d JOIN public.message_jobs j ON j.id=d.job_id WHERE d.job_id=p_job_id AND j.status IN ('queued','processing') AND d.status='pending' AND d.next_attempt_at<=now() ORDER BY d.created_at FOR UPDATE OF d SKIP LOCKED LIMIT 1), claimed AS (UPDATE public.message_deliveries d SET status='processing',attempt_count=d.attempt_count+1,locked_at=now(),locked_by=p_worker_id,updated_at=now() FROM candidate x WHERE d.id=x.id RETURNING d.id,d.job_id,d.recipient,d.attempt_count) SELECT x.id,x.job_id,j.channel,x.recipient,j.content,x.attempt_count,j.provider_name,j.provider_config_snapshot,j.provider_config_revision FROM claimed x JOIN public.message_jobs j ON j.id=x.job_id;
+END $fn$;
+
+CREATE OR REPLACE FUNCTION public.begin_non_idempotent_dispatch(p_delivery_id UUID,p_worker_id TEXT) RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
+DECLARE v_mode TEXT; v_status public.message_delivery_status; v_locked_by TEXT;
+BEGIN
+ SELECT j.provider_config_snapshot #>> '{idempotency,placement}',d.status,d.locked_by INTO v_mode,v_status,v_locked_by FROM public.message_deliveries d JOIN public.message_jobs j ON j.id=d.job_id WHERE d.id=p_delivery_id FOR UPDATE OF d;
+ IF v_mode IS DISTINCT FROM 'none' THEN RAISE EXCEPTION 'Provider snapshot is idempotent'; END IF;
+ IF v_status<>'processing' OR v_locked_by IS DISTINCT FROM p_worker_id THEN RAISE EXCEPTION 'Message delivery lease is not owned'; END IF;
+ UPDATE public.message_deliveries SET status='dispatching',updated_at=now() WHERE id=p_delivery_id;
+ UPDATE public.message_jobs SET status='requires_review',unknown_count=unknown_count+1,completed_at=COALESCE(completed_at,now()),updated_at=now()
+ WHERE id=(SELECT job_id FROM public.message_deliveries WHERE id=p_delivery_id);
+ RETURN true;
+END $fn$;
+
+REVOKE ALL ON FUNCTION public._messaging_safe_path(TEXT),public._messaging_safe_header(TEXT),public._messaging_provider_config_valid(public.message_channel,TEXT,JSONB) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.enqueue_message_job(TEXT,public.message_channel,TEXT,UUID,JSONB,TEXT[],TIMESTAMPTZ),public.save_messaging_configuration(public.message_channel,TEXT,BOOLEAN,JSONB,UUID,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT),public.remove_messaging_configuration(public.message_channel),public.claim_message_deliveries(TEXT,public.message_channel,INTEGER,INTEGER),public.claim_message_job_delivery(UUID,TEXT,INTEGER),public.begin_non_idempotent_dispatch(UUID,TEXT) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.enqueue_message_job(TEXT,public.message_channel,TEXT,UUID,JSONB,TEXT[],TIMESTAMPTZ),public.save_messaging_configuration(public.message_channel,TEXT,BOOLEAN,JSONB,UUID,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT),public.remove_messaging_configuration(public.message_channel),public.claim_message_deliveries(TEXT,public.message_channel,INTEGER,INTEGER),public.claim_message_job_delivery(UUID,TEXT,INTEGER),public.begin_non_idempotent_dispatch(UUID,TEXT) TO service_role;
+
+CREATE OR REPLACE FUNCTION public._backup_redact_message_tables(p_tables JSONB) RETURNS JSONB LANGUAGE sql IMMUTABLE SET search_path=pg_catalog AS $fn$ SELECT (CASE WHEN jsonb_typeof(p_tables)='object' THEN p_tables ELSE '{}'::jsonb END)-'provider_secrets'-'messaging_provider_credentials'-'message_jobs'-'message_deliveries'-'message_attempts'-'messaging_configuration' $fn$;
+
+-- === Migration: 20250915000009_mim_dispatch_fence.sql ===
+-- Restore provider-aware fencing for non-idempotent dispatches.
+-- Built-in MIM snapshots predate the generalized idempotency descriptor and are
+-- intrinsically non-idempotent. Custom providers must opt in explicitly with
+-- idempotency.placement = "none"; all other providers fail closed.
+
+
+CREATE OR REPLACE FUNCTION public.begin_non_idempotent_dispatch(
+  p_delivery_id UUID,
+  p_worker_id TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions
+AS $fn$
+DECLARE
+  v_delivery public.message_deliveries%ROWTYPE;
+  v_provider_name TEXT;
+  v_idempotency_placement TEXT;
+  v_lease_seconds INTEGER;
+BEGIN
+  IF p_delivery_id IS NULL THEN RAISE EXCEPTION 'Message delivery is required'; END IF;
+  IF btrim(COALESCE(p_worker_id, '')) = '' OR char_length(p_worker_id) > 100 THEN
+    RAISE EXCEPTION 'Invalid worker id';
+  END IF;
+
+  SELECT d, j.provider_name, j.provider_config_snapshot #>> '{idempotency,placement}',
+         COALESCE(c.lease_seconds, 120)
+    INTO v_delivery, v_provider_name, v_idempotency_placement, v_lease_seconds
+  FROM public.message_deliveries AS d
+  JOIN public.message_jobs AS j ON j.id = d.job_id
+  LEFT JOIN public.messaging_configuration AS c ON c.channel = j.channel
+  WHERE d.id = p_delivery_id
+  FOR UPDATE OF d;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'Message delivery not found'; END IF;
+
+  -- MIM has no idempotency descriptor in its real frozen snapshots, but the
+  -- provider itself is non-idempotent. Only explicitly non-idempotent custom
+  -- snapshots share this at-most-once path. Resend and custom header/body
+  -- idempotency must never enter dispatching/requires_review pre-send state.
+  IF v_provider_name = 'mim' THEN
+    NULL;
+  ELSIF v_provider_name = 'custom' AND v_idempotency_placement = 'none' THEN
+    NULL;
+  ELSE
+    RAISE EXCEPTION 'Provider snapshot is not non-idempotent';
+  END IF;
+
+  IF v_delivery.status <> 'processing'::public.message_delivery_status
+     OR v_delivery.locked_by IS DISTINCT FROM p_worker_id
+     OR v_delivery.locked_at IS NULL
+     OR v_delivery.locked_at < now() - make_interval(secs => v_lease_seconds) THEN
+    RAISE EXCEPTION 'Message delivery lease is not owned by this worker';
+  END IF;
+
+  -- Once committed, claim RPCs cannot reclaim this row: they only select pending
+  -- or expired processing rows. A crash after this point therefore requires review.
+  UPDATE public.message_deliveries AS d
+  SET status = 'dispatching'::public.message_delivery_status,
+      updated_at = now()
+  WHERE d.id = v_delivery.id;
+
+  -- Serialize aggregate writers and derive every counter from delivery state.
+  PERFORM 1 FROM public.message_jobs AS j WHERE j.id = v_delivery.job_id FOR UPDATE;
+  UPDATE public.message_jobs AS j
+  SET status = 'requires_review'::public.message_job_status,
+      recipient_count = a.recipient_count,
+      accepted_count = a.accepted_count,
+      delivered_count = a.delivered_count,
+      failed_count = a.failed_count,
+      bounced_count = a.bounced_count,
+      unknown_count = a.unknown_count,
+      completed_at = COALESCE(j.completed_at, now()),
+      updated_at = now()
+  FROM (
+    SELECT count(*)::INTEGER AS recipient_count,
+      count(*) FILTER (WHERE status = 'accepted')::INTEGER AS accepted_count,
+      count(*) FILTER (WHERE status = 'delivered')::INTEGER AS delivered_count,
+      count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+      count(*) FILTER (WHERE status = 'bounced')::INTEGER AS bounced_count,
+      count(*) FILTER (WHERE status IN ('unknown', 'dispatching'))::INTEGER AS unknown_count
+    FROM public.message_deliveries
+    WHERE job_id = v_delivery.job_id
+  ) AS a
+  WHERE j.id = v_delivery.job_id;
+
+  RETURN true;
+END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.begin_non_idempotent_dispatch(UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.begin_non_idempotent_dispatch(UUID, TEXT) TO service_role;
+
 -- Migration ledger (contract: provisioning_migrations)
 CREATE TABLE IF NOT EXISTS public.provisioning_migrations (
   version TEXT PRIMARY KEY,
@@ -6469,19 +8153,27 @@ INSERT INTO public.provisioning_migrations (version, sha256) VALUES
   ('20250831000001_fix_default_password_login.sql', 'e5236b1b84e0a1d715afafd971c9f94bf65a714b445eb7e47ab16b0cc52422ef'),
   ('20250831000002_batch_end_time.sql', '0fca0502d87f68bf15864c0a387a679dc04f4d041ea152b6780aac5e497e1835'),
   ('20250904000001_admin_safe_mutations.sql', '87c5ad1769a064da466910fec11357a8ad10387880a9c5d21697c55d25269bb0'),
-  ('keep_alive_cron.sql', 'db8f5c757942a389730ca2f9554ccf87901457e563d5cea9096e8be56dc29f95'),
-  ('automated_backups.sql', '88031f766961d73e43acbc9b057a1386fef6aca02d10c400f9df836a8e102a1e'),
-  ('20250905000001_backups_admin_rls.sql', 'e4c82e1ad0d845a4c8cfa8f669ae355141906369a0065ace330570aec03ae7bd'),
-  ('20250905000002_backup_coverage.sql', 'ee31b02b2b94183c47a4587a6a47f682a44c1305df4f182381fdfb38bb6d2786'),
-  ('20250905000003_backup_restore_coverage.sql', '48a6fab61cb86ac4e98832201c41ab079c1837ad47a397dd15ccd095cd896b5a'),
-  ('20250905000004_admin_backup_now.sql', 'f16cd3ef6698597cb06d7d6922b2f92a67a0a0796a093341f17c654fcee8ccf0'),
   ('20250905000005_feedback_email.sql', '549430ae0bddb0a131af8827ad73e3a87b7bfe15bbd50d96185ec24df27e62f1'),
   ('20250905000006_provider_secrets.sql', '2338657559e2107b2a81d39e2fc251f934494522d5690916ef4da2e790513583'),
   ('20250906000001_phase2_session_validation.sql', '1973fda31a6c564a982fd1ce57df028432cdc8e5bad68e1b2cb0c4b9762c9203'),
   ('20250906000002_atomic_admission_approval.sql', '72e6ab3a6da156e28739b109f4170ce9c3c446fcd851c023b83b623599e01c99'),
   ('20250906000003_phase2_payment_audit_atomic.sql', 'e1bb8efa9f457ca37de4f355507465dd309196067082a45864ecaf834f250c22'),
   ('20250907000001_exam_session_only_and_avatar_storage.sql', '2ed0cedc6678c0948738b3d1b19c303acff69666a41c8d5511011c7a904233ad'),
-  ('20250909000001_postinstall_repairs.sql', '6037b948bc717b5efa68634f5360fed8ddf3b39e6cdd31da09f0c9d2c9a3199f')
+  ('20250909000001_postinstall_repairs.sql', '6037b948bc717b5efa68634f5360fed8ddf3b39e6cdd31da09f0c9d2c9a3199f'),
+  ('20250910000001_fee_audit_logs_admin_rls.sql', '3b2a82e555c14f1283c0e47ac60aaadeba4f281715e5476d886593859212a72c'),
+  ('20250911000001_atomic_exam_deletion.sql', '158f18bf15ddf1f9b4e46e39efdb234d85179797484bfa87472ebb0c9040f139'),
+  ('20250912000001_student_auth_hardening.sql', '4d995455e6a8a983be859b3793403d290e4985e6353e74e8f16e2116322d68a8'),
+  ('20250913000001_private_avatars_public_assets.sql', 'c875ddc56f2d5bba7d94ae6a398896eb6de4d262357843a4077e134495d2c0bc'),
+  ('20250914000001_public_form_abuse_prevention.sql', '96b3312c36ac684b394497c962a4ae4a2d247f8a6c24d8ad26b02af6305f13bd'),
+  ('20250915000001_durable_message_outbox.sql', 'a58eec7809f4171f2034c91c36b470b51bd7943c50510972fe4d93d42ca122f0'),
+  ('20250915000002_messaging_worker_heartbeat.sql', '601bb84bf05b6ec34d73e2110776258e522721f12be0bd5a7fd405289796e9b6'),
+  ('20250915000003_messaging_channel_claims.sql', 'd8253badd712989bc1c8b204441dfe20b7c70ae6cdf631363606d86326fe65e7'),
+  ('20250915000004_messaging_ambiguous_outcomes.sql', '9cc24efadf65b62907905adf75d28832bc3b809d3514c704f8392bb979b7c8fb'),
+  ('20250915000005_atomic_message_attempts.sql', 'd3ddadc3c7afcc76023364d7c6b5f6960dbffb3564dcce6f2594c03cd8de698b'),
+  ('20250915000006_atomic_message_job_aggregate.sql', 'af9f093b1f74ed0abc5115fe6847eb08a0b9464da97fab3f37c845f981c28826'),
+  ('20250915000007_non_idempotent_sms_dispatch.sql', '3848b1136180d935184a05f4838e721d1730feceb3b5bac5c153c935c20eb257'),
+  ('20250915000008_provider_neutral_messaging.sql', '5ab1cf2db881a6e1b5bb75d9cefbc5fd80c1ade4925ded20f8c6e8ad51f109b7'),
+  ('20250915000009_mim_dispatch_fence.sql', 'aa3901d119a5447f40b9082a251048546df2e0d80ca95713ab8d42d596393d21')
 ;
 
 -- ═══════════ OUTER TRANSACTION: COMMIT ═══════════

@@ -9,7 +9,8 @@ export async function handler(event: any) {
   const result = await handleSendSms(
     event.httpMethod,
     event.headers?.authorization || event.headers?.Authorization,
-    event.body
+    event.body,
+    { 'idempotency-key': event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'] }
   );
   return {
     statusCode: result.status,

@@ -58,7 +58,7 @@ function useCountdown(target?: string) {
   const [remaining, setRemaining] = useState('');
   useEffect(() => {
     if (!target) {
-      return;
+      return undefined;
     }
     const calc = () => {
       const diff = new Date(target).getTime() - Date.now();
@@ -73,7 +73,7 @@ function useCountdown(target?: string) {
     };
     calc();
     const t = setInterval(calc, 1000);
-    return () => clearInterval(t);
+    return () => { clearInterval(t); };
   }, [target]);
   return remaining;
 }
@@ -178,12 +178,14 @@ function ExamCard({ exam, myResult }: { exam: Exam; myResult?: any }) {
 
 export default function PortalExamsPage() {
   const { student } = useStudentStore();
+  const studentId = student?.id;
+  const studentBatchId = student?.batch_id;
   const [exams, setExams] = useState<Exam[]>([]);
   const [myResults, setMyResults] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!student) {
+    if (!studentId) {
       return;
     }
     const load = async () => {
@@ -210,10 +212,10 @@ export default function PortalExamsPage() {
       }
     };
     load();
-  }, [student?.id, student?.token, student?.batch_id]);
+  }, [studentId]);
 
   // Only this student's own exams (batch-scoped), with wall-clock state.
-  const mine = exams.filter((e) => isForStudent(e, student?.batch_id));
+  const mine = exams.filter((e) => isForStudent(e, studentBatchId));
   const active = mine.filter((e) => effectiveState(e) === 'active');
   const paused = mine.filter((e) => effectiveState(e) === 'paused');
   const upcoming = mine.filter((e) => effectiveState(e) === 'draft');

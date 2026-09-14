@@ -31,16 +31,16 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock('@/lib/env', () => ({
-  env: { VITE_SUPABASE_URL: 'https://flbvusudwszxdylxevfe.supabase.co' },
+vi.mock('@/lib/avatarRetrieval', () => ({
+  resolveAvatarUrl: vi.fn(async (ref: string) => ref.startsWith('avatars/') ? 'https://signed.example/avatar' : ref),
 }));
 
 import PortalProfilePage from './PortalProfilePage';
 import { updatePhoto } from '@/lib/portalApi';
 
-const PROJECT = 'https://flbvusudwszxdylxevfe.supabase.co';
 const STUDENT_ID = '11111111-2222-3333-4444-555555555555';
-const PUBLIC_URL = `${PROJECT}/storage/v1/object/public/avatars/students/${STUDENT_ID}-photo.jpg`;
+const AVATAR_REF = `avatars/students/${STUDENT_ID}-photo.jpg`;
+const SIGNED_URL = 'https://signed.example/avatar';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -123,7 +123,7 @@ afterEach(async () => {
       root!.unmount();
     });
   }
-  if (container?.parentNode) container.parentNode.removeChild(container);
+  if (container?.parentNode) {container.parentNode.removeChild(container);}
   root = null;
   container = null;
   vi.unstubAllGlobals();
@@ -131,10 +131,10 @@ afterEach(async () => {
 });
 
 describe('PortalProfilePage avatar upload', () => {
-  it('saves payload.publicUrl via portal_update_photo and displays it', async () => {
+  it('saves the private avatar reference and displays a signed URL', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ path: `students/${STUDENT_ID}-photo.jpg`, publicUrl: PUBLIC_URL }),
+      json: async () => ({ path: `students/${STUDENT_ID}-photo.jpg`, avatarRef: AVATAR_REF }),
     });
     vi.stubGlobal('fetch', fetchMock);
     vi.mocked(updatePhoto).mockResolvedValue(undefined as never);
@@ -147,15 +147,15 @@ describe('PortalProfilePage avatar upload', () => {
       '/api/upload-avatar',
       expect.objectContaining({ method: 'POST' })
     );
-    expect(updatePhoto).toHaveBeenCalledWith(PUBLIC_URL);
-    expect(useStudentStore.getState().student?.photo_url).toBe(PUBLIC_URL);
-    expect(container!.querySelector('img')?.getAttribute('src')).toBe(PUBLIC_URL);
+    expect(updatePhoto).toHaveBeenCalledWith(AVATAR_REF);
+    expect(useStudentStore.getState().student?.photo_url).toBe(AVATAR_REF);
+    expect(container!.querySelector('img')?.getAttribute('src')).toBe(SIGNED_URL);
   });
 
-  it('displays the saved public URL after a reload (remount)', async () => {
+  it('displays the signed private avatar after a reload (remount)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ publicUrl: PUBLIC_URL }),
+      json: async () => ({ avatarRef: AVATAR_REF }),
     });
     vi.stubGlobal('fetch', fetchMock);
     vi.mocked(updatePhoto).mockResolvedValue(undefined as never);
@@ -164,7 +164,7 @@ describe('PortalProfilePage avatar upload', () => {
     await chooseFile(new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }));
     await flush();
 
-    // Simulate a reload: the persisted session carries the public URL.
+    // Simulate a reload: the persisted session carries only the private reference.
     await act(async () => {
       root!.unmount();
     });
@@ -175,7 +175,7 @@ describe('PortalProfilePage avatar upload', () => {
     await render();
     await flush();
 
-    expect(container!.querySelector('img')?.getAttribute('src')).toBe(PUBLIC_URL);
+    expect(container!.querySelector('img')?.getAttribute('src')).toBe(SIGNED_URL);
   });
 
   it('keeps an existing full public URL displayed without any retrieval call', async () => {
@@ -211,7 +211,7 @@ describe('PortalProfilePage avatar upload', () => {
     useStudentStore.setState({ student: makeSession({ photo_url: existing }) });
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ publicUrl: PUBLIC_URL }),
+      json: async () => ({ avatarRef: AVATAR_REF }),
     });
     vi.stubGlobal('fetch', fetchMock);
     vi.mocked(updatePhoto).mockRejectedValue(new Error('Session expired'));
@@ -220,7 +220,7 @@ describe('PortalProfilePage avatar upload', () => {
     await chooseFile(new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }));
     await flush();
 
-    expect(updatePhoto).toHaveBeenCalledWith(PUBLIC_URL);
+    expect(updatePhoto).toHaveBeenCalledWith(AVATAR_REF);
     expect(useStudentStore.getState().student?.photo_url).toBe(existing);
   });
 

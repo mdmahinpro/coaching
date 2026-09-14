@@ -17,6 +17,7 @@ const SUBJECTS = ['All Subjects', 'English', 'Mathematics', 'Physics', 'Chemistr
 export default function CoursesPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [level, setLevel] = useState('All');
   const [subject, setSubject] = useState('All Subjects');
@@ -28,11 +29,16 @@ export default function CoursesPage() {
     if (subject !== 'All Subjects') {query = query.ilike('subject', `%${subject}%`);}
     if (level !== 'All') {query = query.ilike('name', `%${level}%`);}
     setLoading(true);
+    setError(false);
     // Promise.resolve wraps the builder (typed PromiseLike) so .finally is available
-    Promise.resolve(query).then(({ data }) => {
+    Promise.resolve(query).then(({ data, error: queryError }) => {
+      if (queryError) {throw queryError;}
       const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
       setBatches(cleaned);
-    },(err: any) => { handleSupabaseError(err); }).finally(() => { setLoading(false); });
+    },(err: any) => { setError(true); handleSupabaseError(err); }).catch((err: any) => {
+      setError(true);
+      handleSupabaseError(err);
+    }).finally(() => { setLoading(false); });
   }, [q, level, subject]);
 
   return (
@@ -92,6 +98,12 @@ export default function CoursesPage() {
 
         {loading ? (
           <LoadingSkeleton rows={3} />
+        ) : error ? (
+          <EmptyState
+            title="কোর্স লোড করা যায়নি"
+            description="ইন্টারনেট সংযোগ পরীক্ষা করে পরে আবার চেষ্টা করুন।"
+            icon={<BookOpen size={48} strokeWidth={1.2} />}
+          />
         ) : batches.length === 0 ? (
           <EmptyState
             title="কোনো কোর্স পাওয়া যায়নি"

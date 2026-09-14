@@ -50,7 +50,14 @@ SELECT
   'email_logs',
   'provider_secrets',
   'backups',
-  'database_keepalive'
+  'database_keepalive',
+  'public_form_rate_events',
+  'messaging_configuration',
+  'messaging_provider_credentials',
+  'message_jobs',
+  'message_deliveries',
+  'message_attempts',
+  'messaging_worker_heartbeat'
        )
     ) x
   ) AS application_tables_found,
@@ -70,7 +77,16 @@ SELECT
   'portal_get_notices',
   'admin_approve_payment',
   'admin_restore_backup',
-  'admin_create_backup_now'
+  'admin_create_backup_now',
+  'submit_public_form',
+  'enqueue_message_job',
+  'claim_message_deliveries',
+  'claim_message_job_delivery',
+  'save_messaging_configuration',
+  'remove_messaging_configuration',
+  'begin_non_idempotent_dispatch',
+  'record_message_attempt',
+  'refresh_message_job_aggregate'
        )
     ) z
   ) AS application_functions_found,
@@ -106,7 +122,14 @@ SELECT 'DECISION' AS outcome,
   'email_logs',
   'provider_secrets',
   'backups',
-  'database_keepalive'
+  'database_keepalive',
+  'public_form_rate_events',
+  'messaging_configuration',
+  'messaging_provider_credentials',
+  'message_jobs',
+  'message_deliveries',
+  'message_attempts',
+  'messaging_worker_heartbeat'
            )
          ) THEN 'STOP: application objects already exist (even if empty). Do not drop/reset; review first.'
          WHEN EXISTS (
@@ -123,7 +146,16 @@ SELECT 'DECISION' AS outcome,
   'portal_get_notices',
   'admin_approve_payment',
   'admin_restore_backup',
-  'admin_create_backup_now'
+  'admin_create_backup_now',
+  'submit_public_form',
+  'enqueue_message_job',
+  'claim_message_deliveries',
+  'claim_message_job_delivery',
+  'save_messaging_configuration',
+  'remove_messaging_configuration',
+  'begin_non_idempotent_dispatch',
+  'record_message_attempt',
+  'refresh_message_job_aggregate'
            )
          ) THEN 'STOP: application functions already exist. Do not install over them; review first.'
          ELSE 'GO: fresh-install candidate. Run STAGING_INSTALL.sql.'
@@ -160,7 +192,14 @@ SELECT c.relname            AS relation_name,
   'email_logs',
   'provider_secrets',
   'backups',
-  'database_keepalive'
+  'database_keepalive',
+  'public_form_rate_events',
+  'messaging_configuration',
+  'messaging_provider_credentials',
+  'message_jobs',
+  'message_deliveries',
+  'message_attempts',
+  'messaging_worker_heartbeat'
    )
  ORDER BY c.relname;
 
@@ -194,7 +233,14 @@ SELECT n.nspname, c.relname AS relation_name, c.reltuples::bigint AS live_tuples
   'email_logs',
   'provider_secrets',
   'backups',
-  'database_keepalive'
+  'database_keepalive',
+  'public_form_rate_events',
+  'messaging_configuration',
+  'messaging_provider_credentials',
+  'message_jobs',
+  'message_deliveries',
+  'message_attempts',
+  'messaging_worker_heartbeat'
    )
  ORDER BY c.relname;
 
@@ -251,7 +297,16 @@ SELECT p.proname AS function_name,
   'portal_get_notices',
   'admin_approve_payment',
   'admin_restore_backup',
-  'admin_create_backup_now'
+  'admin_create_backup_now',
+  'submit_public_form',
+  'enqueue_message_job',
+  'claim_message_deliveries',
+  'claim_message_job_delivery',
+  'save_messaging_configuration',
+  'remove_messaging_configuration',
+  'begin_non_idempotent_dispatch',
+  'record_message_attempt',
+  'refresh_message_job_aggregate'
    )
  ORDER BY p.proname;
 
@@ -287,7 +342,14 @@ SELECT c.relname AS relation_name,
   'email_logs',
   'provider_secrets',
   'backups',
-  'database_keepalive'
+  'database_keepalive',
+  'public_form_rate_events',
+  'messaging_configuration',
+  'messaging_provider_credentials',
+  'message_jobs',
+  'message_deliveries',
+  'message_attempts',
+  'messaging_worker_heartbeat'
    )
  ORDER BY c.relname;
 

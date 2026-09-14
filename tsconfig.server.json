@@ -1,5 +1,5 @@
 {
-  "include": ["api/**/*.ts", "netlify/functions/**/*.ts", "server/**/*.ts"],
+  "include": ["api/**/*.ts", "netlify/functions/**/*.ts", "server/**/*.ts", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist"],
   "compilerOptions": {
     "noEmit": true,

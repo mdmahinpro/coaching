@@ -9,6 +9,18 @@ const roots = [];
 const anon = 'sb_publishable_fixture_public_12345';
 const service = 'sb_secret_fixture_server_12345';
 const valid = { url: runtime.PROJECT_URL, anonKey: anon, serviceKey: service };
+function fixturePaths() {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'techely-config-test-'));
+  roots.push(parent);
+  const repo = path.join(parent, 'repo');
+  fs.mkdirSync(repo);
+  return {
+    parent,
+    repo,
+    externalFile: path.join(parent, 'settings.json'),
+    missingExternalFile: path.join(parent, 'nonexistent-settings.json'),
+  };
+}
 const jwt = (role, ref) =>
   [
     'eyJhbGciOiJub25lIn0',
@@ -58,50 +70,56 @@ describe('isolated runtime configuration', () => {
     expect(env.ISOLATED_PORT).toBe('5199');
   });
   it('does not mix partial process secrets with stored keys', () => {
+    const paths = fixturePaths();
     expect(() =>
-      runtime.loadIsolatedConfig({ env: { E2E_DISPOSABLE_SUPABASE_ANON_KEY: anon }, root: '/repo' })
+      runtime.loadIsolatedConfig({
+        env: {
+          E2E_ISOLATED_CONFIG_FILE: paths.missingExternalFile,
+          E2E_DISPOSABLE_SUPABASE_ANON_KEY: anon,
+        },
+        root: paths.repo,
+      })
     ).toThrow('SUPABASE_SERVICE_ROLE_KEY');
   });
   it('loads a separate explicit local key file and never .env.local', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'techely-config-test-'));
-    roots.push(root);
-    const file = path.join(root, 'settings.json');
-    setup.saveConfig(runtime.normalize(valid), file);
+    const paths = fixturePaths();
+    setup.saveConfig(runtime.normalize(valid), paths.externalFile);
     const c = runtime.loadIsolatedConfig({
-      env: { E2E_ISOLATED_CONFIG_FILE: file },
-      root: path.join(root, 'repo'),
+      env: { E2E_ISOLATED_CONFIG_FILE: paths.externalFile },
+      root: paths.repo,
     });
     expect(c.source).toBe('local-file');
     expect(c.serviceKey).toBe(service);
-    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32')
+      expect(fs.statSync(paths.externalFile).mode & 0o777).toBe(0o600);
   });
   it('uses a complete saved source with matching partial env, and rejects conflicting values', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'techely-config-test-'));
-    roots.push(root);
-    const file = path.join(root, 'settings.json');
-    setup.saveConfig(runtime.normalize(valid), file);
-    const env = { E2E_ISOLATED_CONFIG_FILE: file, E2E_DISPOSABLE_SUPABASE_ANON_KEY: anon };
-    expect(runtime.loadIsolatedConfig({ env, root: path.join(root, 'repo') }).serviceKey).toBe(
-      service
-    );
+    const paths = fixturePaths();
+    setup.saveConfig(runtime.normalize(valid), paths.externalFile);
+    const env = {
+      E2E_ISOLATED_CONFIG_FILE: paths.externalFile,
+      E2E_DISPOSABLE_SUPABASE_ANON_KEY: anon,
+    };
+    expect(runtime.loadIsolatedConfig({ env, root: paths.repo }).serviceKey).toBe(service);
     expect(() =>
       runtime.loadIsolatedConfig({
         env: { ...env, SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_other_key_123456' },
-        root: path.join(root, 'repo'),
+        root: paths.repo,
       })
     ).toThrow('conflicts');
     expect(() =>
       runtime.loadIsolatedConfig({
         env: { ...env, SUPABASE_URL: 'https://flbvusudwszxdylxevfe.supabase.co' },
-        root: path.join(root, 'repo'),
+        root: paths.repo,
       })
     ).toThrow('conflicts');
   });
   it('rejects credential files inside the repository', () => {
+    const paths = fixturePaths();
     expect(() =>
       runtime.loadIsolatedConfig({
-        env: { E2E_ISOLATED_CONFIG_FILE: '/repo/e2e/keys.json' },
-        root: '/repo',
+        env: { E2E_ISOLATED_CONFIG_FILE: path.join(paths.repo, 'e2e', 'keys.json') },
+        root: paths.repo,
       })
     ).toThrow('outside');
   });

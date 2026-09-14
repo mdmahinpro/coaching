@@ -1,10 +1,10 @@
-import { clsx, type ClassValue } from 'clsx';
+import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { sanitize } from '@/utils/sanitize';
 
 export { sanitize };
 
-export function cn(...inputs: ClassValue[]) {
+export function cn(...inputs: import('clsx').ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 

@@ -109,7 +109,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
   }, [showDropdown]);
 
   return (
-    <header className="h-14 bg-navy-800/80 backdrop-blur-md border-b border-navy-700/50 flex items-center px-4 md:px-6 gap-2 sticky top-0 z-50">
+    <header className="h-14 bg-navy-800/80 backdrop-blur-md border-b border-navy-700/50 flex items-center px-3 md:px-6 gap-1 sm:gap-2 sticky top-0 z-50">
       {/* Hamburger */}
       <button
         onClick={onMenuToggle}
@@ -128,7 +128,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
           {searchOpen && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 220, opacity: 1 }}
+              animate={{ width: 'min(220px, calc(100vw - 196px))', opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
@@ -158,6 +158,8 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
               setSearchOpen(true);
             }
           }}
+          aria-label={searchOpen ? 'Close student search' : 'Open student search'}
+          aria-expanded={searchOpen}
           className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors shrink-0"
         >
           {searchOpen ? <X size={16} /> : <Search size={16} />}
@@ -234,6 +236,7 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
           onClick={() => setShowDropdown((s) => !s)}
           aria-haspopup="menu"
           aria-expanded={showDropdown}
+          aria-label="Open admin account menu"
           className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
         >
           <Avatar name={name} size="sm" src={user?.user_metadata?.photo_url as string | undefined} />

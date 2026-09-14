@@ -33,7 +33,9 @@ const appTables = [
   'mcq_questions', 'mcq_submissions', 'site_settings', 'fee_audit_logs',
   'notice_reads', 'payment_approvals', 'exam_tokens', 'student_sessions',
   'login_attempts', 'admin_users', 'feedback', 'email_logs',
-  'provider_secrets', 'backups', 'database_keepalive',
+  'provider_secrets', 'backups', 'database_keepalive', 'public_form_rate_events',
+  'messaging_configuration', 'messaging_provider_credentials', 'message_jobs', 'message_deliveries', 'message_attempts',
+  'messaging_worker_heartbeat',
 ];
 
 // Distinct tables that carry business/tuple data for the live-tuples view
@@ -44,7 +46,10 @@ const appFunctionNames = [
   'exam_join', 'exam_get_questions', 'exam_submit', 'exam_get_review',
   'exam_get_leaderboard', 'portal_get_exams', 'portal_get_fees',
   'portal_get_submissions', 'portal_get_notices', 'admin_approve_payment',
-  'admin_restore_backup', 'admin_create_backup_now',
+  'admin_restore_backup', 'admin_create_backup_now', 'submit_public_form',
+  'enqueue_message_job', 'claim_message_deliveries', 'claim_message_job_delivery',
+  'save_messaging_configuration', 'remove_messaging_configuration',
+  'begin_non_idempotent_dispatch', 'record_message_attempt', 'refresh_message_job_aggregate',
 ];
 
 const tableList = () => appTables.map((t) => `  '${t}'`).join(',\n');

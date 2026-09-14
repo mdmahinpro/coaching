@@ -33,7 +33,8 @@ const canonicalPath = path.join(root, 'supabase', 'schema', 'canonical.sql');
 const outPath = path.join(root, 'staging', 'STAGING_INSTALL.sql');
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-const files = ['canonical.sql', ...manifest.followOnMigrations];
+const requiredMigrations = manifest.migrations.map((entry) => entry.file);
+const files = ['canonical.sql', ...requiredMigrations];
 
 // Ledger contract: baseline plus each migration, keyed by version with sha256.
 const rows = [];
@@ -102,7 +103,7 @@ block.push(canonicalBody.trim());
 block.push('');
 
 // Follow-on migrations (transactional bodies only)
-for (const file of manifest.followOnMigrations) {
+for (const file of requiredMigrations) {
   const { txBody, postCommit } = splitFile(file);
   block.push(`-- === Migration: ${file} ===`);
   block.push(txBody.trim());

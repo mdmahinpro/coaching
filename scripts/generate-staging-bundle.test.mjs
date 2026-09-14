@@ -39,7 +39,8 @@ describe('staging install bundle contract', () => {
     for (const directive of psql) {
       expect(s).not.toMatch(new RegExp(`^\\\\${directive}\\b`, 'i'));
     }
-    expect((s.match(/-- === Migration:/gm) ?? []).length).toBe(40);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    expect((s.match(/-- === Migration:/gm) ?? []).length).toBe(manifest.migrations.length);
   });
 
   it('wraps the install in exactly ONE outer BEGIN; ... COMMIT;', () => {
@@ -70,7 +71,7 @@ describe('staging install bundle contract', () => {
   it('preserves the canonical baseline and every migration function/DO body verbatim', () => {
     const s = install();
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    const sources = ['canonical.sql', ...manifest.followOnMigrations].map((file) => {
+    const sources = ['canonical.sql', ...manifest.migrations.map((entry) => entry.file)].map((file) => {
       const src = fs.readFileSync(
         file === 'canonical.sql' ? path.join(root, 'supabase', 'schema', file) : path.join(root, 'supabase', 'migrations', file),
         'utf8',
@@ -101,22 +102,22 @@ describe('staging install bundle contract', () => {
     expect(s.slice(0, i)).toContain('CREATE TABLE IF NOT EXISTS public.mcq_submissions');
   });
 
-  it('orders backup/cron prerequisites before the backup consumers', () => {
+  it('keeps backup and cron operations out of the required staging install', () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    const order = manifest.followOnMigrations;
-    const consumer = order.indexOf('20250905000002_backup_coverage.sql');
-    expect(consumer).toBeGreaterThan(order.indexOf('keep_alive_cron.sql'));
-    expect(consumer).toBeGreaterThan(order.indexOf('automated_backups.sql'));
-    expect(consumer).toBeGreaterThan(order.indexOf('20250905000001_backups_admin_rls.sql'));
+    const required = manifest.migrations.map((entry) => entry.file);
+    const operational = manifest.operationalMigrations.map((entry) => entry.file);
+
+    expect(required).not.toContain('keep_alive_cron.sql');
+    expect(required).not.toContain('automated_backups.sql');
+    expect(required).not.toContain('20250905000002_backup_coverage.sql');
+    expect(operational.indexOf('20250905000002_backup_coverage.sql')).toBeGreaterThan(
+      operational.indexOf('20250905000001_backups_admin_rls.sql')
+    );
 
     const s = install();
-    const backupIdx = s.indexOf('20250905000002_backup_coverage.sql');
-    expect(backupIdx).toBeGreaterThan(-1);
-    // The pg_cron extension and the backups table are created before the
-    // backup-coverage migration's static cron DO block and admin backup RPC.
-    expect(s.slice(0, backupIdx)).toContain('CREATE EXTENSION IF NOT EXISTS pg_cron;');
-    expect(s.slice(0, backupIdx)).toContain('CREATE TABLE IF NOT EXISTS backups');
-    expect(s.slice(0, backupIdx)).toContain('backups_admin_all');
+    expect(s).not.toContain('-- === Migration: keep_alive_cron.sql ===');
+    expect(s).not.toContain('-- === Migration: automated_backups.sql ===');
+    expect(s).not.toContain('-- === Migration: 20250905000002_backup_coverage.sql ===');
   });
 
   it('includes S1 security removal and the ledger', () => {
@@ -133,7 +134,7 @@ describe('staging install bundle contract', () => {
   it('has exact ledger checksums matching the manifest files', () => {
     const s = install();
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    for (const file of ['canonical.sql', ...manifest.followOnMigrations]) {
+    for (const file of ['canonical.sql', ...manifest.migrations.map((entry) => entry.file)]) {
       const src = fs.readFileSync(
         file === 'canonical.sql' ? path.join(root, 'supabase', 'schema', file) : path.join(root, 'supabase', 'migrations', file),
         'utf8',

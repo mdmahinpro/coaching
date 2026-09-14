@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import nodeProcess from 'node:process';
+import { guardServerEnvironment } from './environment-guard';
 
 /**
  * Server-only, fixed homepage aggregate. Never import this module into UI code.
@@ -14,19 +15,18 @@ export async function handleHomeStats(): Promise<{
   status: number;
   body: Record<string, unknown>;
 }> {
-  const url = nodeProcess.env.SUPABASE_URL?.trim();
+  const environment = guardServerEnvironment();
+  if (!environment.ok) {return environment.response;}
+  const url = environment.environment.supabaseUrl;
   const serviceKey = nodeProcess.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-  if (!url || !serviceKey) {
-    const missing: string[] = [];
-    if (!url) missing.push('SUPABASE_URL');
-    if (!serviceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!serviceKey) {
     return {
       status: 503,
       body: {
         error: 'Stats service is not configured',
         code: 'STATS_CONFIG_MISSING',
-        missing,
+        missing: ['SUPABASE_SERVICE_ROLE_KEY'],
         handlerVersion: 'home-stats-config-v2',
       },
     };

@@ -3,9 +3,9 @@ import { Bell, UserPlus, CreditCard, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotificationStore } from '@/store/useNotificationStore';
-import { timeAgo, type AdminNotification } from '@/lib/adminNotifications';
+import { timeAgo } from '@/lib/adminNotifications';
 
-function KindIcon({ kind }: { kind: AdminNotification['kind'] }) {
+function KindIcon({ kind }: { kind: import('@/lib/adminNotifications').AdminNotification['kind'] }) {
   return kind === 'payment' ? (
     <span className="w-8 h-8 rounded-lg bg-emerald-400/15 flex items-center justify-center shrink-0">
       <CreditCard size={14} className="text-emerald-400" />
@@ -28,7 +28,7 @@ export function AdminNotificationBell() {
   // presses "Mark all read") — that's what keeps it "until opened".
   useEffect(() => {
     if (!open) {
-      return;
+      return undefined;
     }
     const onMouseDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -74,7 +74,9 @@ export function AdminNotificationBell() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full mt-2 w-80 bg-navy-800 border border-navy-600/70 rounded-xl overflow-hidden z-[60] shadow-2xl shadow-black/50"
+              role="dialog"
+              aria-label="Admin notifications"
+              className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 bg-navy-800 border border-navy-600/70 rounded-xl overflow-hidden z-[60] shadow-2xl shadow-black/50"
             >
               <div className="px-4 py-3 border-b border-white/10 bg-navy-900/60 flex items-center justify-between">
                 <p className="text-white text-sm font-medium">Notifications</p>
@@ -95,7 +97,7 @@ export function AdminNotificationBell() {
                   </p>
                 </div>
               ) : (
-                <div className="max-h-80 overflow-y-auto divide-y divide-white/5">
+                <div className="max-h-[min(20rem,calc(100dvh-10rem))] overflow-y-auto overscroll-contain divide-y divide-white/5">
                   {items.map((n) => (
                     <Link
                       key={n.id}

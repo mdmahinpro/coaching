@@ -10,7 +10,6 @@ import {
   pruneSeen,
   seenKeyFor,
   timeAgo,
-  type AdminNotification,
 } from '@/lib/adminNotifications';
 
 const POLL_MS = 45_000;
@@ -39,13 +38,13 @@ export function useAdminNotifications(email: string | null) {
 
   useEffect(() => {
     if (!email) {
-      return;
+      return undefined;
     }
     const key = seenKeyFor(email);
     keysRef.current = key;
     setSeenKey(email);
 
-    const showToast = (item: AdminNotification) => {
+    const showToast = (item: import('@/lib/adminNotifications').AdminNotification) => {
       const Icon = item.kind === 'payment' ? CreditCard : UserPlus;
       toast(
         (t) => (

@@ -3,12 +3,11 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Avatar } from './Avatar';
 
-const PROJECT = 'https://flbvusudwszxdylxevfe.supabase.co';
 const STUDENT_ID = '11111111-2222-3333-4444-555555555555';
-const PUBLIC_URL = `${PROJECT}/storage/v1/object/public/avatars/students/${STUDENT_ID}-photo.jpg`;
+const SIGNED_URL = 'https://signed.example/avatar';
 
-vi.mock('@/lib/env', () => ({
-  env: { VITE_SUPABASE_URL: 'https://flbvusudwszxdylxevfe.supabase.co' },
+vi.mock('@/lib/supabase', () => ({
+  supabase: { auth: { getSession: vi.fn(async () => ({ data: { session: null } })) } },
 }));
 
 vi.mock('@/lib/avatars', () => ({
@@ -43,15 +42,15 @@ afterEach(async () => {
       root!.unmount();
     });
   }
-  if (container?.parentNode) container.parentNode.removeChild(container);
+  if (container?.parentNode) {container.parentNode.removeChild(container);}
   root = null;
   container = null;
   vi.unstubAllGlobals();
 });
 
-describe('Avatar public-avatar display', () => {
-  it('resolves the validated original reference to a public URL without contacting retrieval RPCs', async () => {
-    const fetchMock = vi.fn();
+describe('Avatar private-avatar display', () => {
+  it('resolves a private reference through the signed retrieval endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ signedURL: SIGNED_URL }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await render(
@@ -62,8 +61,8 @@ describe('Avatar public-avatar display', () => {
       />
     );
 
-    expect(container!.querySelector('img')?.getAttribute('src')).toBe(PUBLIC_URL);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container!.querySelector('img')?.getAttribute('src')).toBe(SIGNED_URL);
+    expect(fetchMock).toHaveBeenCalledWith('/api/retrieve-avatar', expect.any(Object));
   });
 
   it('renders an existing full public URL unchanged', async () => {

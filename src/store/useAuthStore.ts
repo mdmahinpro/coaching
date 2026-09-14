@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import type { User, Session, Subscription } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 
 type Role = 'admin' | 'student' | null;
 
@@ -19,7 +19,7 @@ interface AuthState {
 
 // Module-scoped handle to the single active auth subscription. Kept outside
 // the store state so it never triggers re-renders and can be torn down cleanly.
-let authSubscription: Subscription | null = null;
+let authSubscription: import('@supabase/supabase-js').Subscription | null = null;
 
 /**
  * Resolve the caller's role from the server.

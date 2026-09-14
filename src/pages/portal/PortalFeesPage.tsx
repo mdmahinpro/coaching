@@ -44,6 +44,7 @@ interface Approval {
 
 export default function PortalFeesPage() {
   const { student } = useStudentStore();
+  const studentId = student?.id;
   const { settings } = useSettingsStore();
   const [fees, setFees] = useState<Fee[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -56,7 +57,7 @@ export default function PortalFeesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(() => {
-    if (!student) {
+    if (!studentId) {
       return;
     }
     Promise.all([fetchFees(), fetchMyPaymentApprovals()])
@@ -72,7 +73,7 @@ export default function PortalFeesPage() {
         }
       )
       .catch(() => setLoading(false));
-  }, [student?.id, student?.token]);
+  }, [studentId]);
 
   useEffect(() => {
     load();
@@ -325,7 +326,7 @@ export default function PortalFeesPage() {
       <h1 className="font-inter font-bold text-xl text-white mb-5 font-hind">ফি রেকর্ড</h1>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {[
           {
             label: 'মোট পরিশোধ',
@@ -373,13 +374,16 @@ export default function PortalFeesPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-              onClick={() => setSubmitFor(null)}
+              onClick={() => !submitting && setSubmitFor(null)}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 16 }}
-              className="relative card z-10 w-full max-w-md p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="payment-dialog-title"
+              className="relative card z-10 w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-5 sm:p-6"
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -392,7 +396,8 @@ export default function PortalFeesPage() {
                 </div>
                 <button
                   onClick={() => setSubmitFor(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                  aria-label="Close payment dialog"
+                  className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 shrink-0"
                 >
                   <X size={18} />
                 </button>
@@ -416,6 +421,7 @@ export default function PortalFeesPage() {
                 <div>
                   <label className="text-xs text-slate-400 mb-1.5 block">ট্রানজেকশন আইডি *</label>
                   <input
+                    id="payment-transaction-id"
                     value={trxId}
                     onChange={(e) => setTrxId(e.target.value)}
                     className="input-field font-mono"

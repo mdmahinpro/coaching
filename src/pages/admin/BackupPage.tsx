@@ -15,6 +15,13 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import {
+  type BackupEnvelope,
+  MAX_BACKUP_FILE_BYTES,
+  MAX_BACKUP_ROWS_PER_TABLE,
+  createBackupEnvelope,
+  parseBackupText,
+} from '@/lib/backupSecurity';
 
 const BACKUP_KEY = 'coaching-backup-history';
 const TABLES = [
@@ -65,7 +72,7 @@ export default function BackupPage() {
   const [creatingAuto, setCreatingAuto] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreSummary, setRestoreSummary] = useState<Record<string, number> | null>(null);
-  const [restoreData, setRestoreData] = useState<any | null>(null);
+  const [restoreData, setRestoreData] = useState<BackupEnvelope | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [confirmStep, setConfirmStep] = useState<0 | 1 | 2>(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -113,17 +120,17 @@ export default function BackupPage() {
       return;
     }
     // Older automated snapshots stored the complete envelope inside `tables`.
-    // Normalize both old and corrected snapshots when downloading.
+    // Normalize both formats, remove legacy secrets, and apply the same strict
+    // size/row limits as manual portable backups before creating a download.
     const stored = data.tables as Record<string, unknown>;
-    const tables = stored?.backup_version && stored?.tables
-      ? stored.tables
-      : stored;
-    const payload = {
-      backup_version: '1.0',
-      backup_date: data.backup_date,
-      institute: data.institute_name,
-      tables,
-    };
+    const tables = stored?.backup_version && stored?.tables ? stored.tables : stored;
+    let payload: BackupEnvelope;
+    try {
+      payload = createBackupEnvelope(tables, data.institute_name, data.backup_date);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Backup does not meet export limits');
+      return;
+    }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -181,9 +188,17 @@ export default function BackupPage() {
           setStep(i, 'error');
           failures.push(`${TABLES[i].label}: ${error.message}`);
         } else {
-          backup[TABLES[i].key] = data ?? [];
-          totalRecords += (data ?? []).length;
-          setStep(i, 'done');
+          const rows = data ?? [];
+          if (rows.length > MAX_BACKUP_ROWS_PER_TABLE) {
+            setStep(i, 'error');
+            failures.push(
+              `${TABLES[i].label}: exceeds ${MAX_BACKUP_ROWS_PER_TABLE} portable-backup row limit`
+            );
+          } else {
+            backup[TABLES[i].key] = rows;
+            totalRecords += rows.length;
+            setStep(i, 'done');
+          }
         }
       }
 
@@ -205,13 +220,9 @@ export default function BackupPage() {
         .single();
       const instituteName = settings?.value ?? 'CoachingCenter';
 
-      const payload = {
-        backup_version: '1.0',
-        backup_date: new Date().toISOString(),
-        institute: instituteName,
-        tables: backup,
-      };
-
+      // Build through the portable-backup boundary so password hashes, admission
+      // default passwords, provider responses and secret settings never leave the app.
+      const payload = createBackupEnvelope(backup, instituteName);
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -239,27 +250,26 @@ export default function BackupPage() {
     if (!file) {
       return;
     }
-    setRestoreFile(file);
     setRestoreSummary(null);
     setRestoreData(null);
     setConfirmStep(0);
+    if (file.size > MAX_BACKUP_FILE_BYTES) {
+      setRestoreFile(null);
+      toast.error(`Backup file exceeds ${MAX_BACKUP_FILE_BYTES / 1024 / 1024} MiB`);
+      e.target.value = '';
+      return;
+    }
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (!parsed.backup_version || !parsed.tables) {
-        toast.error('Invalid backup file format');
-        return;
-      }
+      const parsed = parseBackupText(await file.text());
+      setRestoreFile(file);
       setRestoreData(parsed);
-      const summary: Record<string, number> = {};
-      for (const [key, rows] of Object.entries(parsed.tables)) {
-        if (Array.isArray(rows)) {
-          summary[key] = rows.length;
-        }
-      }
-      setRestoreSummary(summary);
-    } catch {
-      toast.error('Could not parse backup file');
+      setRestoreSummary(
+        Object.fromEntries(Object.entries(parsed.tables).map(([key, rows]) => [key, rows.length]))
+      );
+    } catch (err) {
+      setRestoreFile(null);
+      e.target.value = '';
+      toast.error(err instanceof Error ? err.message : 'Invalid backup file');
     }
   };
 
@@ -269,42 +279,18 @@ export default function BackupPage() {
     }
     setRestoring(true);
     try {
-      // Preferred path: server-side transactional restore (20250904000001).
-      // Replaces every table present in the backup; any failure rolls back the
-      // whole restore and reports the offending table. Only falls back to the
-      // legacy client-side upsert when the new RPC is not yet deployed.
+      // Restore is intentionally RPC-only: client-side table-by-table writes can
+      // leave a partially restored database. Missing or failed RPCs fail closed.
       const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_restore_backup', {
         p_tables: restoreData.tables,
       });
-      if (!rpcErr) {
-        const rows = (rpcData ?? []) as Array<{ table_name: string; rows_restored: number }>;
-        const total = rows.reduce((sum, r) => sum + (Number(r.rows_restored) || 0), 0);
-        toast.success(`✅ Restore complete! ${total} records restored`);
-      } else {
-        // Legacy fallback: keep apply-in-order semantics but surface every
-        // per-table error instead of claiming success despite failures.
-        let totalRestored = 0;
-        const failures: string[] = [];
-        for (const tableName of Object.keys(restoreData.tables)) {
-          const rows = (restoreData.tables as any)[tableName];
-          if (!Array.isArray(rows) || rows.length === 0) {
-            continue;
-          }
-          const { error } = await supabase
-            .from(tableName as any)
-            .upsert(rows as any[], { onConflict: 'id', ignoreDuplicates: false });
-          if (error) {
-            failures.push(`${tableName}: ${error.message}`);
-          } else {
-            totalRestored += rows.length;
-          }
-        }
-        if (failures.length > 0) {
-          toast.error(`Restore incomplete: ${totalRestored} restored, ${failures.length} table(s) failed — ${failures.join('; ')}`);
-        } else {
-          toast.success(`✅ Restore complete! ${totalRestored} records restored`);
-        }
+      if (rpcErr) {
+        toast.error(`Restore failed without changing data: ${rpcErr.message}`);
+        return;
       }
+      const rows = (rpcData ?? []) as Array<{ table_name: string; rows_restored: number }>;
+      const total = rows.reduce((sum, r) => sum + (Number(r.rows_restored) || 0), 0);
+      toast.success(`✅ Restore complete! ${total} records restored`);
     } catch (err) {
       handleSupabaseError(err);
     } finally {

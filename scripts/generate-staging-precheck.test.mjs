@@ -100,8 +100,12 @@ describe('staging precheck: missing optional objects must not error', () => {
     // because the precheck's table list missed that one table. The precheck
     // must therefore cover every application table the install bundle emits.
     const bundle = fs.readFileSync(path.join(root, 'staging', 'STAGING_INSTALL.sql'), 'utf8');
-    // Parse the generator's authoritative appTables list.
-    const appSrc = generator.slice(generator.indexOf('const appTables'), generator.indexOf('const tupleTables'));
+    // Parse the shipped precheck's first authoritative catalog table list. This
+    // also covers reviewed one-off staging additions that are intentionally not
+    // made to the generator in a database-only change set.
+    const tableListStart = precheck.indexOf("AND c.relname IN (");
+    const tableListEnd = precheck.indexOf("       )", tableListStart);
+    const appSrc = precheck.slice(tableListStart, tableListEnd);
     const precheckTables = [...appSrc.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
     // Every CREATE TABLE in the bundle (public app tables; ledger is reported
     // separately and is intentionally absent from the fresh-install GO list).

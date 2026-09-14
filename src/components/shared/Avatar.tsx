@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { getInitials } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { seededAvatarUrl } from '@/lib/avatars';
-import { resolveAvatarUrl } from '@/lib/avatarRetrieval';
-import { env } from '@/lib/env';
+import { isPrivateAvatarRef, privateAvatarStudentId, resolveAvatarUrl } from '@/lib/avatarRetrieval';
+import { supabase } from '@/lib/supabase';
 
 interface Props {
   name: string;
@@ -49,13 +49,18 @@ export function Avatar({
   useEffect(() => {
     let active = true;
     setResolved(undefined);
-    if (src && bearer) {
-      resolveAvatarUrl(src, bearer, {
-        supabaseUrl: env.VITE_SUPABASE_URL,
-        ...(studentId ? { studentId } : {}),
-      }).then((u) => {
-        if (active) setResolved(u);
-      });
+    if (src && isPrivateAvatarRef(src)) {
+      void (async () => {
+        const token = bearer ?? (await supabase.auth.getSession()).data.session?.access_token ?? '';
+        // An explicit bearer without studentId is the student's opaque portal
+        // token. When using an admin session discovered here, infer the target
+        // UUID from the strictly validated private reference.
+        const targetId = studentId ?? (!bearer ? privateAvatarStudentId(src) ?? undefined : undefined);
+        const url = await resolveAvatarUrl(src, token, targetId ? { studentId: targetId } : {});
+        if (active) {setResolved(url);}
+      })();
+    } else if (src) {
+      setResolved(src);
     }
     return () => {
       active = false;

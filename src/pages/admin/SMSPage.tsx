@@ -4,19 +4,27 @@ import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { cn, formatDate, sanitize } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Send,
-  Save,
-  Loader2,
-  CheckCircle2,
-  X,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react';
+import { Send, Save, Loader2, CheckCircle2, X, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS, fillTemplate, SMS_TEMPLATES } from '@/lib/sms';
 import { sendEmail, emailTemplate, EMAIL_TEMPLATES } from '@/lib/email';
+import {
+  dedupeRecipients,
+  formatMessagingResult,
+  hasUnresolvedTemplate,
+  messagingIdempotencyKey,
+  processMessageQueue,
+  type MessagingResponse,
+} from '@/lib/messaging';
+import { MessagingProviderSettings } from '@/components/admin/MessagingProviderSettings';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import {
+  campaignLimitState,
+  messagingResultTone,
+  savedSmsTemplates,
+  summarizeMessageJob,
+  type MessageJobRow,
+} from '@/lib/messagingUi';
 
 type Tab = 'send' | 'email' | 'templates' | 'log' | 'settings';
 const TABS: { id: Tab; label: string }[] = [
@@ -40,6 +48,18 @@ const VARIABLE_TAGS = [
   '{বার্তা}',
 ];
 
+function notifyMessagingResult(result: MessagingResponse) {
+  const summary = formatMessagingResult(result);
+  const tone = messagingResultTone(result);
+  if (tone === 'error') {
+    toast.error(summary);
+  } else if (tone === 'success') {
+    toast.success(summary);
+  } else {
+    toast(summary);
+  }
+}
+
 const SAMPLE_VARS: Record<string, string> = {
   নাম: 'রাহেলা বেগম',
   পরিমাণ: '১৫০০',
@@ -54,19 +74,27 @@ const SAMPLE_VARS: Record<string, string> = {
 };
 
 // ── Send SMS Tab ──────────────────────────────────────────────────────────────
-function SendSMSTab() {
+function SendSMSTab({
+  templates,
+  initialTemplateKey,
+}: {
+  templates: Record<string, string>;
+  initialTemplateKey?: string;
+}) {
   const [batches, setBatches] = useState<any[]>([]);
   const [recipientType, setRecipientType] = useState<'all' | 'batch' | 'due' | 'custom'>('all');
   const [batchId, setBatchId] = useState('');
   const [dueFilter, setDueFilter] = useState<'this_month' | 'overdue'>('this_month');
   const [customNumbers, setCustomNumbers] = useState('');
   const [recipientCount, setRecipientCount] = useState(0);
-  const [message, setMessage] = useState('');
-  const [templateKey, setTemplateKey] = useState('');
+  const [message, setMessage] = useState(() =>
+    initialTemplateKey ? (templates[initialTemplateKey] ?? '') : ''
+  );
+  const [templateKey, setTemplateKey] = useState(initialTemplateKey ?? '');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [result, setResult] = useState<MessagingResponse | null>(null);
   useEffect(() => {
     supabase
       .from('batches')
@@ -92,7 +120,7 @@ function SendSMSTab() {
           .split('\n')
           .map((n) => n.trim())
           .filter(Boolean);
-        count = nums.length;
+        count = dedupeRecipients('sms', nums).length;
         return;
       }
       if (recipientType === 'due') {
@@ -127,7 +155,8 @@ function SendSMSTab() {
       let q = supabase
         .from('students')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .not('phone', 'is', null);
       if (recipientType === 'batch' && batchId) {
         q = q.eq('batch_id', batchId);
       }
@@ -155,6 +184,7 @@ function SendSMSTab() {
   const hasNonGSM = /[^\x00-\x7F]/.test(message);
   const charsPerUnit = hasNonGSM ? 70 : 160;
   const smsUnits = Math.ceil(charCount / charsPerUnit) || 1;
+  const campaignState = campaignLimitState(recipientCount, smsUnits);
 
   const preview = fillTemplate(message, SAMPLE_VARS);
 
@@ -227,14 +257,25 @@ function SendSMSTab() {
         return;
       }
 
-      const res = await sendSMS(
-        phones,
-        message,
-        'custom'
-      );
+      if (hasUnresolvedTemplate(message)) {
+        toast.error('Resolve all template variables before sending');
+        return;
+      }
+      const uniquePhones = dedupeRecipients('sms', phones);
+      const sendLimit = campaignLimitState(uniquePhones.length, smsUnits);
+      if (sendLimit.overLimit) {
+        toast.error(sendLimit.message);
+        return;
+      }
+      const res = await sendSMS(uniquePhones, message, 'custom', {
+        idempotencyKey: messagingIdempotencyKey(
+          'sms-compose',
+          `${recipientType}|${batchId}|${uniquePhones.join('|')}|${message}`
+        ),
+      });
       setProgress(100);
       setResult(res);
-      toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} numbers`);
+      notifyMessagingResult(res);
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -242,6 +283,8 @@ function SendSMSTab() {
       setConfirmOpen(false);
     }
   };
+
+  const resultTone = result ? messagingResultTone(result) : 'neutral';
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -310,6 +353,12 @@ function SendSMSTab() {
             <span className="text-white font-medium">{recipientCount}</span> students selected
           </span>
         </div>
+        <p
+          className={cn('text-xs', campaignState.overLimit ? 'text-red-300' : 'text-amber-300')}
+          role={campaignState.overLimit ? 'alert' : undefined}
+        >
+          {campaignState.message}
+        </p>
       </div>
 
       {/* Message composer */}
@@ -323,8 +372,8 @@ function SendSMSTab() {
             value={templateKey}
             onChange={(e) => {
               setTemplateKey(e.target.value);
-              if (e.target.value && SMS_TEMPLATES[e.target.value]) {
-                setMessage(SMS_TEMPLATES[e.target.value].body);
+              if (e.target.value && templates[e.target.value]) {
+                setMessage(templates[e.target.value]);
               }
             }}
             className="input-field"
@@ -369,6 +418,12 @@ function SendSMSTab() {
               {charCount} chars · {smsUnits} SMS unit{smsUnits > 1 ? 's' : ''}
             </span>
           </div>
+          {hasUnresolvedTemplate(message) && (
+            <p className="mt-2 text-xs text-amber-300" role="alert">
+              Campaigns send one shared message. Replace every {'{placeholder}'} with final text
+              before sending.
+            </p>
+          )}
         </div>
 
         {/* Live preview */}
@@ -384,7 +439,12 @@ function SendSMSTab() {
 
       <button
         onClick={() => setConfirmOpen(true)}
-        disabled={!message.trim() || !recipientCount}
+        disabled={
+          !message.trim() ||
+          !recipientCount ||
+          campaignState.overLimit ||
+          hasUnresolvedTemplate(message)
+        }
         className="btn-primary w-full justify-center"
       >
         <Send size={15} /> SMS পাঠান
@@ -394,11 +454,40 @@ function SendSMSTab() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card p-4 border border-emerald-400/20 text-center"
+          className={cn(
+            'card p-4 border text-center',
+            resultTone === 'error' && 'border-red-400/30 bg-red-500/5',
+            resultTone === 'warning' && 'border-amber-400/30 bg-amber-500/5',
+            resultTone === 'success' && 'border-emerald-400/30 bg-emerald-500/5',
+            resultTone === 'neutral' && 'border-slate-400/20'
+          )}
         >
-          <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
-          <p className="text-white font-semibold">
-            {result.sent} সফল · {result.failed} ব্যর্থ
+          <CheckCircle2
+            size={28}
+            className={cn(
+              'mx-auto mb-2',
+              resultTone === 'error'
+                ? 'text-red-400'
+                : resultTone === 'warning'
+                  ? 'text-amber-400'
+                  : resultTone === 'success'
+                    ? 'text-emerald-400'
+                    : 'text-slate-400'
+            )}
+          />
+          <p
+            className={cn(
+              'font-semibold',
+              resultTone === 'warning'
+                ? 'text-amber-200'
+                : resultTone === 'error'
+                  ? 'text-red-200'
+                  : resultTone === 'success'
+                    ? 'text-emerald-200'
+                    : 'text-white'
+            )}
+          >
+            {formatMessagingResult(result)}
           </p>
         </motion.div>
       )}
@@ -435,6 +524,10 @@ function SendSMSTab() {
                 <div>
                   <p className="font-semibold text-white">নিশ্চিত করুন</p>
                   <p className="text-slate-400 text-sm">{recipientCount} নম্বরে SMS পাঠানো হবে।</p>
+                  <p className="text-amber-300 text-xs mt-1">
+                    Estimated cost: {campaignState.estimatedUnits.toLocaleString()} SMS units.
+                    Multi-recipient sends are queued.
+                  </p>
                 </div>
               </div>
               {sending && (
@@ -482,10 +575,15 @@ function SendSMSTab() {
 }
 
 // ── Templates Tab ─────────────────────────────────────────────────────────────
-function TemplatesTab() {
-  const [templates, setTemplates] = useState<Record<string, string>>(
-    Object.fromEntries(Object.values(SMS_TEMPLATES).map((t) => [t.key, t.body]))
-  );
+function TemplatesTab({
+  templates,
+  setTemplates,
+  applyTemplate,
+}: {
+  templates: Record<string, string>;
+  setTemplates: (update: (current: Record<string, string>) => Record<string, string>) => void;
+  applyTemplate: (key: string) => void;
+}) {
   const [saving, setSaving] = useState<string | null>(null);
 
   const save = async (key: string) => {
@@ -515,18 +613,27 @@ function TemplatesTab() {
               <span className="font-mono text-sky-400 text-xs">{t.key}</span>
               <p className="text-white text-sm font-medium">{t.label}</p>
             </div>
-            <button
-              onClick={() => save(t.key)}
-              disabled={saving === t.key}
-              className="btn-outline text-xs py-1.5 px-3"
-            >
-              {saving === t.key ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Save size={12} />
-              )}
-              Save
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => applyTemplate(t.key)}
+                className="btn-outline text-xs py-1.5 px-3"
+              >
+                Apply Template
+              </button>
+              <button
+                onClick={() => save(t.key)}
+                disabled={saving === t.key}
+                className="btn-outline text-xs py-1.5 px-3"
+              >
+                {saving === t.key ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Save size={12} />
+                )}
+                Save
+              </button>
+            </div>
           </div>
           <textarea
             value={templates[t.key] ?? t.body}
@@ -552,89 +659,109 @@ function TemplatesTab() {
 
 // ── SMS Log Tab ───────────────────────────────────────────────────────────────
 function SMSLogTab() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<MessageJobRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [processingQueue, setProcessingQueue] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let q = supabase
-        .from('sms_logs')
-        .select('*')
+      const { data, error } = await supabase
+        .from('message_jobs')
+        .select(
+          'id,channel,status,source_type,content,recipient_count,accepted_count,delivered_count,failed_count,bounced_count,unknown_count,created_at,message_deliveries(status)'
+        )
+        .eq('channel', 'sms')
         .order('created_at', { ascending: false })
         .limit(100);
-      if (statusFilter !== 'all') {
-        q = q.eq('status', statusFilter);
+      if (error) {
+        throw error;
       }
-      if (typeFilter !== 'all') {
-        q = q.eq('type', typeFilter);
-      }
-      const { data } = await q;
-      setLogs(data ?? []);
+      setLogs((data ?? []) as MessageJobRow[]);
     } catch (err) {
       handleSupabaseError(err);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, typeFilter]);
+  }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  const deleteLog = async (id: string) => {
-    if (!window.confirm('Delete this SMS log? This cannot be undone.')) {
-      return;
-    }
-    setDeletingId(id);
+  const processQueue = async () => {
+    setProcessingQueue(true);
     try {
-      const { error } = await supabase.from('sms_logs').delete().eq('id', id);
-      if (error) {
-        toast.error(`Could not delete SMS log: ${error.message}`);
-        return;
+      const result = await processMessageQueue();
+      if (result.processed > 0) {
+        toast.success(`Queue processed: ${result.processed} deliveries`);
+      } else {
+        toast(`Queue check completed: no deliveries were processed`, { icon: '!' });
       }
-      setLogs((current) => current.filter((log) => log.id !== id));
-      toast.success('SMS log deleted');
+      await load();
     } catch (err) {
       handleSupabaseError(err);
     } finally {
-      setDeletingId(null);
+      setProcessingQueue(false);
     }
   };
 
+  const visibleLogs = logs.filter(
+    (log) => statusFilter === 'all' || summarizeMessageJob(log).status === statusFilter
+  );
+  const badgeClass = (status: string) =>
+    status === 'delivered' || status === 'accepted'
+      ? 'badge-green text-xs'
+      : status === 'queued' ||
+          status === 'processing' ||
+          status === 'partial' ||
+          status === 'requires_review'
+        ? 'badge-yellow text-xs'
+        : 'badge-red text-xs';
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 items-center">
+      <div
+        className="flex flex-col sm:flex-row gap-2 sm:items-center"
+        data-testid="messaging-log-controls"
+      >
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="input-field py-1.5 text-sm max-w-[140px]"
+          className="input-field py-1.5 text-sm sm:max-w-[160px]"
         >
           <option value="all">All Status</option>
-          <option value="sent">Sent</option>
-          <option value="failed">Failed</option>
-          <option value="pending">Pending</option>
-        </select>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="input-field py-1.5 text-sm max-w-[160px]"
-        >
-          <option value="all">All Types</option>
-          {Object.keys(SMS_TEMPLATES).map((k) => (
-            <option key={k} value={k}>
-              {k}
+          {[
+            'queued',
+            'processing',
+            'accepted',
+            'delivered',
+            'partial',
+            'requires_review',
+            'failed',
+          ].map((status) => (
+            <option key={status} value={status}>
+              {status}
             </option>
           ))}
-          <option value="custom">Custom</option>
         </select>
-        <button onClick={load} className="btn-outline text-sm py-1.5 px-3">
+        <button onClick={() => void load()} className="btn-outline text-sm py-1.5 px-3">
           <RefreshCw size={13} /> Refresh
         </button>
-        <span className="text-slate-500 text-xs ml-auto">{logs.length} records</span>
+        <button
+          onClick={() => void processQueue()}
+          disabled={processingQueue}
+          className="btn-primary text-sm py-1.5 px-3"
+        >
+          {processingQueue ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <RefreshCw size={13} />
+          )}{' '}
+          Process queue
+        </button>
+        <span className="text-slate-500 text-xs sm:ml-auto">{visibleLogs.length} jobs</span>
       </div>
 
       <div className="card overflow-hidden">
@@ -644,63 +771,48 @@ function SMSLogTab() {
               <div key={i} className="h-10 mx-4 my-2 bg-navy-700 rounded animate-pulse" />
             ))}
           </div>
-        ) : logs.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center py-10">No SMS records found</p>
+        ) : visibleLogs.length === 0 ? (
+          <p className="text-slate-500 text-sm text-center py-10">No SMS jobs found</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-navy-700/50">
-                  {['Phone', 'Message', 'Type', 'Status', 'Time', 'Action'].map((h) => (
+                  {['Message', 'Source', 'Status', 'Actual counts', 'Time'].map((heading) => (
                     <th
-                      key={h}
+                      key={heading}
                       className="text-left px-4 py-3 text-slate-400 font-medium text-xs whitespace-nowrap"
                     >
-                      {h}
+                      {heading}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {logs.map((l) => (
-                  <tr key={l.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-mono text-sky-400 text-xs">{l.phone}</td>
-                    <td className="px-4 py-3 text-slate-300 text-xs max-w-[260px] truncate">
-                      {l.message}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="badge-blue text-xs">{l.type}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          l.status === 'sent'
-                            ? 'badge-green text-xs'
-                            : l.status === 'pending'
-                              ? 'badge-yellow text-xs'
-                              : 'badge-red text-xs'
-                        }
-                      >
-                        {l.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {l.created_at ? formatDate(l.created_at) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => deleteLog(l.id)}
-                        disabled={deletingId === l.id}
-                        className="inline-flex items-center justify-center rounded-lg border border-red-400/25 p-2 text-red-300 hover:bg-red-400/10 hover:border-red-400/50 disabled:opacity-50"
-                        title="Delete SMS log"
-                        aria-label={`Delete SMS log for ${l.phone}`}
-                      >
-                        {deletingId === l.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {visibleLogs.map((log) => {
+                  const summary = summarizeMessageJob(log);
+                  return (
+                    <tr key={log.id} className="border-b border-navy-700/30 hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 text-slate-300 text-xs max-w-[280px] truncate">
+                        {log.content?.body ?? '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="badge-blue text-xs">{log.source_type}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={badgeClass(summary.status)}>{summary.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 text-xs whitespace-nowrap">
+                        {summary.total} total · {summary.queued} queued · {summary.processing}{' '}
+                        processing · {summary.accepted} accepted · {summary.delivered} delivered ·{' '}
+                        {summary.failed} failed · {summary.unknown} unknown
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                        {log.created_at ? formatDate(log.created_at) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -712,75 +824,7 @@ function SMSLogTab() {
 
 // ── Settings Tab ──────────────────────────────────────────────────────────────
 function SMSSettingsTab() {
-  const { settings } = useSettingsStore();
-  const [testPhone, setTestPhone] = useState('');
-  const [testing, setSending] = useState(false);
-
-  const handleTest = async () => {
-    if (!testPhone) {
-      toast.error('Enter a phone number');
-      return;
-    }
-    setSending(true);
-    try {
-      const res = await sendSMS(
-        testPhone,
-        `Test SMS from ${settings.centerName} — ${new Date().toLocaleTimeString()}`,
-        'test'
-      );
-      if (res.sent > 0) {
-        toast.success('Test SMS sent!');
-      } else {
-        toast.error('SMS failed or no server key configured.');
-      }
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div className="max-w-lg space-y-5">
-      <div className="card p-5 space-y-3">
-        <h3 className="font-semibold text-white">MIMSMS Configuration</h3>
-        <div className="card p-3 border border-sky-400/20">
-          <p className="text-slate-300 text-xs leading-relaxed">
-            The SMS API key is now stored securely on the server and is never exposed to the
-            browser. Set the <span className="font-mono text-sky-400">SMS_API_KEY</span> and{' '}
-            <span className="font-mono text-sky-400">SMS_SENDER_ID</span> environment variables in
-            your hosting platform (Netlify / Vercel) to enable delivery.
-          </p>
-        </div>
-      </div>
-
-      <div className="card p-5 space-y-4">
-        <h3 className="font-semibold text-white">Test SMS</h3>
-        <div>
-          <label className="text-xs text-slate-400 mb-1.5 block">Test Phone Number</label>
-          <input
-            value={testPhone}
-            onChange={(e) => setTestPhone(e.target.value)}
-            className="input-field"
-            placeholder="01XXXXXXXXX"
-          />
-        </div>
-        <div className="flex gap-3">
-          <button onClick={handleTest} disabled={testing} className="btn-primary text-sm">
-            {testing ? (
-              <>
-                <Loader2 size={14} className="animate-spin" /> Sending…
-              </>
-            ) : (
-              <>
-                <Send size={14} /> Send Test SMS
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return <MessagingProviderSettings />;
 }
 
 function EmailTab() {
@@ -795,54 +839,279 @@ function EmailTab() {
   const [subject, setSubject] = useState<string>(EMAIL_TEMPLATES.FEE_REMINDER.subject);
   const [body, setBody] = useState<string>(EMAIL_TEMPLATES.FEE_REMINDER.body);
   const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<MessagingResponse | null>(null);
   useEffect(() => {
     Promise.all([
       supabase.from('batches').select('id,name').eq('is_active', true).order('name'),
-      supabase.from('students').select('id,name,email,batch_id').eq('status', 'active').eq('is_approved', true).not('email', 'is', null).order('name'),
-    ]).then(([batchResult, studentResult]) => { setBatches(batchResult.data ?? []); setStudents(studentResult.data ?? []); });
+      supabase
+        .from('students')
+        .select('id,name,email,batch_id')
+        .eq('status', 'active')
+        .eq('is_approved', true)
+        .not('email', 'is', null)
+        .order('name'),
+    ]).then(([batchResult, studentResult]) => {
+      setBatches(batchResult.data ?? []);
+      setStudents(studentResult.data ?? []);
+    });
   }, []);
   useEffect(() => {
-    if (recipientType === 'custom') setRecipientCount(customEmails.split(/\r?\n|,/).map((x) => x.trim()).filter(Boolean).length);
-    else if (recipientType === 'student') setRecipientCount(studentId ? 1 : 0);
-    else setRecipientCount(students.filter((s) => recipientType === 'all' || !batchId || s.batch_id === batchId).length);
-  }, [recipientType, batchId, studentId, customEmails, students]);
+    if (recipientType === 'custom') {
+      setRecipientCount(
+        dedupeRecipients(
+          'email',
+          customEmails
+            .split(/\r?\n|,/)
+            .map((x) => x.trim())
+            .filter(Boolean)
+        ).length
+      );
+      return;
+    }
+    if (recipientType === 'student') {
+      setRecipientCount(studentId ? 1 : 0);
+      return;
+    }
+    let query = supabase
+      .from('students')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active')
+      .eq('is_approved', true)
+      .not('email', 'is', null);
+    if (recipientType === 'batch' && batchId) {
+      query = query.eq('batch_id', batchId);
+    }
+    void query.then(({ count, error }) => {
+      if (error) {
+        handleSupabaseError(error);
+        return;
+      }
+      setRecipientCount(count ?? 0);
+    });
+  }, [recipientType, batchId, studentId, customEmails]);
+  const campaignState = campaignLimitState(recipientCount);
   const send = async () => {
-    const list = recipientType === 'custom'
-      ? customEmails.split(/\r?\n|,/).map((v) => v.trim()).filter(Boolean)
-      : recipientType === 'student'
-        ? students.filter((s) => s.id === studentId).map((s) => s.email)
-        : students.filter((s) => recipientType === 'all' || !batchId || s.batch_id === batchId).map((s) => s.email);
-    if (!list.length || !subject.trim() || !body.trim()) { toast.error('Recipients, subject and message are required'); return; }
+    const list =
+      recipientType === 'custom'
+        ? customEmails
+            .split(/\r?\n|,/)
+            .map((v) => v.trim())
+            .filter(Boolean)
+        : recipientType === 'student'
+          ? students.filter((s) => s.id === studentId).map((s) => s.email)
+          : students
+              .filter((s) => recipientType === 'all' || !batchId || s.batch_id === batchId)
+              .map((s) => s.email);
+    const uniqueEmails = dedupeRecipients('email', list);
+    if (!uniqueEmails.length || !subject.trim() || !body.trim()) {
+      toast.error('Recipients, subject and message are required');
+      return;
+    }
+    const sendLimit = campaignLimitState(uniqueEmails.length);
+    if (sendLimit.overLimit) {
+      toast.error(sendLimit.message);
+      return;
+    }
+    if (hasUnresolvedTemplate(subject) || hasUnresolvedTemplate(body)) {
+      toast.error('Resolve all template variables before sending');
+      return;
+    }
     setSending(true);
+    setResult(null);
     try {
-      const result = await sendEmail(list, subject, emailTemplate(subject, body, settings.centerName), 'custom');
-      toast.success(result.sent > 0 ? `Email sent to ${result.sent} recipients` : 'Email queued or provider is not configured');
-    } catch (err) { handleSupabaseError(err); }
-    finally { setSending(false); }
+      const response = await sendEmail(
+        uniqueEmails,
+        subject,
+        emailTemplate(subject, body, settings.centerName),
+        'custom',
+        {
+          idempotencyKey: messagingIdempotencyKey(
+            'email-compose',
+            `${recipientType}|${batchId}|${uniqueEmails.join('|')}|${subject}|${body}`
+          ),
+        }
+      );
+      setResult(response);
+      notifyMessagingResult(response);
+    } catch (err) {
+      handleSupabaseError(err);
+    } finally {
+      setSending(false);
+    }
   };
-  return <div className="max-w-2xl card p-5 space-y-4">
-    <h3 className="font-semibold text-white">Send Email</h3>
-    <p className="text-xs text-slate-500">Email costs less than SMS. Choose recipients from live student data.</p>
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      {([['all', 'All with email'], ['batch', 'By batch'], ['student', 'One student'], ['custom', 'Custom']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setRecipientType(id)} className={cn('btn-outline text-xs px-2 py-2', recipientType === id && 'border-sky-400 text-sky-400')}>{label}</button>)}
+  const resultTone = result ? messagingResultTone(result) : 'neutral';
+  return (
+    <div className="max-w-2xl card p-5 space-y-4">
+      <h3 className="font-semibold text-white">Send Email</h3>
+      <p className="text-xs text-slate-500">
+        Email costs less than SMS. Choose recipients from live student data.
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {(
+          [
+            ['all', 'All with email'],
+            ['batch', 'By batch'],
+            ['student', 'One student'],
+            ['custom', 'Custom'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setRecipientType(id)}
+            className={cn(
+              'btn-outline text-xs px-2 py-2',
+              recipientType === id && 'border-sky-400 text-sky-400'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {recipientType === 'batch' && (
+        <select
+          className="input-field"
+          value={batchId}
+          onChange={(e) => setBatchId(e.target.value)}
+        >
+          <option value="">All batches</option>
+          {batches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {recipientType === 'student' && (
+        <select
+          className="input-field"
+          value={studentId}
+          onChange={(e) => setStudentId(e.target.value)}
+        >
+          <option value="">Select student</option>
+          {students.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} — {s.email}
+            </option>
+          ))}
+        </select>
+      )}
+      {recipientType === 'custom' && (
+        <textarea
+          className="input-field"
+          rows={3}
+          placeholder="student@example.com"
+          value={customEmails}
+          onChange={(e) => setCustomEmails(e.target.value)}
+        />
+      )}
+      <p className="text-xs text-sky-400">Recipients found: {recipientCount}</p>
+      <p
+        className={cn('text-xs', campaignState.overLimit ? 'text-red-300' : 'text-amber-300')}
+        role={campaignState.overLimit ? 'alert' : undefined}
+      >
+        {campaignState.message}. Multi-recipient sends are queued.
+      </p>
+      <select
+        className="input-field"
+        onChange={(e) => {
+          const t = EMAIL_TEMPLATES[e.target.value as keyof typeof EMAIL_TEMPLATES];
+          if (t) {
+            setSubject(t.subject);
+            setBody(t.body);
+          }
+        }}
+      >
+        {Object.entries(EMAIL_TEMPLATES).map(([key, t]) => (
+          <option key={key} value={key}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <input
+        className="input-field"
+        value={subject}
+        onChange={(e) => setSubject(e.target.value)}
+        placeholder="Subject"
+      />
+      <textarea
+        className="input-field font-hind"
+        rows={8}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="Email message"
+      />
+      {(hasUnresolvedTemplate(subject) || hasUnresolvedTemplate(body)) && (
+        <p className="text-xs text-amber-300" role="alert">
+          Campaigns send one shared email. Replace every {'{placeholder}'} with final text before
+          sending.
+        </p>
+      )}
+      <button
+        className="btn-primary"
+        disabled={
+          sending ||
+          campaignState.overLimit ||
+          hasUnresolvedTemplate(subject) ||
+          hasUnresolvedTemplate(body)
+        }
+        onClick={send}
+      >
+        {sending ? 'Sending…' : 'Send Email'}
+      </button>
+      {result && (
+        <div
+          className={cn(
+            'rounded-lg border p-3 text-sm',
+            resultTone === 'error'
+              ? 'border-red-400/30 bg-red-500/5 text-red-200'
+              : resultTone === 'warning'
+                ? 'border-amber-400/30 bg-amber-500/5 text-amber-200'
+                : resultTone === 'success'
+                  ? 'border-emerald-400/30 bg-emerald-500/5 text-emerald-200'
+                  : 'border-slate-400/20 text-slate-300'
+          )}
+          role="status"
+        >
+          {formatMessagingResult(result)}
+        </div>
+      )}
+      <p className="text-xs text-slate-500">
+        Configure `RESEND_API_KEY` and `RESEND_FROM` on hosting. The key never goes to the browser.
+      </p>
     </div>
-    {recipientType === 'batch' && <select className="input-field" value={batchId} onChange={(e) => setBatchId(e.target.value)}><option value="">All batches</option>{batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
-    {recipientType === 'student' && <select className="input-field" value={studentId} onChange={(e) => setStudentId(e.target.value)}><option value="">Select student</option>{students.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}</select>}
-    {recipientType === 'custom' && <textarea className="input-field" rows={3} placeholder="student@example.com" value={customEmails} onChange={(e) => setCustomEmails(e.target.value)} />}
-    <p className="text-xs text-sky-400">Recipients found: {recipientCount}</p>
-    <select className="input-field" onChange={(e) => { const t = EMAIL_TEMPLATES[e.target.value as keyof typeof EMAIL_TEMPLATES]; if (t) { setSubject(t.subject); setBody(t.body); } }}>
-      {Object.entries(EMAIL_TEMPLATES).map(([key, t]) => <option key={key} value={key}>{t.label}</option>)}
-    </select>
-    <input className="input-field" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
-    <textarea className="input-field font-hind" rows={8} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Email message" />
-    <button className="btn-primary" disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Send Email'}</button>
-    <p className="text-xs text-slate-500">Configure `EMAIL_API_KEY` and `EMAIL_FROM` on hosting. The key never goes to the browser.</p>
-  </div>;
+  );
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SMSPage() {
   const [tab, setTab] = useState<Tab>('send');
+  const [templates, setTemplates] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.values(SMS_TEMPLATES).map((template) => [template.key, template.body])
+    )
+  );
+  const [appliedTemplateKey, setAppliedTemplateKey] = useState<string>();
+
+  useEffect(() => {
+    supabase
+      .from('site_settings')
+      .select('key,value')
+      .like('key', 'sms_template_%')
+      .then(({ data, error }) => {
+        if (error) {
+          handleSupabaseError(error);
+          return;
+        }
+        setTemplates((current) => ({ ...current, ...savedSmsTemplates(data ?? []) }));
+      }, handleSupabaseError);
+  }, []);
+
+  const applyTemplate = (key: string) => {
+    setAppliedTemplateKey(key);
+    setTab('send');
+    toast.success('Template applied to the SMS composer');
+  };
 
   return (
     <AdminLayout title="SMS কেন্দ্র">
@@ -863,9 +1132,21 @@ export default function SMSPage() {
         ))}
       </div>
 
-      {tab === 'send' && <SendSMSTab />}
+      {tab === 'send' && (
+        <SendSMSTab
+          key={appliedTemplateKey ?? 'composer'}
+          templates={templates}
+          initialTemplateKey={appliedTemplateKey}
+        />
+      )}
       {tab === 'email' && <EmailTab />}
-      {tab === 'templates' && <TemplatesTab />}
+      {tab === 'templates' && (
+        <TemplatesTab
+          templates={templates}
+          setTemplates={setTemplates}
+          applyTemplate={applyTemplate}
+        />
+      )}
       {tab === 'log' && <SMSLogTab />}
       {tab === 'settings' && <SMSSettingsTab />}
     </AdminLayout>

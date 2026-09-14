@@ -1,0 +1,373 @@
+{
+  "generatedAt": "2026-09-13T12:41:34.903Z",
+  "baseUrl": "http://127.0.0.1:4173",
+  "checks": [
+    {
+      "viewport": "phone-320",
+      "route": "/",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1362,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/courses",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 595,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admission",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 732,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/notices",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 498,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/contact",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 669,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/admin/login",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 130,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/login",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 123,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/portal/signup",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 732,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-320",
+      "route": "/does-not-exist",
+      "status": 200,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 72,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1363,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/courses",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 595,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/admission",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 732,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/notices",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 498,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/contact",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 669,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/admin/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 130,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/portal/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 123,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/portal/signup",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 732,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "phone-375",
+      "route": "/does-not-exist",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 72,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1363,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/courses",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 595,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admission",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 775,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/notices",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 498,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/contact",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 669,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/admin/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 130,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 123,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/portal/signup",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 775,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "tablet-768",
+      "route": "/does-not-exist",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 72,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 1677,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/courses",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 660,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admission",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 840,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/notices",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 563,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/contact",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 734,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/admin/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 130,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/login",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 123,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/portal/signup",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 840,
+      "consoleErrors": []
+    },
+    {
+      "viewport": "laptop-1366",
+      "route": "/does-not-exist",
+      "status": 304,
+      "title": "Techely Learning Academy — Excellence in Education",
+      "horizontalOverflow": 0,
+      "outside": [],
+      "visibleTextLength": 72,
+      "consoleErrors": []
+    }
+  ],
+  "failures": [],
+  "mobileMenu": {
+    "left": 30.387775421142578,
+    "right": 318.3877754211426,
+    "width": 288,
+    "viewport": 320
+  }
+}

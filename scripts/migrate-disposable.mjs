@@ -146,9 +146,10 @@ async function main() {
   }
 
   const migrationManifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-  verifyManifestOrder(migrationManifest.followOnMigrations);
+  const requiredMigrations = migrationManifest.migrations.map((entry) => entry.file);
+  verifyManifestOrder(requiredMigrations);
   const manifest = [];
-  for (const file of migrationManifest.followOnMigrations) {
+  for (const file of requiredMigrations) {
     const source = await fs.readFile(path.join(migrationDir, file));
     manifest.push({ file, sha256: crypto.createHash('sha256').update(source).digest('hex') });
   }
