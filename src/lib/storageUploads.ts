@@ -36,13 +36,19 @@ export async function uploadPublicAsset(
   image: Blob,
   type: 'image/jpeg' | 'image/png' | 'image/webp'
 ): Promise<string> {
-  const response = await fetch('/api/upload-public-asset', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${await adminBearer()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ category, type, data: await encodeImage(image, type) }),
-  });
-  if (!response.ok) {throw new Error(`Asset upload failed (${response.status})`);}
-  const payload = (await response.json()) as { publicUrl?: string };
-  if (!payload.publicUrl) {throw new Error('Asset upload returned no URL');}
-  return payload.publicUrl;
+  // Upload the public branding asset straight to the PUBLIC public-assets
+  // bucket using the authenticated admin's own session. The
+  // public_assets_admin_* storage policies (is_admin()) gate the write, so no
+  // serverless /api route or SUPABASE_SERVICE_ROLE_KEY is required, and this
+  // works on a plain Vite dev server too.
+  if (!ALLOWED_IMAGE_TYPES.has(type)) {throw new Error('Unsupported image type');}
+  const ext = type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
+  const path = `${category}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage
+    .from('public-assets')
+    .upload(path, image, { contentType: type, upsert: false });
+  if (error) {throw new Error(`Asset upload failed (${error.message})`);}
+  const { data } = supabase.storage.from('public-assets').getPublicUrl(path);
+  if (!data?.publicUrl) {throw new Error('Asset upload returned no URL');}
+  return data.publicUrl;
 }
