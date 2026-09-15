@@ -24,7 +24,7 @@ export function Logo({
     <img
       src={settings.logoUrl || DEFAULT_LOGO}
       alt={alt}
-      className={cn('shrink-0', className)}
+      className={cn('shrink-0 bg-white/10', className)}
       draggable={draggable}
     />
   );
