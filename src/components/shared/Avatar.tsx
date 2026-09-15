@@ -70,7 +70,15 @@ export function Avatar({
   const displaySrc = resolved !== undefined ? resolved : src;
 
   if (displaySrc) {
-    return <img src={displaySrc} alt={name} className={imgClass} loading="lazy" />;
+    return (
+      <img
+        src={displaySrc}
+        alt={name}
+        className={imgClass}
+        loading="lazy"
+        onError={() => setResolved(null)}
+      />
+    );
   }
   if (!fallbackToInitials) {
     return (
