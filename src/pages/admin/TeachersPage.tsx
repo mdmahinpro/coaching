@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Avatar } from '@/components/shared/Avatar';
 import { supabase } from '@/lib/supabase';
@@ -35,8 +36,7 @@ interface Teacher {
 const EMPTY: Partial<Teacher> = { is_active: true };
 
 export default function TeachersPage() {
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<Teacher>>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -47,31 +47,33 @@ export default function TeachersPage() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase
-        .from('teachers')
-        .select('*')
-        .order('created_at', { ascending: false });
-      const cleaned = (data ?? []).map((t: any) => ({
-        ...t,
-        name: sanitize(t.name),
-        bio: t.bio ? sanitize(t.bio) : t.bio,
-        subject: t.subject ? sanitize(t.subject) : t.subject,
-        qualification: t.qualification ? sanitize(t.qualification) : t.qualification,
-      }));
-      setTeachers(cleaned);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
+  async function fetchTeachers(): Promise<Teacher[]> {
+    const { data, error } = await supabase
+      .from('teachers')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      handleSupabaseError(error);
+      return [];
     }
-  }, []);
+    return (data ?? []).map((t: any) => ({
+      ...t,
+      name: sanitize(t.name),
+      bio: t.bio ? sanitize(t.bio) : t.bio,
+      subject: t.subject ? sanitize(t.subject) : t.subject,
+      qualification: t.qualification ? sanitize(t.qualification) : t.qualification,
+    }));
+  }
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { data: teachers = [], isLoading: loading } = useQuery({
+    queryKey: ['admin', 'teachers'],
+    queryFn: fetchTeachers,
+  });
+
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'teachers'] }),
+    [queryClient]
+  );
 
   const revokeBlobPreview = (url: string | null) => {
     if (url?.startsWith('blob:')) {

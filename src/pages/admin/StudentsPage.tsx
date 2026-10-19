@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { StudentModal } from '@/components/admin/StudentModal';
 import { StudentDrawer } from '@/components/admin/StudentDrawer';
@@ -62,10 +63,7 @@ const statusBadge = (s: string) => {
 };
 
 export default function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [batchFilter, setBatchFilter] = useState('all');
@@ -77,58 +75,66 @@ export default function StudentsPage() {
   const [drawerStudent, setDrawerStudent] = useState<Student | null>(null);
   const q = useDebounce(search, 300);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from('students')
-        .select('*, batch:batches(id,name)', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  async function fetchStudents(): Promise<{ rows: Student[]; total: number }> {
+    let query = supabase
+      .from('students')
+      .select('*, batch:batches(id,name)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-      if (q) {
-        query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,student_id.ilike.%${q}%`);
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
-      if (batchFilter !== 'all') {
-        query = query.eq('batch_id', batchFilter);
-      }
-
-      const { data, count } = await query;
-      const cleaned = (data ?? []).map((s: any) => ({
-        ...s,
-        name: sanitize(s.name),
-        batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
-      }));
-      setStudents(cleaned);
-      setTotal(count ?? 0);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
+    if (q) {
+      query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%,student_id.ilike.%${q}%`);
     }
-  }, [q, statusFilter, batchFilter, page]);
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter);
+    }
+    if (batchFilter !== 'all') {
+      query = query.eq('batch_id', batchFilter);
+    }
 
-  useEffect(() => {
-    load();
-  }, [load]);
-  useEffect(() => {
-    supabase
+    const { data, count, error } = await query;
+    if (error) {
+      handleSupabaseError(error);
+      return { rows: [], total: 0 };
+    }
+    const rows = (data ?? []).map((s: any) => ({
+      ...s,
+      name: sanitize(s.name),
+      batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
+    }));
+    return { rows, total: count ?? 0 };
+  }
+
+  async function fetchActiveBatches(): Promise<any[]> {
+    const { data, error } = await supabase
       .from('batches')
       .select('id,name')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
-          setBatches(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
+      .eq('is_active', true);
+    if (error) {
+      handleSupabaseError(error);
+      return [];
+    }
+    return (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
+  }
+
+  const { data: studentPage, isLoading: loading } = useQuery({
+    queryKey: ['admin', 'students', { q, statusFilter, batchFilter, page }],
+    queryFn: fetchStudents,
+    placeholderData: (prev) => prev,
+  });
+
+  const students: Student[] = studentPage?.rows ?? [];
+  const total = studentPage?.total ?? 0;
+
+  const { data: batches = [] } = useQuery({
+    queryKey: ['admin', 'batches-active'],
+    queryFn: fetchActiveBatches,
+  });
+
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'students'] }),
+    [queryClient]
+  );
 
   // Reset to page 1 on filter change
   useEffect(() => {

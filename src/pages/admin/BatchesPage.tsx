@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -46,9 +47,7 @@ const EMPTY: Partial<Batch> = {
 };
 
 export default function BatchesPage() {
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [teachers, setTeachers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<Batch>>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -59,59 +58,61 @@ export default function BatchesPage() {
   const [detailExams, setDetailExams] = useState<any[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [{ data }, { data: studentCounts }] = await Promise.all([
-        supabase
-          .from('batches')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('students')
-          .select('batch_id')
-          .eq('status', 'active')
-          .not('batch_id', 'is', null),
-      ]);
-      const countMap: Record<string, number> = {};
-      (studentCounts ?? []).forEach((s: any) => {
-        if (s.batch_id) {
-          countMap[s.batch_id] = (countMap[s.batch_id] ?? 0) + 1;
-        }
-      });
-      const cleaned = ((data ?? []) as any[]).map((b) => ({
-        ...b,
-        name: sanitize(b.name),
-        subject: b.subject ? sanitize(b.subject) : b.subject,
-        description: b.description ? sanitize(b.description) : b.description,
-        teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
-      }));
-      setBatches(cleaned.map((b: any) => ({ ...b, enrolled_count: countMap[b.id] ?? 0 })));
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
+  async function fetchBatches(): Promise<Batch[]> {
+    const [{ data, error }, { data: studentCounts }] = await Promise.all([
+      supabase.from('batches').select('*').order('created_at', { ascending: false }),
+      supabase
+        .from('students')
+        .select('batch_id')
+        .eq('status', 'active')
+        .not('batch_id', 'is', null),
+    ]);
+    if (error) {
+      handleSupabaseError(error);
+      return [];
     }
-  }, []);
+    const countMap: Record<string, number> = {};
+    (studentCounts ?? []).forEach((s: any) => {
+      if (s.batch_id) {
+        countMap[s.batch_id] = (countMap[s.batch_id] ?? 0) + 1;
+      }
+    });
+    const cleaned = ((data ?? []) as any[]).map((b) => ({
+      ...b,
+      name: sanitize(b.name),
+      subject: b.subject ? sanitize(b.subject) : b.subject,
+      description: b.description ? sanitize(b.description) : b.description,
+      teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
+    }));
+    return cleaned.map((b: any) => ({ ...b, enrolled_count: countMap[b.id] ?? 0 }));
+  }
 
-  useEffect(() => {
-    load();
-  }, [load]);
-  useEffect(() => {
-    supabase
+  async function fetchActiveTeachers(): Promise<any[]> {
+    const { data, error } = await supabase
       .from('teachers')
       .select('id,name')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((t: any) => ({ ...t, name: sanitize(t.name) }));
-          setTeachers(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
+      .eq('is_active', true);
+    if (error) {
+      handleSupabaseError(error);
+      return [];
+    }
+    return (data ?? []).map((t: any) => ({ ...t, name: sanitize(t.name) }));
+  }
+
+  const { data: batches = [], isLoading: loading } = useQuery({
+    queryKey: ['admin', 'batches'],
+    queryFn: fetchBatches,
+  });
+
+  const { data: teachers = [] } = useQuery({
+    queryKey: ['admin', 'teachers-active'],
+    queryFn: fetchActiveTeachers,
+  });
+
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'batches'] }),
+    [queryClient]
+  );
 
   const openDetail = async (b: Batch) => {
     setDetailBatch(b);
