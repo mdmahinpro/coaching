@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -74,64 +75,69 @@ const generateStudentId = async (): Promise<string> => {
 
 export default function AdmissionsPage() {
   const { settings } = useSettingsStore();
-  const [admissions, setAdmissions] = useState<Admission[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('pending');
   const [search, setSearch] = useState('');
   const [viewing, setViewing] = useState<Admission | null>(null);
-  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
   const [acting, setActing] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    let admissionsList: Admission[] = [];
-    try {
-      let q = supabase
-        .from('admission_requests')
-        .select('*, batch:batches(name)')
-        .order('created_at', { ascending: false });
-      if (filter !== 'all') {
-        q = q.eq('status', filter);
-      }
-      const { data } = await q;
-      admissionsList = (data ?? []).map((a: any) => ({
-        ...a,
-        name: sanitize(a.name ?? ''),
-        phone: sanitize(a.phone ?? ''),
-        email: a.email ?? '',
-        guardian_name: sanitize(a.guardian_name ?? ''),
-        guardian_phone: sanitize(a.guardian_phone ?? ''),
-        address: a.address ?? '',
-        message: a.message ?? '',
-        batch: { name: sanitize(a.batch?.name ?? '') },
-      })) as Admission[];
-      const filtered = search
-        ? admissionsList.filter(
-            (a) => a.name.toLowerCase().includes(search.toLowerCase()) || a.phone?.includes(search)
-          )
-        : admissionsList;
-      setAdmissions(filtered);
-
-      // Load stats separately (all)
-      const { data: all } = await supabase.from('admission_requests').select('status');
-      const s = { total: 0, pending: 0, approved: 0, rejected: 0 };
-      (all ?? []).forEach((a: any) => {
-        s.total++;
-        if (a.status in s) {
-          (s as any)[a.status]++;
-        }
-      });
-      setStats(s);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
+  async function fetchAdmissions(): Promise<{
+    list: Admission[];
+    stats: { total: number; pending: number; approved: number; rejected: number };
+  }> {
+    let q = supabase
+      .from('admission_requests')
+      .select('*, batch:batches(name)')
+      .order('created_at', { ascending: false });
+    if (filter !== 'all') {
+      q = q.eq('status', filter);
     }
-  }, [filter, search]);
+    const { data, error } = await q;
+    if (error) {
+      handleSupabaseError(error);
+      return { list: [], stats: { total: 0, pending: 0, approved: 0, rejected: 0 } };
+    }
+    const list = (data ?? []).map((a: any) => ({
+      ...a,
+      name: sanitize(a.name ?? ''),
+      phone: sanitize(a.phone ?? ''),
+      email: a.email ?? '',
+      guardian_name: sanitize(a.guardian_name ?? ''),
+      guardian_phone: sanitize(a.guardian_phone ?? ''),
+      address: a.address ?? '',
+      message: a.message ?? '',
+      batch: { name: sanitize(a.batch?.name ?? '') },
+    })) as Admission[];
+    const filtered = search
+      ? list.filter(
+          (a) => a.name.toLowerCase().includes(search.toLowerCase()) || a.phone?.includes(search)
+        )
+      : list;
 
-  useEffect(() => {
-    load();
-  }, [load]);
+    // Load stats separately (all rows, unfiltered)
+    const { data: all } = await supabase.from('admission_requests').select('status');
+    const s = { total: 0, pending: 0, approved: 0, rejected: 0 };
+    (all ?? []).forEach((a: any) => {
+      s.total++;
+      if (a.status in s) {
+        (s as any)[a.status]++;
+      }
+    });
+    return { list: filtered, stats: s };
+  }
+
+  const { data: admissionData, isLoading: loading } = useQuery({
+    queryKey: ['admin', 'admissions', { filter, search }],
+    queryFn: fetchAdmissions,
+    placeholderData: (prev) => prev,
+  });
+  const admissions: Admission[] = admissionData?.list ?? [];
+  const stats = admissionData?.stats ?? { total: 0, pending: 0, approved: 0, rejected: 0 };
+
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'admissions'] }),
+    [queryClient]
+  );
 
   const handleApprove = async (admission: Admission) => {
     setActing(admission.id);

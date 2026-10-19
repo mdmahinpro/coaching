@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { Avatar } from '@/components/shared/Avatar';
@@ -48,47 +49,44 @@ export default function ResultsPage() {
   const [examId, setExamId] = useState('');
   const [subs, setSubs] = useState<Submission[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [breakdown, setBreakdown] = useState<Submission | null>(null);
 
-  useEffect(() => {
-    supabase
-      .from('exams')
-      .select('id,title,subject,total_marks,pass_marks,status')
-      .order('created_at', { ascending: false })
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((e: any) => ({
-            ...e,
-            title: sanitize(e.title),
-            subject: e.subject ? sanitize(e.subject) : e.subject,
-          }));
-          setExams(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
+  useQuery({
+    queryKey: ['admin', 'exams-list-results'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exams')
+        .select('id,title,subject,total_marks,pass_marks,status')
+        .order('created_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setExams(
+        (data ?? []).map((e: any) => ({
+          ...e,
+          title: sanitize(e.title),
+          subject: e.subject ? sanitize(e.subject) : e.subject,
+        }))
       );
-  }, []);
+      return true;
+    },
+  });
 
-  const load = useCallback(async (eid: string) => {
-    if (!eid) {
-      setSubs([]);
-      setQuestions([]);
-      return;
-    }
-    setLoading(true);
-    try {
+  const { isLoading: loading, refetch: reloadResults } = useQuery({
+    queryKey: ['admin', 'results', examId],
+    enabled: !!examId,
+    queryFn: async () => {
       const [{ data: s }, { data: q }] = await Promise.all([
         supabase
           .from('mcq_submissions')
           .select(
             '*, student:students(name,student_id,photo_url), exam:exams(title,total_marks,pass_marks,subject)'
           )
-          .eq('exam_id', eid)
+          .eq('exam_id', examId)
           .order('score', { ascending: false })
           .order('time_taken', { ascending: true }),
-        supabase.from('mcq_questions').select('*').eq('exam_id', eid).order('order_num'),
+        supabase.from('mcq_questions').select('*').eq('exam_id', examId).order('order_num'),
       ]);
       const cleaned = (s ?? []).map((sub: any) => ({
         ...sub,
@@ -97,16 +95,12 @@ export default function ResultsPage() {
       }));
       setSubs(cleaned as Submission[]);
       setQuestions(q ?? []);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return true;
+    },
+  });
 
-  useEffect(() => {
-    load(examId);
-  }, [examId, load]);
+  // Keep the old call signature working for the manual "refresh" buttons.
+  const load = (_eid: string) => reloadResults();
 
   const recalcRanks = async () => {
     if (!subs.length) {

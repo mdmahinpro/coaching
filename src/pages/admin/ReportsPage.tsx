@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency, cn, sanitize } from '@/lib/utils';
@@ -44,56 +45,53 @@ function EnrollmentTab() {
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [batchData, setBatchData] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const { data: students } = await supabase
-          .from('students')
-          .select('id,created_at,batch_id,batch:batches(name)');
-        const list = students ?? [];
-        setTotal(list.length);
-
-        // Monthly enrollment (last 6 months)
-        const now = new Date();
-        const months: Record<string, number> = {};
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          months[`${MONTHS[d.getMonth()]} ${d.getFullYear()}`] = 0;
-        }
-        list.forEach((s) => {
-          const d = new Date(s.created_at);
-          const k = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-          if (k in months) {
-            months[k]++;
-          }
-        });
-        setMonthlyData(Object.entries(months).map(([month, students]) => ({ month, students })));
-
-        // By batch
-        const byBatch: Record<string, { name: string; students: number }> = {};
-        list.forEach((s) => {
-          const name = (s as any).batch?.name ?? 'No Batch';
-          if (!byBatch[name]) {
-            byBatch[name] = { name, students: 0 };
-          }
-          byBatch[name].students++;
-        });
-        setBatchData(
-          Object.values(byBatch)
-            .sort((a, b) => b.students - a.students)
-            .slice(0, 8)
-        );
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'reports', 'enrollment'],
+    queryFn: async () => {
+      const { data: students, error } = await supabase
+        .from('students')
+        .select('id,created_at,batch_id,batch:batches(name)');
+      if (error) {
+        handleSupabaseError(error);
+        return null;
       }
-    };
-    load();
-  }, []);
+      const list = students ?? [];
+      setTotal(list.length);
+
+      // Monthly enrollment (last 6 months)
+      const now = new Date();
+      const months: Record<string, number> = {};
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months[`${MONTHS[d.getMonth()]} ${d.getFullYear()}`] = 0;
+      }
+      list.forEach((s) => {
+        const d = new Date(s.created_at);
+        const k = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+        if (k in months) {
+          months[k]++;
+        }
+      });
+      setMonthlyData(Object.entries(months).map(([month, students]) => ({ month, students })));
+
+      // By batch
+      const byBatch: Record<string, { name: string; students: number }> = {};
+      list.forEach((s) => {
+        const name = (s as any).batch?.name ?? 'No Batch';
+        if (!byBatch[name]) {
+          byBatch[name] = { name, students: 0 };
+        }
+        byBatch[name].students++;
+      });
+      setBatchData(
+        Object.values(byBatch)
+          .sort((a, b) => b.students - a.students)
+          .slice(0, 8)
+      );
+      return true;
+    },
+  });
 
   if (loading) {
     return (
@@ -178,88 +176,85 @@ function FeesTab() {
   const [monthlyFees, setMonthlyFees] = useState<any[]>([]);
   const [batchFees, setBatchFees] = useState<any[]>([]);
   const [totals, setTotals] = useState({ collected: 0, pending: 0, overdue: 0 });
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const { data: fees } = await supabase
-          .from('fees')
-          .select('amount,status,month,note,batch_id,batch:batches(name)');
-        const list = fees ?? [];
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'reports', 'fees'],
+    queryFn: async () => {
+      const { data: fees, error } = await supabase
+        .from('fees')
+        .select('amount,status,month,note,batch_id,batch:batches(name)');
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      const list = fees ?? [];
 
-        const parseNote = (note?: string | null) => {
-          try {
-            return note ? JSON.parse(note) : {};
-          } catch {
-            return {};
-          }
-        };
-        const collected = list
-          .filter((f) => f.status === 'paid')
-          .reduce((s, f) => {
-            const n = parseNote((f as any).note);
-            return s + (n.final_amount ?? f.amount ?? 0);
-          }, 0);
-        const pending = list
-          .filter((f) => f.status === 'pending')
-          .reduce((s, f) => s + (f.amount ?? 0), 0);
-        const overdue = list
-          .filter((f) => f.status === 'overdue')
-          .reduce((s, f) => s + (f.amount ?? 0), 0);
-        setTotals({ collected, pending, overdue });
-        setDonutData(
-          [
-            { name: 'Collected', value: collected },
-            { name: 'Pending', value: pending },
-            { name: 'Overdue', value: overdue },
-          ].filter((d) => d.value > 0)
-        );
-
-        // Monthly (last 6 months)
-        const now = new Date();
-        const months: Record<string, { month: string; collected: number; pending: number }> = {};
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const k = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-          months[k] = { month: MONTHS[d.getMonth()], collected: 0, pending: 0 };
+      const parseNote = (note?: string | null) => {
+        try {
+          return note ? JSON.parse(note) : {};
+        } catch {
+          return {};
         }
-        list.forEach((f) => {
-          if (f.month && months[f.month]) {
-            if (f.status === 'paid') {
-              const n = parseNote((f as any).note);
-              months[f.month].collected += n.final_amount ?? f.amount ?? 0;
-            } else {
-              months[f.month].pending += f.amount ?? 0;
-            }
-          }
-        });
-        setMonthlyFees(Object.values(months));
+      };
+      const collected = list
+        .filter((f) => f.status === 'paid')
+        .reduce((s, f) => {
+          const n = parseNote((f as any).note);
+          return s + (n.final_amount ?? f.amount ?? 0);
+        }, 0);
+      const pending = list
+        .filter((f) => f.status === 'pending')
+        .reduce((s, f) => s + (f.amount ?? 0), 0);
+      const overdue = list
+        .filter((f) => f.status === 'overdue')
+        .reduce((s, f) => s + (f.amount ?? 0), 0);
+      setTotals({ collected, pending, overdue });
+      setDonutData(
+        [
+          { name: 'Collected', value: collected },
+          { name: 'Pending', value: pending },
+          { name: 'Overdue', value: overdue },
+        ].filter((d) => d.value > 0)
+      );
 
-        // By batch
-        const byBatch: Record<string, { name: string; collected: number; pending: number }> = {};
-        list.forEach((f) => {
-          const name = (f as any).batch?.name ?? 'No Batch';
-          if (!byBatch[name]) {
-            byBatch[name] = { name, collected: 0, pending: 0 };
-          }
+      // Monthly (last 6 months)
+      const now = new Date();
+      const months: Record<string, { month: string; collected: number; pending: number }> = {};
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const k = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+        months[k] = { month: MONTHS[d.getMonth()], collected: 0, pending: 0 };
+      }
+      list.forEach((f) => {
+        if (f.month && months[f.month]) {
           if (f.status === 'paid') {
             const n = parseNote((f as any).note);
-            byBatch[name].collected += n.final_amount ?? f.amount ?? 0;
+            months[f.month].collected += n.final_amount ?? f.amount ?? 0;
           } else {
-            byBatch[name].pending += f.amount ?? 0;
+            months[f.month].pending += f.amount ?? 0;
           }
-        });
-        setBatchFees(Object.values(byBatch).sort((a, b) => b.collected - a.collected));
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+        }
+      });
+      setMonthlyFees(Object.values(months));
+
+      // By batch
+      const byBatch: Record<string, { name: string; collected: number; pending: number }> = {};
+      list.forEach((f) => {
+        const name = (f as any).batch?.name ?? 'No Batch';
+        if (!byBatch[name]) {
+          byBatch[name] = { name, collected: 0, pending: 0 };
+        }
+        if (f.status === 'paid') {
+          const n = parseNote((f as any).note);
+          byBatch[name].collected += n.final_amount ?? f.amount ?? 0;
+        } else {
+          byBatch[name].pending += f.amount ?? 0;
+        }
+      });
+      setBatchFees(Object.values(byBatch).sort((a, b) => b.collected - a.collected));
+      return true;
+    },
+  });
 
   const exportCSV = () => {
     const rows = [
@@ -400,84 +395,81 @@ function ExamSummaryTab() {
   const [passData, setPassData] = useState<any[]>([]);
   const [gradeData, setGradeData] = useState<any[]>([]);
   const [top10, setTop10] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    supabase
-      .from('exams')
-      .select('id,title,subject,total_marks,pass_marks')
-      .order('created_at', { ascending: false })
-      .then(
-        ({ data }) =>
-          setExams(
-            (data ?? []).map((e: any) => ({
-              ...e,
-              title: sanitize(e.title ?? ''),
-              subject: e.subject ?? '',
-            }))
-          ),
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
-
-  useEffect(() => {
-    if (!examId) {
-      return;
-    }
-    const load = async () => {
-      setLoading(true);
-      try {
-        const exam = exams.find((e) => e.id === examId);
-        const { data: subs } = await supabase
-          .from('mcq_submissions')
-          .select('*, student:students(name,student_id)')
-          .eq('exam_id', examId)
-          .order('score', { ascending: false });
-        const list = subs ?? [];
-        const total = exam?.total_marks ?? 100;
-        const passM = exam?.pass_marks ?? 40;
-
-        const passed = list.filter((s) => s.score >= passM).length;
-        setPassData(
-          [
-            { name: 'Pass', value: passed },
-            { name: 'Fail', value: list.length - passed },
-          ].filter((d) => d.value > 0)
-        );
-
-        const grades = {
-          'A (90%+)': 0,
-          'B (75-89%)': 0,
-          'C (60-74%)': 0,
-          'D (40-59%)': 0,
-          'F (<40%)': 0,
-        };
-        list.forEach((s) => {
-          const pct = (s.score / total) * 100;
-          if (pct >= 90) {
-            grades['A (90%+)']++;
-          } else if (pct >= 75) {
-            grades['B (75-89%)']++;
-          } else if (pct >= 60) {
-            grades['C (60-74%)']++;
-          } else if (pct >= 40) {
-            grades['D (40-59%)']++;
-          } else {
-            grades['F (<40%)']++;
-          }
-        });
-        setGradeData(Object.entries(grades).map(([grade, count]) => ({ grade, count })));
-        setTop10(list.slice(0, 10));
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
+  useQuery({
+    queryKey: ['admin', 'exams-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exams')
+        .select('id,title,subject,total_marks,pass_marks')
+        .order('created_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
       }
-    };
-    load();
-  }, [examId, exams]);
+      setExams(
+        (data ?? []).map((e: any) => ({
+          ...e,
+          title: sanitize(e.title ?? ''),
+          subject: e.subject ?? '',
+        }))
+      );
+      return true;
+    },
+  });
+
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'exam-summary', examId],
+    enabled: !!examId,
+    queryFn: async () => {
+      const exam = exams.find((e) => e.id === examId);
+      const { data: subs, error } = await supabase
+        .from('mcq_submissions')
+        .select('*, student:students(name,student_id)')
+        .eq('exam_id', examId)
+        .order('score', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      const list = subs ?? [];
+      const total = exam?.total_marks ?? 100;
+      const passM = exam?.pass_marks ?? 40;
+
+      const passed = list.filter((s) => s.score >= passM).length;
+      setPassData(
+        [
+          { name: 'Pass', value: passed },
+          { name: 'Fail', value: list.length - passed },
+        ].filter((d) => d.value > 0)
+      );
+
+      const grades = {
+        'A (90%+)': 0,
+        'B (75-89%)': 0,
+        'C (60-74%)': 0,
+        'D (40-59%)': 0,
+        'F (<40%)': 0,
+      };
+      list.forEach((s) => {
+        const pct = (s.score / total) * 100;
+        if (pct >= 90) {
+          grades['A (90%+)']++;
+        } else if (pct >= 75) {
+          grades['B (75-89%)']++;
+        } else if (pct >= 60) {
+          grades['C (60-74%)']++;
+        } else if (pct >= 40) {
+          grades['D (40-59%)']++;
+        } else {
+          grades['F (<40%)']++;
+        }
+      });
+      setGradeData(Object.entries(grades).map(([grade, count]) => ({ grade, count })));
+      setTop10(list.slice(0, 10));
+      return true;
+    },
+  });
 
   return (
     <div className="space-y-5">
@@ -593,65 +585,62 @@ function ExamSummaryTab() {
 // ── Top Students Tab ────────────────────────────────────────────────────────
 function TopStudentsTab() {
   const [students, setStudents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const { data: subs } = await supabase
-          .from('mcq_submissions')
-          .select(
-            'student_id, score, exam:exams(total_marks), student:students(name,student_id,batch:batches(name))'
-          );
-
-        // Average score % per student
-        const byStudent: Record<
-          string,
-          {
-            name: string;
-            studentId: string;
-            batch: string;
-            totalScore: number;
-            totalMax: number;
-            count: number;
-          }
-        > = {};
-        (subs ?? []).forEach((s: any) => {
-          if (!s.student) {
-            return;
-          }
-          const key = s.student_id;
-          if (!byStudent[key]) {
-            byStudent[key] = {
-              name: s.student.name,
-              studentId: s.student.student_id,
-              batch: s.student.batch?.name ?? '—',
-              totalScore: 0,
-              totalMax: 0,
-              count: 0,
-            };
-          }
-          byStudent[key].totalScore += s.score;
-          byStudent[key].totalMax += s.exam?.total_marks ?? 100;
-          byStudent[key].count++;
-        });
-
-        const ranked = Object.values(byStudent)
-          .map((s) => ({
-            ...s,
-            avg: s.totalMax > 0 ? Math.round((s.totalScore / s.totalMax) * 100) : 0,
-          }))
-          .sort((a, b) => b.avg - a.avg);
-        setStudents(ranked);
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'top-students'],
+    queryFn: async () => {
+      const { data: subs, error } = await supabase
+        .from('mcq_submissions')
+        .select(
+          'student_id, score, exam:exams(total_marks), student:students(name,student_id,batch:batches(name))'
+        );
+      if (error) {
+        handleSupabaseError(error);
+        return null;
       }
-    };
-    load();
-  }, []);
+
+      // Average score % per student
+      const byStudent: Record<
+        string,
+        {
+          name: string;
+          studentId: string;
+          batch: string;
+          totalScore: number;
+          totalMax: number;
+          count: number;
+        }
+      > = {};
+      (subs ?? []).forEach((s: any) => {
+        if (!s.student) {
+          return;
+        }
+        const key = s.student_id;
+        if (!byStudent[key]) {
+          byStudent[key] = {
+            name: s.student.name,
+            studentId: s.student.student_id,
+            batch: s.student.batch?.name ?? '—',
+            totalScore: 0,
+            totalMax: 0,
+            count: 0,
+          };
+        }
+        byStudent[key].totalScore += s.score;
+        byStudent[key].totalMax += s.exam?.total_marks ?? 100;
+        byStudent[key].count++;
+      });
+
+      const ranked = Object.values(byStudent)
+        .map((s) => ({
+          ...s,
+          avg: s.totalMax > 0 ? Math.round((s.totalScore / s.totalMax) * 100) : 0,
+        }))
+        .sort((a, b) => b.avg - a.avg);
+      setStudents(ranked);
+      return true;
+    },
+  });
 
   const exportCSV = () => {
     const rows = [

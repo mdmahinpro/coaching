@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -41,9 +42,7 @@ const EMPTY: Partial<Notice> = {
 
 export default function NoticesPage() {
   const { settings } = useSettingsStore();
-  const [notices, setNotices] = useState<Notice[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Partial<Notice>>(EMPTY);
   const [isEdit, setIsEdit] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -51,45 +50,49 @@ export default function NoticesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase
-        .from('notices')
-        .select('*, batch:batches(name)')
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false });
-      const cleaned = (data ?? []).map((n: any) => ({
-        ...n,
-        title: sanitize(n.title),
-        content: sanitize(n.content),
-      }));
-      setNotices(cleaned as Notice[]);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
+  async function fetchNotices(): Promise<Notice[]> {
+    const { data, error } = await supabase
+      .from('notices')
+      .select('*, batch:batches(name)')
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) {
+      handleSupabaseError(error);
+      return [];
     }
-  }, []);
+    return (data ?? []).map((n: any) => ({
+      ...n,
+      title: sanitize(n.title),
+      content: sanitize(n.content),
+    })) as Notice[];
+  }
 
-  useEffect(() => {
-    load();
-  }, [load]);
-  useEffect(() => {
-    supabase
+  async function fetchActiveBatches(): Promise<any[]> {
+    const { data, error } = await supabase
       .from('batches')
       .select('id,name')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
-          setBatches(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
+      .eq('is_active', true);
+    if (error) {
+      handleSupabaseError(error);
+      return [];
+    }
+    return (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
+  }
+
+  const { data: notices = [], isLoading: loading } = useQuery({
+    queryKey: ['admin', 'notices'],
+    queryFn: fetchNotices,
+  });
+
+  const { data: batches = [] } = useQuery({
+    queryKey: ['admin', 'batches-active'],
+    queryFn: fetchActiveBatches,
+  });
+
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['admin', 'notices'] }),
+    [queryClient]
+  );
 
   const resetForm = () => {
     setEditing(EMPTY);
