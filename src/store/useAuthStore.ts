@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import type { User, Session, Subscription } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 
 type Role = 'admin' | 'student' | null;
 
@@ -19,7 +19,31 @@ interface AuthState {
 
 // Module-scoped handle to the single active auth subscription. Kept outside
 // the store state so it never triggers re-renders and can be torn down cleanly.
-let authSubscription: Subscription | null = null;
+let authSubscription: import('@supabase/supabase-js').Subscription | null = null;
+
+/**
+ * Resolve the caller's role from the server.
+ *
+ * `user_metadata.role` is NOT usable here: it is client-writable via
+ * `auth.updateUser()`, so any signed-in visitor could set `role: 'admin'` and
+ * unlock the admin UI. `is_admin()` is a SECURITY DEFINER RPC that checks the
+ * server-only `admin_users` roster against `auth.uid()`.
+ *
+ * Every non-admin authenticated user is treated as a student. Failures resolve
+ * to `null` (no privileges) rather than throwing, so a transient network error
+ * denies access instead of granting it.
+ */
+async function resolveRole(): Promise<Role> {
+  try {
+    const { data, error } = await supabase.rpc('is_admin');
+    if (error) {
+      return null;
+    }
+    return data === true ? 'admin' : 'student';
+  } catch {
+    return null;
+  }
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
@@ -38,7 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       data: { session },
     } = await supabase.auth.getSession();
     if (session?.user) {
-      const role = (session.user.user_metadata?.role as Role) ?? null;
+      const role = await resolveRole();
       set({ user: session.user, session, role, loading: false, initialized: true });
     } else {
       set({ user: null, session: null, role: null, loading: false, initialized: true });
@@ -51,11 +75,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const role = (session.user.user_metadata?.role as Role) ?? null;
-        set({ user: session.user, session, role });
-      } else {
+      if (!session?.user) {
         set({ user: null, session: null, role: null });
+        return;
+      }
+
+      const prev = get();
+      const sameUser = prev.user?.id === session.user.id;
+      set({ user: session.user, session, role: sameUser ? prev.role : null });
+
+      // Only re-query on a genuine identity change — token refreshes fire this
+      // callback too and the roster answer would not differ. Deferred out of
+      // the callback because Supabase forbids awaiting its own client here.
+      if (!sameUser || prev.role === null) {
+        setTimeout(() => {
+          void resolveRole().then((role) => {
+            if (get().user?.id === session.user.id) {
+              set({ role });
+            }
+          });
+        }, 0);
       }
     });
 
@@ -78,7 +117,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ loading: false });
       return { error: error.message };
     }
-    const role = (data.user?.user_metadata?.role as Role) ?? null;
+    const role = await resolveRole();
     set({ user: data.user, session: data.session, role, loading: false });
     return { error: null };
   },

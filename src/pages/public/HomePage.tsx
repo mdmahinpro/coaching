@@ -41,7 +41,15 @@ export default function HomePage() {
     queryFn: async () => {
       const [b, t, n] = await Promise.all([
         supabase.from('batches').select('*').eq('is_active', true).limit(6),
-        supabase.from('teachers').select('*').limit(4),
+        // Column-scoped select: anon only has grants on the public card
+        // columns (migration 20250825000002 narrowed them deliberately —
+        // salary/phone/email/created_at are withheld). select('*') needs
+        // every column and dies with 42501 "permission denied".
+        supabase
+          .from('teachers')
+          .select('id,name,subject,qualification,bio,photo_url,is_active')
+          .eq('is_active', true)
+          .limit(4),
         supabase
           .from('notices')
           .select('title')
