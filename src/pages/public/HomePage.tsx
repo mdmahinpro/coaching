@@ -4,7 +4,8 @@ import { HeroSection } from '@/components/public/HeroSection';
 import { BatchCard } from '@/components/public/BatchCard';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';
 import { Avatar } from '@/components/shared/Avatar';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { sanitize } from '@/lib/utils';
@@ -35,29 +36,43 @@ export default function HomePage() {
   const [teachers, setTeachers] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
 
-  useEffect(() => {
-    supabase.from('batches').select('*').eq('is_active', true).limit(6)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((b: any) => ({
-          ...b, name: sanitize(b.name),
+  useQuery({
+    queryKey: ['public', 'home'],
+    queryFn: async () => {
+      const [b, t, n] = await Promise.all([
+        supabase.from('batches').select('*').eq('is_active', true).limit(6),
+        supabase.from('teachers').select('*').limit(4),
+        supabase
+          .from('notices')
+          .select('title')
+          .eq('is_published', true)
+          .order('created_at', { ascending: false })
+          .limit(8),
+      ]);
+      const err = b.error ?? t.error ?? n.error;
+      if (err) {
+        handleSupabaseError(err);
+        return null;
+      }
+      setBatches(
+        (b.data ?? []).map((x: any) => ({
+          ...x,
+          name: sanitize(x.name),
           // teacher is a text column (teacher name string), not a relation object
-          teacher: b.teacher ? sanitize(String(b.teacher)) : b.teacher,
-        }));
-        setBatches(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-    supabase.from('teachers').select('*').limit(4)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((t: any) => ({
-          ...t, name: sanitize(t.name), subject: t.subject ? sanitize(t.subject) : t.subject,
-        }));
-        setTeachers(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-    supabase.from('notices').select('title').eq('is_published', true).order('created_at', { ascending: false }).limit(8)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((n: any) => ({ ...n, title: sanitize(n.title) }));
-        setNotices(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-  }, []);
+          teacher: x.teacher ? sanitize(String(x.teacher)) : x.teacher,
+        }))
+      );
+      setTeachers(
+        (t.data ?? []).map((x: any) => ({
+          ...x,
+          name: sanitize(x.name),
+          subject: x.subject ? sanitize(x.subject) : x.subject,
+        }))
+      );
+      setNotices((n.data ?? []).map((x: any) => ({ ...x, title: sanitize(x.title) })));
+      return true;
+    },
+  });
 
   const tickerItems = notices.length > 0
     ? [...notices, ...notices].map(n => n.title)

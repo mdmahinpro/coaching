@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import toast from 'react-hot-toast';
 import { CheckCircle, ChevronRight, ChevronLeft, User, BookOpen, ClipboardCheck } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { sanitize } from '@/lib/utils';
 
@@ -51,13 +52,27 @@ export default function AdmissionPage() {
     formState: { errors, isSubmitting }
   } = useForm<F>({ resolver: zodResolver(schema), mode: 'onTouched' });
 
-  useEffect(() => {
-    supabase.from('batches').select('id,name,subject,fee').eq('is_active', true)
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name), subject: b.subject ? sanitize(b.subject) : b.subject }));
-        setBatches(cleaned);
-      },(err: any) => { handleSupabaseError(err); });
-  }, []);
+  useQuery({
+    queryKey: ['public', 'batches-for-admission'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('batches')
+        .select('id,name,subject,fee')
+        .eq('is_active', true);
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setBatches(
+        (data ?? []).map((b: any) => ({
+          ...b,
+          name: sanitize(b.name),
+          subject: b.subject ? sanitize(b.subject) : b.subject,
+        }))
+      );
+      return true;
+    },
+  });
 
   const nextStep = async () => {
     const fields: (keyof F)[] = step === 1

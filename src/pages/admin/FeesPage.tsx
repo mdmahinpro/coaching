@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { Avatar } from '@/components/shared/Avatar';
@@ -92,67 +93,59 @@ function OverviewTab() {
   const { settings } = useSettingsStore();
   const [payments, setPayments] = useState<any[]>([]); // display table (recent 20)
   const [feeStats, setFeeStats] = useState({ due: 0, collected: 0, pending: 0, overdue: 0 });
-  const [loading, setLoading] = useState(true);
   const [genReceiptLoading, setGenReceiptLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      // Display table — joined, limited to 20 most recent
-      supabase
-        .from('fees')
-        .select('*, student:students(name, student_id, photo_url), batch:batches(name)')
-        .order('payment_date', { ascending: false })
-        .limit(20),
-      // Stats — all records, include note so we can use final_amount for collected
-      supabase.from('fees').select('amount, status, month, note'),
-    ])
-      .then(([{ data: displayData }, { data: statsData }]) => {
-        if (cancelled) {
-          return;
-        }
-        const cleaned = (displayData ?? []).map((p: any) => ({
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'fees', 'payments'],
+    queryFn: async () => {
+      const [display, stats] = await Promise.all([
+        // Display table — joined, limited to 20 most recent
+        supabase
+          .from('fees')
+          .select('*, student:students(name, student_id, photo_url), batch:batches(name)')
+          .order('payment_date', { ascending: false })
+          .limit(20),
+        // Stats — all records, include note so we can use final_amount for collected
+        supabase.from('fees').select('amount, status, month, note'),
+      ]);
+      const err = display.error ?? stats.error;
+      if (err) {
+        handleSupabaseError(err);
+        return null;
+      }
+      setPayments(
+        (display.data ?? []).map((p: any) => ({
           ...p,
           student: p.student ? { ...p.student, name: sanitize(p.student.name) } : p.student,
           batch: p.batch ? { ...p.batch, name: sanitize(p.batch.name) } : p.batch,
-        }));
-        setPayments(cleaned);
-        const all = statsData ?? [];
-        const parseNote = (n: string | null) => {
-          try {
-            return JSON.parse(n || '{}');
-          } catch {
-            return {};
-          }
-        };
-        const nowLocal = new Date();
-        const thisMonth = `${MONTHS[nowLocal.getMonth()]} ${nowLocal.getFullYear()}`;
-        setFeeStats({
-          due: all.filter((p) => p.month === thisMonth).reduce((s, p) => s + (p.amount ?? 0), 0),
-          collected: all
-            .filter((p) => p.status === 'paid')
-            .reduce((s, p) => {
-              const meta = parseNote(p.note);
-              return s + (meta.final_amount ?? p.amount ?? 0);
-            }, 0),
-          pending: all
-            .filter((p) => p.status === 'pending')
-            .reduce((s, p) => s + (p.amount ?? 0), 0),
-          overdue: all.filter((p) => p.status === 'overdue').length,
-        });
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          handleSupabaseError(err);
-          setLoading(false);
+        }))
+      );
+      const all = stats.data ?? [];
+      const parseNote = (n: string | null) => {
+        try {
+          return JSON.parse(n || '{}');
+        } catch {
+          return {};
         }
+      };
+      const nowLocal = new Date();
+      const thisMonth = `${MONTHS[nowLocal.getMonth()]} ${nowLocal.getFullYear()}`;
+      setFeeStats({
+        due: all.filter((p) => p.month === thisMonth).reduce((a, p) => a + (p.amount ?? 0), 0),
+        collected: all
+          .filter((p) => p.status === 'paid')
+          .reduce((a, p) => {
+            const meta = parseNote(p.note);
+            return a + (meta.final_amount ?? p.amount ?? 0);
+          }, 0),
+        pending: all
+          .filter((p) => p.status === 'pending')
+          .reduce((a, p) => a + (p.amount ?? 0), 0),
+        overdue: all.filter((p) => p.status === 'overdue').length,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      return true;
+    },
+  });
 
   const paid = payments.filter((p) => p.status === 'paid');
 
@@ -568,55 +561,60 @@ function RecordPaymentTab() {
   const dq = useDebounce(query, 250);
   const dropRef = useRef<HTMLDivElement>(null);
 
+  useQuery({
+    queryKey: ['admin', 'fees', 'student-search', dq],
+    enabled: !!dq,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('students')
+        .select('id, name, student_id, phone, photo_url, batch:batches(id,name)')
+        .or(`name.ilike.%${dq}%,student_id.ilike.%${dq}%`)
+        .eq('status', 'active')
+        .limit(8);
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setResults(
+        (data ?? []).map((x: any) => ({
+          ...x,
+          name: sanitize(x.name),
+          batch: x.batch ? { ...x.batch, name: sanitize(x.batch.name) } : x.batch,
+        }))
+      );
+      setShowDropdown(true);
+      return true;
+    },
+  });
+
+  // Clear the dropdown when the search box is emptied.
   useEffect(() => {
     if (!dq) {
       setResults([]);
       setShowDropdown(false);
-      return;
     }
-    supabase
-      .from('students')
-      .select('id, name, student_id, phone, photo_url, batch:batches(id,name)')
-      .or(`name.ilike.%${dq}%,student_id.ilike.%${dq}%`)
-      .eq('status', 'active')
-      .limit(8)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((s: any) => ({
-            ...s,
-            name: sanitize(s.name),
-            batch: s.batch ? { ...s.batch, name: sanitize(s.batch.name) } : s.batch,
-          }));
-          setResults(cleaned);
-          setShowDropdown(true);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
   }, [dq]);
 
-  useEffect(() => {
-    if (!selectedStudent) {
-      return;
-    }
-    supabase
-      .from('fees')
-      .select('*, batch:batches(name)')
-      .eq('student_id', selectedStudent.id)
-      .neq('status', 'paid')
-      .order('due_date', { ascending: true })
-      .then(
-        ({ data }) => {
-          setUnpaidFees(
-            (data ?? []).map((f: any) => ({ ...f, batch: { name: sanitize(f.batch?.name ?? '') } }))
-          );
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
+  useQuery({
+    queryKey: ['admin', 'fees', 'unpaid', selectedStudent?.id],
+    enabled: !!selectedStudent,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('fees')
+        .select('*, batch:batches(name)')
+        .eq('student_id', selectedStudent.id)
+        .neq('status', 'paid')
+        .order('due_date', { ascending: true });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setUnpaidFees(
+        (data ?? []).map((f: any) => ({ ...f, batch: { name: sanitize(f.batch?.name ?? '') } }))
       );
-  }, [selectedStudent]);
+      return true;
+    },
+  });
 
   const finalAmount = calculateFinalAmount(selectedFee?.amount ?? 0, discount);
 
@@ -1018,14 +1016,13 @@ function DueReportTab({ batches }: { batches: any[] }) {
   const [filter, setFilter] = useState<DueFilter>('this_month');
   const [batchFilter, setBatchFilter] = useState('all');
   const [dues, setDues] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<string | null>(null);
   const [bulkSending, setBulkSending] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { isLoading: loading, refetch: load } = useQuery({
+    queryKey: ['admin', 'fees', 'due-list', filter, batchFilter],
+    queryFn: async () => {
       const nowLoad = new Date();
       const thisMonthLoad = `${MONTHS[nowLoad.getMonth()]} ${nowLoad.getFullYear()}`;
       const lastMonthLoad = `${MONTHS[nowLoad.getMonth() === 0 ? 11 : nowLoad.getMonth() - 1]} ${nowLoad.getMonth() === 0 ? nowLoad.getFullYear() - 1 : nowLoad.getFullYear()}`;
@@ -1049,7 +1046,11 @@ function DueReportTab({ batches }: { batches: any[] }) {
         q = q.eq('batch_id', batchFilter);
       }
 
-      const { data } = await q.limit(100);
+      const { data, error } = await q.limit(100);
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
       setDues(
         (data ?? []).map((f: any) => ({
           ...f,
@@ -1057,16 +1058,9 @@ function DueReportTab({ batches }: { batches: any[] }) {
           batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name ?? '') } : f.batch,
         }))
       );
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, batchFilter]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+      return true;
+    },
+  });
 
   const sendReminder = async (fee: any) => {
     if (!fee.student?.phone) {
@@ -1267,51 +1261,42 @@ const ACTION_META: Record<string, { label: string; color: string; bg: string }> 
 };
 
 function AuditLogTab() {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const PER_PAGE = 50;
 
-  const load = useCallback(
-    async (reset = false) => {
-      setLoading(true);
-      try {
-        const currentPage = reset ? 0 : page;
+  const { data: logPages, isLoading: loading, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ['admin', 'fee-audit-logs', filter],
+      initialPageParam: 0,
+      queryFn: async ({ pageParam }) => {
         let q = supabase
           .from('fee_audit_logs')
           .select('*')
           .order('created_at', { ascending: false })
-          .range(currentPage * PER_PAGE, (currentPage + 1) * PER_PAGE - 1);
+          .range(pageParam * PER_PAGE, (pageParam + 1) * PER_PAGE - 1);
         if (filter !== 'all') {
           q = q.eq('action', filter);
         }
-        const { data } = await q;
-        const rows = data ?? [];
-        setLogs((prev) => (currentPage === 0 ? rows : [...prev, ...rows]));
-        setHasMore(rows.length === PER_PAGE);
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [filter, page]
-  );
+        const { data, error } = await q;
+        if (error) {
+          handleSupabaseError(error);
+          return [];
+        }
+        return data ?? [];
+      },
+      getNextPageParam: (lastPage, allPages) =>
+        lastPage.length === PER_PAGE ? allPages.length : undefined,
+    });
 
-  useEffect(() => {
-    setPage(0);
-    setLogs([]);
-    load(true);
-  }, [filter]);
+  const logs = (logPages?.pages ?? []).flat();
+  const hasMore = !!hasNextPage;
 
-  useEffect(() => {
-    if (page > 0) {
-      load();
+  const load = () => {
+    if (hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
     }
-  }, [page]);
+  };
 
   const formatDetail = (log: any): string => {
     if (log.action === 'payment_recorded' && log.new_data) {
@@ -1515,11 +1500,15 @@ function AuditLogTab() {
             {hasMore && (
               <div className="p-4 text-center border-t border-navy-700/50">
                 <button
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={loading}
+                  onClick={() => load()}
+                  disabled={loading || isFetchingNextPage}
                   className="btn-outline text-sm"
                 >
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : 'Load More'}
+                  {loading || isFetchingNextPage ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    'Load More'
+                  )}
                 </button>
               </div>
             )}
@@ -1535,19 +1524,22 @@ export default function FeesPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [batches, setBatches] = useState<any[]>([]);
 
-  useEffect(() => {
-    supabase
-      .from('batches')
-      .select('id,name,monthly_fee')
-      .eq('is_active', true)
-      .order('name')
-      .then(
-        ({ data }) => setBatches(data ?? []),
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
+  useQuery({
+    queryKey: ['admin', 'fees', 'batches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('batches')
+        .select('id,name,monthly_fee')
+        .eq('is_active', true)
+        .order('name');
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setBatches(data ?? []);
+      return true;
+    },
+  });
 
   return (
     <AdminLayout title="ফি ব্যবস্থাপনা">

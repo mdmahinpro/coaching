@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { GraduationCap, Loader2, CheckCircle2 } from 'lucide-react';
@@ -23,25 +24,27 @@ export default function PortalSignupPage() {
     batch_id: '',
   });
 
-  useEffect(() => {
-    supabase
-      .from('batches')
-      .select('id,name,subject')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((b: any) => ({
-            ...b,
-            name: sanitize(b.name),
-            subject: b.subject ? sanitize(b.subject) : b.subject,
-          }));
-          setBatches(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
+  useQuery({
+    queryKey: ['public', 'signup-batches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('batches')
+        .select('id,name,subject')
+        .eq('is_active', true);
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setBatches(
+        (data ?? []).map((b: any) => ({
+          ...b,
+          name: sanitize(b.name),
+          subject: b.subject ? sanitize(b.subject) : b.subject,
+        }))
       );
-  }, []);
+      return true;
+    },
+  });
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 

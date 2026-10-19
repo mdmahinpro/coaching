@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PublicNavbar } from '@/components/public/PublicNavbar';
 import { Footer } from '@/components/public/Footer';
 import { BatchCard } from '@/components/public/BatchCard';
@@ -16,24 +17,33 @@ const SUBJECTS = ['All Subjects', 'English', 'Mathematics', 'Physics', 'Chemistr
 
 export default function CoursesPage() {
   const [batches, setBatches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [level, setLevel] = useState('All');
   const [subject, setSubject] = useState('All Subjects');
   const q = useDebounce(search, 300);
 
-  useEffect(() => {
-    let query = supabase.from('batches').select('*').eq('is_active', true);
-    if (q) {query = query.ilike('name', `%${q}%`);}
-    if (subject !== 'All Subjects') {query = query.ilike('subject', `%${subject}%`);}
-    if (level !== 'All') {query = query.ilike('name', `%${level}%`);}
-    setLoading(true);
-    // Promise.resolve wraps the builder (typed PromiseLike) so .finally is available
-    Promise.resolve(query).then(({ data }) => {
-      const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
-      setBatches(cleaned);
-    },(err: any) => { handleSupabaseError(err); }).finally(() => { setLoading(false); });
-  }, [q, level, subject]);
+  const { isLoading: loading } = useQuery({
+    queryKey: ['public', 'courses', q, level, subject],
+    queryFn: async () => {
+      let query = supabase.from('batches').select('*').eq('is_active', true);
+      if (q) {
+        query = query.ilike('name', `%${q}%`);
+      }
+      if (subject !== 'All Subjects') {
+        query = query.ilike('subject', `%${subject}%`);
+      }
+      if (level !== 'All') {
+        query = query.ilike('name', `%${level}%`);
+      }
+      const { data, error } = await query;
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setBatches((data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) })));
+      return true;
+    },
+  });
 
   return (
     <div className="min-h-screen bg-navy-900">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -66,8 +67,6 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
   const [tab, setTab] = useState<Tab>('profile');
   const [fees, setFees] = useState<any[]>([]);
   const [exams, setExams] = useState<any[]>([]);
-  const [feesLoading, setFeesLoading] = useState(false);
-  const [examsLoading, setExamsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -83,65 +82,51 @@ export function StudentDrawer({ student, onClose, onStatusChange }: Props) {
     }
   }, [student?.id]);
 
-  useEffect(() => {
-    if (!student || tab !== 'fees') {
-      return;
-    }
-    setFeesLoading(true);
-    // Promise.resolve wraps the builder (typed PromiseLike) so .finally is available
-    Promise.resolve(
-      supabase
+  const { isLoading: feesLoading } = useQuery({
+    queryKey: ['admin', 'student-fees', student?.id],
+    enabled: !!student && tab === 'fees',
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from('fees')
         .select('*, batch:batches(name)')
-        .eq('student_id', student.id)
-        .order('due_date', { ascending: false })
-    )
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((f: any) => ({
-            ...f,
-            batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name) } : f.batch,
-          }));
-          setFees(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      )
-      .finally(() => {
-        setFeesLoading(false);
-      });
-  }, [student?.id, tab]);
+        .eq('student_id', student!.id)
+        .order('due_date', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setFees(
+        (data ?? []).map((f: any) => ({
+          ...f,
+          batch: f.batch ? { ...f.batch, name: sanitize(f.batch.name) } : f.batch,
+        }))
+      );
+      return true;
+    },
+  });
 
-  useEffect(() => {
-    if (!student || tab !== 'exams') {
-      return;
-    }
-    setExamsLoading(true);
-    // Use mcq_submissions table (the actual exam results table)
-    Promise.resolve(
-      supabase
+  const { isLoading: examsLoading } = useQuery({
+    queryKey: ['admin', 'student-exams', student?.id],
+    enabled: !!student && tab === 'exams',
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from('mcq_submissions')
         .select('*, exam:exams(title, exam_date, total_marks)')
-        .eq('student_id', student.id)
-        .order('submitted_at', { ascending: false })
-    )
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((r: any) => ({
-            ...r,
-            exam: r.exam ? { ...r.exam, title: sanitize(r.exam.title) } : r.exam,
-          }));
-          setExams(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      )
-      .finally(() => {
-        setExamsLoading(false);
-      });
-  }, [student?.id, tab]);
+        .eq('student_id', student!.id)
+        .order('submitted_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setExams(
+        (data ?? []).map((r: any) => ({
+          ...r,
+          exam: r.exam ? { ...r.exam, title: sanitize(r.exam.title) } : r.exam,
+        }))
+      );
+      return true;
+    },
+  });
 
   const handleResetPassword = async () => {
     if (!student || !newPw.trim()) {
