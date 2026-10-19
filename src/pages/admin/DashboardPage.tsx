@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { StatsCard } from '@/components/admin/StatsCard';
 import { supabase } from '@/lib/supabase';
@@ -33,7 +34,6 @@ import {
 import { motion } from 'framer-motion';
 import { loadDemoData, isDemoLoaded } from '@/data/demoData';
 import toast from 'react-hot-toast';
-import { handleSupabaseError } from '@/utils/errorHandler';
 import { logWarning } from '@/utils/logger';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -56,170 +56,182 @@ function SkeletonBlock({ h = 'h-40' }: { h?: string }) {
   return <div className={`card ${h} animate-pulse bg-navy-800`} />;
 }
 
-export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    activeStudents: 0,
-    monthCollected: 0,
-    pendingFees: 0,
-    activeExams: 0,
+type DashboardData = {
+  stats: {
+    activeStudents: number;
+    monthCollected: number;
+    pendingFees: number;
+    activeExams: number;
+  };
+  enrollmentData: { month: string; students: number }[];
+  feeDonut: { name: string; value: number }[];
+  recentAdmissions: any[];
+  activeExams: any[];
+  feeDues: any[];
+};
+
+async function fetchDashboardData(): Promise<DashboardData> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
+
+  const [
+    studentCountRes,
+    studentChartRes,
+    monthPaidRes,
+    pendingRes,
+    activeExamRes,
+    admissionsRes,
+    examsRes,
+    allFeesRes,
+  ] = await Promise.all([
+    supabase.from('students').select('id', { count: 'exact', head: true }),
+    supabase.from('students').select('id,created_at').gte('created_at', sixMonthsAgo),
+    supabase
+      .from('fees')
+      .select('amount,note')
+      .eq('status', 'paid')
+      .gte('payment_date', monthStart)
+      .lte('payment_date', monthEnd),
+    supabase.from('fees').select('amount').eq('status', 'pending'),
+    supabase.from('exams').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase
+      .from('admission_requests')
+      .select('id,name,guardian_name,created_at,batch_id')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('exams')
+      .select('id,title,batch_id,exam_date,status')
+      .eq('status', 'active')
+      .limit(5),
+    supabase.from('fees').select('status,amount,note'),
+  ]);
+
+  const parseNote = (n: any) => {
+    try {
+      return n ? JSON.parse(n) : {};
+    } catch {
+      return {};
+    }
+  };
+  const monthCollected = (monthPaidRes.data ?? []).reduce((s: number, r: any) => {
+    const meta = parseNote(r.note);
+    return s + (meta.final_amount ?? r.amount ?? 0);
+  }, 0);
+  const pendingFees = (pendingRes.data ?? []).reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
+
+  const students = studentChartRes.data ?? [];
+  const monthCounts: Record<string, number> = {};
+  students.forEach((s: any) => {
+    const d = new Date(s.created_at);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    monthCounts[key] = (monthCounts[key] ?? 0) + 1;
   });
-  const [enrollmentData, setEnrollmentData] = useState<{ month: string; students: number }[]>([]);
-  const [feeDonut, setFeeDonut] = useState<{ name: string; value: number }[]>([]);
-  const [recentAdmissions, setRecentAdmissions] = useState<any[]>([]);
-  const [activeExams, setActiveExams] = useState<any[]>([]);
-  const [feeDues, setFeeDues] = useState<any[]>([]);
+  const trend: { month: string; students: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    trend.push({ month: MONTHS[d.getMonth()], students: monthCounts[key] ?? 0 });
+  }
+
+  const fees = allFeesRes.data ?? [];
+  const collected = fees
+    .filter((f: any) => f.status === 'paid')
+    .reduce((s: number, f: any) => {
+      const meta = parseNote(f.note);
+      return s + (meta.final_amount ?? f.amount ?? 0);
+    }, 0);
+  const pending = fees
+    .filter((f: any) => f.status === 'pending')
+    .reduce((s: number, f: any) => s + (f.amount ?? 0), 0);
+  const waived = fees
+    .filter((f: any) => f.status === 'waived')
+    .reduce((s: number, f: any) => s + (f.amount ?? 0), 0);
+  const feeDonut = [
+    { name: 'Collected', value: collected },
+    { name: 'Pending', value: pending },
+    { name: 'Waived', value: waived },
+  ].filter((d) => d.value > 0);
+
+  // Overdue students: 2+ pending fee rows, capped at 5
+  const { data: dueFeesData } = await supabase
+    .from('fees')
+    .select('student_id, amount, due_date')
+    .eq('status', 'pending');
+  const dueFees = dueFeesData ?? [];
+  const studentDues: Record<string, { count: number; total: number }> = {};
+  dueFees.forEach((f: any) => {
+    if (!studentDues[f.student_id]) {
+      studentDues[f.student_id] = { count: 0, total: 0 };
+    }
+    studentDues[f.student_id].count++;
+    studentDues[f.student_id].total += f.amount ?? 0;
+  });
+  const overdueIds = Object.entries(studentDues)
+    .filter(([, v]) => v.count >= 2)
+    .slice(0, 5)
+    .map(([id, v]) => ({ id, ...v }));
+
+  // Fetch names only for the specific overdue students (avoids the old limit(50) which missed most students)
+  const studentMap: Record<string, string> = {};
+  if (overdueIds.length > 0) {
+    const { data: overdueStudents } = await supabase
+      .from('students')
+      .select('id,name')
+      .in(
+        'id',
+        overdueIds.map((d) => d.id)
+      );
+    (overdueStudents ?? []).forEach((s: any) => {
+      studentMap[s.id] = sanitize(s.name);
+    });
+  }
+  const feeDues = overdueIds.map((d) => ({ ...d, name: sanitize(studentMap[d.id] ?? 'Unknown') }));
+
+  return {
+    stats: {
+      activeStudents: studentCountRes.count ?? 0,
+      monthCollected,
+      pendingFees,
+      activeExams: activeExamRes.count ?? 0,
+    },
+    enrollmentData: trend,
+    feeDonut,
+    recentAdmissions: admissionsRes.data ?? [],
+    activeExams: examsRes.data ?? [],
+    feeDues,
+  };
+}
+
+export default function DashboardPage() {
+  const queryClient = useQueryClient();
   const [demoLoaded, setDemoLoaded] = useState(isDemoLoaded);
   const [loadingDemo, setLoadingDemo] = useState(false);
   const [dbHealthy, setDbHealthy] = useState<boolean | null>(null);
   const [checkingDb, setCheckingDb] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
-      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['admin', 'dashboard'],
+    queryFn: fetchDashboardData,
+  });
 
-      const [
-        studentCountRes,
-        studentChartRes,
-        monthPaidRes,
-        pendingRes,
-        activeExamRes,
-        admissionsRes,
-        examsRes,
-        allFeesRes,
-      ] = await Promise.all([
-        supabase.from('students').select('id', { count: 'exact', head: true }),
-        supabase.from('students').select('id,created_at').gte('created_at', sixMonthsAgo),
-        supabase
-          .from('fees')
-          .select('amount,note')
-          .eq('status', 'paid')
-          .gte('payment_date', monthStart)
-          .lte('payment_date', monthEnd),
-        supabase.from('fees').select('amount').eq('status', 'pending'),
-        supabase.from('exams').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        supabase
-          .from('admission_requests')
-          .select('id,name,guardian_name,created_at,batch_id')
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(5),
-        supabase
-          .from('exams')
-          .select('id,title,batch_id,exam_date,status')
-          .eq('status', 'active')
-          .limit(5),
-        supabase.from('fees').select('status,amount,note'),
-      ]);
-
-      const parseNote = (n: any) => {
-        try {
-          return n ? JSON.parse(n) : {};
-        } catch {
-          return {};
-        }
-      };
-      const monthCollected = (monthPaidRes.data ?? []).reduce((s: number, r: any) => {
-        const meta = parseNote(r.note);
-        return s + (meta.final_amount ?? r.amount ?? 0);
-      }, 0);
-      const pendingFees = (pendingRes.data ?? []).reduce(
-        (s: number, r: any) => s + (r.amount ?? 0),
-        0
-      );
-      setStats({
-        activeStudents: studentCountRes.count ?? 0,
-        monthCollected,
-        pendingFees,
-        activeExams: activeExamRes.count ?? 0,
-      });
-
-      const students = studentChartRes.data ?? [];
-      const monthCounts: Record<string, number> = {};
-      students.forEach((s: any) => {
-        const d = new Date(s.created_at);
-        const key = `${d.getFullYear()}-${d.getMonth()}`;
-        monthCounts[key] = (monthCounts[key] ?? 0) + 1;
-      });
-      const trend = [];
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = `${d.getFullYear()}-${d.getMonth()}`;
-        trend.push({ month: MONTHS[d.getMonth()], students: monthCounts[key] ?? 0 });
-      }
-      setEnrollmentData(trend);
-
-      const fees = allFeesRes.data ?? [];
-      const collected = fees
-        .filter((f: any) => f.status === 'paid')
-        .reduce((s: number, f: any) => {
-          const meta = parseNote(f.note);
-          return s + (meta.final_amount ?? f.amount ?? 0);
-        }, 0);
-      const pending = fees
-        .filter((f: any) => f.status === 'pending')
-        .reduce((s: number, f: any) => s + (f.amount ?? 0), 0);
-      const waived = fees
-        .filter((f: any) => f.status === 'waived')
-        .reduce((s: number, f: any) => s + (f.amount ?? 0), 0);
-      setFeeDonut(
-        [
-          { name: 'Collected', value: collected },
-          { name: 'Pending', value: pending },
-          { name: 'Waived', value: waived },
-        ].filter((d) => d.value > 0)
-      );
-
-      setRecentAdmissions(admissionsRes.data ?? []);
-      setActiveExams(examsRes.data ?? []);
-
-      const { data: dueFeesData } = await supabase
-        .from('fees')
-        .select('student_id, amount, due_date')
-        .eq('status', 'pending');
-      const dueFees = dueFeesData ?? [];
-      const studentDues: Record<string, { count: number; total: number }> = {};
-      dueFees.forEach((f: any) => {
-        if (!studentDues[f.student_id]) {
-          studentDues[f.student_id] = { count: 0, total: 0 };
-        }
-        studentDues[f.student_id].count++;
-        studentDues[f.student_id].total += f.amount ?? 0;
-      });
-      const overdueIds = Object.entries(studentDues)
-        .filter(([, v]) => v.count >= 2)
-        .slice(0, 5)
-        .map(([id, v]) => ({ id, ...v }));
-
-      // Fetch names only for the specific overdue students (avoids the old limit(50) which missed most students)
-      const studentMap: Record<string, string> = {};
-      if (overdueIds.length > 0) {
-        const { data: overdueStudents } = await supabase
-          .from('students')
-          .select('id,name')
-          .in(
-            'id',
-            overdueIds.map((d) => d.id)
-          );
-        (overdueStudents ?? []).forEach((s: any) => {
-          studentMap[s.id] = sanitize(s.name);
-        });
-      }
-      setFeeDues(overdueIds.map((d) => ({ ...d, name: sanitize(studentMap[d.id] ?? 'Unknown') })));
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
+  const stats = data?.stats ?? {
+    activeStudents: 0,
+    monthCollected: 0,
+    pendingFees: 0,
+    activeExams: 0,
   };
+  const enrollmentData = data?.enrollmentData ?? [];
+  const feeDonut = data?.feeDonut ?? [];
+  const recentAdmissions = data?.recentAdmissions ?? [];
+  const activeExams = data?.activeExams ?? [];
+  const feeDues = data?.feeDues ?? [];
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // Demo-data banner triggers a cache refresh; React Query owns all fetching.
+  const refreshAll = () => queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
 
   // ── Database health check ─────────────────────────────────────────
   const checkDbHealth = async () => {
@@ -260,7 +272,7 @@ export default function DashboardPage() {
       await loadDemoData();
       setDemoLoaded(true);
       toast.success('ডেমো ডেটা সফলভাবে লোড হয়েছে!');
-      await fetchData();
+      await refreshAll();
     } catch (err: any) {
       toast.error('ডেমো লোড ব্যর্থ: ' + (err?.message ?? 'Unknown error'));
     } finally {
