@@ -440,7 +440,12 @@ export async function generateReceipt(r: ReceiptData): Promise<void> {
   document.body.appendChild(container);
 
   try {
-    const el = container.firstElementChild as HTMLElement | null;
+    // The template above is a whole document; when injected via innerHTML the
+    // browser keeps <meta> elements and drops the html/head/body wrappers, so
+    // firstElementChild is the charset meta tag (display:none) — rendering it
+    // gives a 0x0 canvas and jsPDF throws "wrong PNG signature". Target the
+    // receipt root explicitly.
+    const el = container.querySelector<HTMLElement>('.receipt');
     if (!el) {
       throw new Error('Failed to create receipt container');
     }
@@ -713,7 +718,9 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
   document.body.appendChild(container);
 
   try {
-    const el = container.firstElementChild as HTMLElement | null;
+    // Same whole-document template gotcha as generateReceipt: target the card
+    // root instead of the injected <meta> tag.
+    const el = container.querySelector<HTMLElement>('.card');
     if (!el) {
       throw new Error('Failed to create result card container');
     }
