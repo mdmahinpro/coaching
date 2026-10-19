@@ -2,6 +2,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { supabase } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   Save,
@@ -62,18 +63,20 @@ export default function SettingsPage() {
   useEffect(() => {
     setForm({ ...settings });
   }, [settings]);
-  useEffect(() => {
-    supabase.auth
-      .getUser()
-      .then(({ data }) => {
-        if (data.user?.email) {
-          setAdminEmail(data.user.email);
-        }
-      })
-      .catch((err) => {
-        handleSupabaseError(err);
-      });
-  }, []);
+  useQuery({
+    queryKey: ['admin', 'current-user'],
+    queryFn: async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      if (data.user?.email) {
+        setAdminEmail(data.user.email);
+      }
+      return true;
+    },
+  });
 
   // Live color preview
   useEffect(() => {

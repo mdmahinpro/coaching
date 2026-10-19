@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -64,21 +65,21 @@ function SendSMSTab() {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
-  useEffect(() => {
-    supabase
-      .from('batches')
-      .select('id,name')
-      .eq('is_active', true)
-      .then(
-        ({ data }) => {
-          const cleaned = (data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) }));
-          setBatches(cleaned);
-        },
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, []);
+  useQuery({
+    queryKey: ['admin', 'sms', 'batches'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('batches')
+        .select('id,name')
+        .eq('is_active', true);
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setBatches((data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name) })));
+      return true;
+    },
+  });
 
   // Count recipients
   const countRecipients = useCallback(async () => {
@@ -137,9 +138,13 @@ function SendSMSTab() {
     }
   }, [recipientType, batchId, customNumbers, dueFilter]);
 
-  useEffect(() => {
-    countRecipients();
-  }, [countRecipients]);
+  useQuery({
+    queryKey: ['admin', 'sms', 'recipients', recipientType, batchId, customNumbers, dueFilter],
+    queryFn: async () => {
+      await countRecipients();
+      return true;
+    },
+  });
 
   const insertTag = (tag: string) => {
     setMessage((prev) => prev + tag);
@@ -550,13 +555,12 @@ function TemplatesTab() {
 // ── SMS Log Tab ───────────────────────────────────────────────────────────────
 function SMSLogTab() {
   const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { isLoading: loading, refetch: reloadLogs } = useQuery({
+    queryKey: ['admin', 'sms', 'logs', statusFilter, typeFilter],
+    queryFn: async () => {
       let q = supabase
         .from('sms_logs')
         .select('*')
@@ -568,18 +572,15 @@ function SMSLogTab() {
       if (typeFilter !== 'all') {
         q = q.eq('type', typeFilter);
       }
-      const { data } = await q;
+      const { data, error } = await q;
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
       setLogs(data ?? []);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter, typeFilter]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+      return true;
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -607,7 +608,7 @@ function SMSLogTab() {
           ))}
           <option value="custom">Custom</option>
         </select>
-        <button onClick={load} className="btn-outline text-sm py-1.5 px-3">
+        <button onClick={() => reloadLogs()} className="btn-outline text-sm py-1.5 px-3">
           <RefreshCw size={13} /> Refresh
         </button>
         <span className="text-slate-500 text-xs ml-auto">{logs.length} records</span>

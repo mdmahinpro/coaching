@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -516,29 +517,28 @@ function BulkImportModal({
 // ── All Exams Tab ─────────────────────────────────────────────────────────────
 function AllExamsTab({ onTabChange }: { onTabChange: (t: Tab) => void }) {
   const [exams, setExams] = useState<Exam[]>([]);
-  const [loading, setLoading] = useState(true);
   const [timerExam, setTimerExam] = useState<Exam | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Exam | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase
+  const { isLoading: loading, refetch: reloadExams } = useQuery({
+    queryKey: ['admin', 'exams'],
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from('exams')
         .select('*, batch:batches(name)')
         .order('created_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
       setExams((data ?? []) as Exam[]);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return true;
+    },
+  });
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Back-compat shim: existing handlers call load() with no args.
+  const load = () => reloadExams();
 
   const handleDelete = async () => {
     if (!deleteTarget) {
@@ -1304,36 +1304,33 @@ function ResultsTab({ exams }: { exams: Exam[] }) {
   const [examId, setExamId] = useState('');
   const [subs, setSubs] = useState<any[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [loading, setLoading] = useState(false);
   const [breakdown, setBreakdown] = useState<any | null>(null);
 
-  const load = useCallback(async (eid: string) => {
-    if (!eid) {
-      return;
-    }
-    setLoading(true);
-    try {
-      const [{ data: s }, { data: q }] = await Promise.all([
+  const { isLoading: loading, refetch: reloadResults } = useQuery({
+    queryKey: ['admin', 'exams', 'results', examId],
+    enabled: !!examId,
+    queryFn: async () => {
+      const [{ data: s, error: e1 }, { data: q, error: e2 }] = await Promise.all([
         supabase
           .from('mcq_submissions')
           .select('*, student:students(name, student_id, photo_url)')
-          .eq('exam_id', eid)
+          .eq('exam_id', examId)
           .order('score', { ascending: false })
           .order('time_taken', { ascending: true }),
-        supabase.from('mcq_questions').select('*').eq('exam_id', eid).order('order_num'),
+        supabase.from('mcq_questions').select('*').eq('exam_id', examId).order('order_num'),
       ]);
+      if (e1 || e2) {
+        handleSupabaseError(e1 ?? e2);
+        return null;
+      }
       setSubs(s ?? []);
       setQuestions(q ?? []);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return true;
+    },
+  });
 
-  useEffect(() => {
-    load(examId);
-  }, [examId, load]);
+  // Back-compat shim: handlers call load(examId).
+  const load = (_eid: string) => reloadResults();
 
   const recalcRanks = async () => {
     try {
@@ -1610,36 +1607,31 @@ export default function ExamsPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [allExams, setAllExams] = useState<Exam[]>([]);
 
-  useEffect(() => {
-    supabase
-      .from('batches')
-      .select('id,name')
-      .eq('is_active', true)
-      .then(
-        ({ data }) =>
-          setBatches((data ?? []).map((b: any) => ({ ...b, name: sanitize(b.name ?? '') }))),
-        (err: any) => {
-          handleSupabaseError(err);
-        }
+  useQuery({
+    queryKey: ['admin', 'exams', 'form-context', tab],
+    queryFn: async () => {
+      const [{ data: b, error: e1 }, { data: e, error: e2 }] = await Promise.all([
+        supabase.from('batches').select('id,name').eq('is_active', true),
+        supabase
+          .from('exams')
+          .select('*, batch:batches(name)')
+          .order('created_at', { ascending: false }),
+      ]);
+      if (e1 || e2) {
+        handleSupabaseError(e1 ?? e2);
+        return null;
+      }
+      setBatches((b ?? []).map((x: any) => ({ ...x, name: sanitize(x.name ?? '') })));
+      setAllExams(
+        (e ?? []).map((x: any) => ({
+          ...x,
+          title: sanitize(x.title ?? ''),
+          batch: { name: sanitize(x.batch?.name ?? '') },
+        })) as Exam[]
       );
-    supabase
-      .from('exams')
-      .select('*, batch:batches(name)')
-      .order('created_at', { ascending: false })
-      .then(
-        ({ data }) =>
-          setAllExams(
-            (data ?? []).map((e: any) => ({
-              ...e,
-              title: sanitize(e.title ?? ''),
-              batch: { name: sanitize(e.batch?.name ?? '') },
-            })) as Exam[]
-          ),
-        (err: any) => {
-          handleSupabaseError(err);
-        }
-      );
-  }, [tab]);
+      return true;
+    },
+  });
 
   const TAB_LABELS: Record<Tab, string> = {
     all: 'All Exams',
