@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchFees, fetchExams, fetchSubmissions, fetchNotices } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -25,11 +26,10 @@ export default function PortalDashboardPage() {
     JSON.parse(localStorage.getItem('portal-read-notices') ?? '[]')
   );
 
-  useEffect(() => {
-    if (!student) {
-      return;
-    }
-    const load = async () => {
+  useQuery({
+    queryKey: ['portal', 'dashboard', student?.id],
+    enabled: !!student,
+    queryFn: async () => {
       try {
         const [fees, exams, subs, notices] = await Promise.all([
           fetchFees(),
@@ -84,10 +84,11 @@ export default function PortalDashboardPage() {
         setUnreadNotices(noticeList.filter((n: any) => !freshRead.includes(n.id)).length);
       } catch (err) {
         handleSupabaseError(err);
+        return null;
       }
-    };
-    load();
-  }, [student]);
+      return true;
+    },
+  });
 
   const STATS = [
     {

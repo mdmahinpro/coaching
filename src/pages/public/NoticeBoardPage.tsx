@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PublicNavbar } from '@/components/public/PublicNavbar';
 import { Footer } from '@/components/public/Footer';
 import { AnimatedSection } from '@/components/shared/AnimatedSection';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { supabase } from '@/lib/supabase';
+import { handleSupabaseError } from '@/utils/errorHandler';
 import { formatDate, sanitize } from '@/lib/utils';
 import { Bell, Pin, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -32,26 +34,31 @@ const categoryStyles: Record<string, { badge: string; border: string; icon: stri
 
 export default function NoticeBoardPage() {
   const [notices, setNotices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Category>('all');
 
-  useEffect(() => {
-    supabase
-      .from('notices')
-      .select('*')
-      .eq('is_published', true)
-      .order('is_pinned', { ascending: false })
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const cleaned = (data ?? []).map((n: any) => ({
+  const { isLoading: loading } = useQuery({
+    queryKey: ['public', 'notices'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('notices')
+        .select('*')
+        .eq('is_published', true)
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setNotices(
+        (data ?? []).map((n: any) => ({
           ...n,
           title: sanitize(n.title),
           content: sanitize(n.content),
-        }));
-        setNotices(cleaned);
-        setLoading(false);
-      });
-  }, []);
+        }))
+      );
+      return true;
+    },
+  });
 
   const filtered = filter === 'all'
     ? notices

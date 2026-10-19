@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchNotices } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -21,7 +22,6 @@ const ALL_TYPES = ['all', 'general', 'exam', 'fee', 'holiday', 'result', 'event'
 export default function PortalNoticePage() {
   const { student } = useStudentStore();
   const [notices, setNotices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [readIds, setReadIds] = useState<string[]>(() => {
     try {
@@ -32,26 +32,24 @@ export default function PortalNoticePage() {
   });
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await fetchNotices(filter !== 'all' ? filter : undefined);
-      const cleaned = (data ?? []).map((n: any) => ({
-        ...n,
-        title: sanitize(n.title),
-        content: sanitize(n.content),
-      }));
-      setNotices(cleaned);
-    } catch (err) {
-      handleSupabaseError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, student]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { isLoading: loading } = useQuery({
+    queryKey: ['portal', 'notices', filter, student?.id],
+    queryFn: async () => {
+      try {
+    const data = await fetchNotices(filter !== 'all' ? filter : undefined);
+    const cleaned = (data ?? []).map((n: any) => ({
+      ...n,
+      title: sanitize(n.title),
+      content: sanitize(n.content),
+    }));
+    setNotices(cleaned);
+        return true;
+      } catch (err) {
+        handleSupabaseError(err);
+        return null;
+      }
+    },
+  });
 
   const markRead = (id: string) => {
     if (readIds.includes(id)) {

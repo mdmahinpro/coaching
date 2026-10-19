@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchFees } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -32,24 +33,22 @@ export default function PortalFeesPage() {
   const { student } = useStudentStore();
   const { settings } = useSettingsStore();
   const [fees, setFees] = useState<Fee[]>([]);
-  const [loading, setLoading] = useState(true);
   const [downloadReceiptLoading, setDownloadReceiptLoading] = useState(false);
 
-  useEffect(() => {
-    if (!student) {
-      return;
-    }
-    fetchFees().then(
-      (data) => {
+  const { isLoading: loading } = useQuery({
+    queryKey: ['portal', 'fees', student?.id],
+    enabled: !!student,
+    queryFn: async () => {
+      try {
+        const data = await fetchFees();
         setFees((data ?? []) as Fee[]);
-        setLoading(false);
-      },
-      (err: any) => {
+        return true;
+      } catch (err) {
         handleSupabaseError(err);
-        setLoading(false);
+        return null;
       }
-    );
-  }, [student]);
+    },
+  });
 
   const parseNote = (note?: string) => {
     if (!note) {

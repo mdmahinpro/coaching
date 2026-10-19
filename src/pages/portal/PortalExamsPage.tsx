@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchExams, fetchSubmissions } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -157,14 +158,11 @@ export default function PortalExamsPage() {
   const { student } = useStudentStore();
   const [exams, setExams] = useState<Exam[]>([]);
   const [myResults, setMyResults] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!student) {
-      return;
-    }
-    const load = async () => {
-      try {
+  const { isLoading: loading } = useQuery({
+    queryKey: ['portal', 'exams', student?.id],
+    enabled: !!student,
+    queryFn: async () => {
+      {
         const examData = await fetchExams();
         setExams(
           (examData ?? []).map((e: any) => ({
@@ -180,14 +178,10 @@ export default function PortalExamsPage() {
           map[s.exam_id] = s;
         });
         setMyResults(map);
-      } catch (err) {
-        handleSupabaseError(err);
-      } finally {
-        setLoading(false);
+        return true;
       }
-    };
-    load();
-  }, [student]);
+    },
+  });
 
   const active = exams.filter((e) => e.status === 'active');
   const paused = exams.filter((e) => e.status === 'paused');

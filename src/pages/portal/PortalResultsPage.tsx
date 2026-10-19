@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchSubmissions, fetchReview } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -66,7 +67,6 @@ export default function PortalResultsPage() {
   const { student } = useStudentStore();
   const { settings } = useSettingsStore();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState(true);
   const [breakdown, setBreakdown] = useState<{ sub: Submission; questions: Question[] } | null>(
     null
   );
@@ -74,30 +74,30 @@ export default function PortalResultsPage() {
   const [downloadResultCardLoading, setDownloadResultCardLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!student) {
-      return;
-    }
-    fetchSubmissions().then(
-      (data) => {
-        const mapped = (data ?? []).map((r: any) => ({
-          ...r,
-          exam: {
-            title: r.exam_title,
-            subject: r.exam_subject,
-            total_marks: r.total_marks,
-            pass_marks: r.pass_marks,
-          },
-        }));
-        setSubmissions(mapped as Submission[]);
-        setLoading(false);
-      },
-      (err: any) => {
+  const { isLoading: loading } = useQuery({
+    queryKey: ['portal', 'results', student?.id],
+    enabled: !!student,
+    queryFn: async () => {
+      try {
+        const data = await fetchSubmissions();
+        setSubmissions(
+          (data ?? []).map((r: any) => ({
+            ...r,
+            exam: {
+              title: r.exam_title,
+              subject: r.exam_subject,
+              total_marks: r.total_marks,
+              pass_marks: r.pass_marks,
+            },
+          })) as Submission[]
+        );
+        return true;
+      } catch (err) {
         handleSupabaseError(err);
-        setLoading(false);
+        return null;
       }
-    );
-  }, [student]);
+    },
+  });
 
   const openBreakdown = async (sub: Submission) => {
     try {
