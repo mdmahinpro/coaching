@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { Avatar } from '@/components/shared/Avatar';
@@ -299,6 +299,7 @@ function OverviewTab() {
 
 // ── Generate Fees Tab ─────────────────────────────────────────────────────────
 function GenerateTab({ batches }: { batches: any[] }) {
+  const queryClient = useQueryClient();
   const [month, setMonth] = useState(MONTHS[now.getMonth()]);
   const [year, setYear] = useState(String(now.getFullYear()));
   const [batchId, setBatchId] = useState('all');
@@ -411,6 +412,10 @@ function GenerateTab({ batches }: { batches: any[] }) {
         skippedSuspended: suspended.length,
       });
       setGenerating(false);
+      // Dashboard totals, due lists and audit trail must reflect the new rows.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fees'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fee-audit-logs'] });
       toast.success(`Generated ${created} fee records!`);
     } catch (err) {
       handleSupabaseError(err);
@@ -540,6 +545,7 @@ function GenerateTab({ batches }: { batches: any[] }) {
 
 // ── Record Payment Tab ────────────────────────────────────────────────────────
 function RecordPaymentTab() {
+  const queryClient = useQueryClient();
   const { settings } = useSettingsStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
@@ -690,6 +696,13 @@ function RecordPaymentTab() {
     });
     toast.success(`Payment recorded! Receipt: ${receiptNo}`);
     setSaving(false);
+
+    // Paid amounts, due lists, audit log and dashboard must update immediately.
+    queryClient.invalidateQueries({ queryKey: ['admin', 'fees'] });
+    queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['admin', 'fee-audit-logs'] });
+    queryClient.invalidateQueries({ queryKey: ['portal', 'fees'] });
+    queryClient.invalidateQueries({ queryKey: ['portal', 'dashboard'] });
 
     // POS behaviour: the receipt prints the moment the payment is taken.
     // Never blocks the payment flow if PDF generation fails.

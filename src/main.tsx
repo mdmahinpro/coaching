@@ -24,9 +24,11 @@ window.addEventListener('vite:preloadError', () => {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      // Management screens must show the latest fee/payment data: refetch on
+      // focus and keep the cache window short.
+      staleTime: 15_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
     },
   },
 });

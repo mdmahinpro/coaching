@@ -1,6 +1,10 @@
-// POS-style thermal receipt (80 mm roll) built directly with jsPDF — no
-// html2canvas, so it renders instantly and matches the Techely store receipt
-// format: courier type, centered header, dashed dividers, GRAND TOTAL block.
+// POS-style thermal document (80 mm roll) built directly with jsPDF — no
+// html2canvas, so it renders instantly.
+//
+// Layout guarantee: every string is hard-wrapped to the roll width (tokens
+// longer than a line are split character by character), and the page height is
+// measured from the drawn content — nothing is clipped and there is no blank
+// tail.
 
 export interface PosReceiptData {
   receiptNo: string;
@@ -29,148 +33,190 @@ export interface PosReceiptData {
 }
 
 type Doc = InstanceType<typeof import('jspdf').jsPDF>;
+type DocCtor = typeof import('jspdf').jsPDF;
 
-const ROLL_W = 227; // 80 mm ≈ 226.77 pt
-const M = 14; // side margin
-const LABEL_W = 70; // right column for amounts
+export const ROLL_WIDTH = 227; // 80 mm ≈ 226.77 pt
+export const CONTENT_MARGIN = 14;
+const ROLL_W = ROLL_WIDTH;
+const M = CONTENT_MARGIN;
+const CW = ROLL_W - M * 2; // content width
+const MIN_H = 200;
 
-const money = (n: number) =>
-  'Tk ' + (Number.isFinite(n) ? n : 0).toLocaleString('en-US');
+const money = (n: number) => 'Tk ' + (Number.isFinite(n) ? n : 0).toLocaleString('en-US');
 
-function build(data: PosReceiptData, Doc: typeof import('jspdf').jsPDF): Doc {
-  const items = 1;
-  const estH = 150 + 120 + items * 34 + 140 + 190;
-  const pdf = new Doc({
-    unit: 'pt',
-    format: [ROLL_W, Math.max(620, estH)],
-    orientation: 'portrait',
-  }) as Doc;
+/**
+ * Wraps text to `maxW` for the given font. Words that cannot fit on a line at
+ * all are broken per character, so no string can run past the roll edge.
+ */
+export function wrapText(pdf: Doc, text: string, size: number, style: 'normal' | 'bold', maxW: number): string[] {
+  pdf.setFont('courier', style);
+  pdf.setFontSize(size);
+  const raw = String(text ?? '').replace(/\s+/g, ' ').trim() || '-';
 
+  // 1. split over-long tokens into chunks that fit
+  const chunks: string[] = [];
+  for (const word of raw.split(' ')) {
+    if (pdf.getTextWidth(word) <= maxW) {
+      chunks.push(word);
+      continue;
+    }
+    let cur = '';
+    for (const ch of word) {
+      if (pdf.getTextWidth(cur + ch) <= maxW) cur += ch;
+      else {
+        if (cur) chunks.push(cur);
+        cur = ch;
+      }
+    }
+    if (cur) chunks.push(cur);
+  }
+
+  // 2. greedy line filling
+  const lines: string[] = [];
+  let line = '';
+  for (const c of chunks) {
+    const next = line ? `${line} ${c}` : c;
+    if (!line || pdf.getTextWidth(next) <= maxW) line = next;
+    else {
+      lines.push(line);
+      line = c;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : ['-'];
+}
+
+/** Draws the document on the given page and returns the last baseline used. */
+function render(pdf: Doc, data: PosReceiptData): number {
   const W = pdf.internal.pageSize.getWidth();
-  let y = 18;
+  const isInvoice = data.kind === 'invoice';
+  let y = 20;
 
-  const center = (txt: string, yy: number, size: number, style = 'normal', color = 20) => {
+  const center = (txt: string, size: number, style: 'normal' | 'bold' = 'normal', color = 20) => {
+    const lines = wrapText(pdf, txt, size, style, CW);
     pdf.setFont('courier', style);
     pdf.setFontSize(size);
     pdf.setTextColor(color);
-    pdf.text(txt, W / 2, yy, { align: 'center' });
+    for (const l of lines) {
+      pdf.text(l, W / 2, y, { align: 'center' });
+      y += size + 3;
+    }
   };
-  const divider = (yy: number) => {
+  const divider = () => {
     pdf.setDrawColor(60);
     pdf.setLineWidth(0.7);
-    pdf.line(M, yy, W - M, yy);
+    pdf.line(M, y, W - M, y);
+    y += 10;
   };
-  const dashed = (yy: number) => {
+  const dashed = () => {
     pdf.setDrawColor(120);
     pdf.setLineWidth(0.5);
     const seg = 3;
     const gap = 2;
     let x = M;
-    const end = W - M;
-    while (x < end) {
-      pdf.line(x, yy, Math.min(x + seg, end), yy);
+    while (x < W - M) {
+      pdf.line(x, y, Math.min(x + seg, W - M), y);
       x += seg + gap;
     }
+    y += 9;
   };
+  /** bold label column + wrapped value column */
   const kv = (k: string, v: string) => {
+    const labelW = 52;
     pdf.setFont('courier', 'bold');
     pdf.setFontSize(7.5);
     pdf.setTextColor(20);
-    pdf.text(k, M, y);
+    pdf.text(wrapText(pdf, k, 7.5, 'bold', labelW)[0], M, y);
+    const lines = wrapText(pdf, v, 7.5, 'normal', CW - labelW - 4);
     pdf.setFont('courier', 'normal');
-    const lines = pdf.splitTextToSize(String(v || '-'), W - M - (M + 52));
-    pdf.text(lines, M + 52, y);
-    y += Math.max(1, lines.length) * 9;
+    for (const l of lines) {
+      pdf.text(l, M + labelW, y);
+      y += 9;
+    }
   };
-  const sumRow = (label: string, amt: number, neg = false) => {
-    pdf.setFont('courier', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(20);
-    const lines = pdf.splitTextToSize(label, W - M * 2 - LABEL_W - 6);
-    pdf.text(lines, M, y);
-    pdf.setTextColor(neg ? 160 : 20);
-    pdf.text((neg ? '-' : '') + money(amt), W - M, y, { align: 'right' });
-    pdf.setTextColor(20);
-    y += Math.max(1, lines.length) * 10;
+  /** wrapped label on the left, amount right-aligned */
+  const amountRow = (label: string, amt: string, opts: { bold?: boolean; size?: number; color?: number } = {}) => {
+    const size = opts.size ?? 8;
+    const style: 'normal' | 'bold' = opts.bold ? 'bold' : 'normal';
+    pdf.setFont('courier', style);
+    pdf.setFontSize(size);
+    const amtW = pdf.getTextWidth(amt) + 6;
+    const lines = wrapText(pdf, label, size, style, CW - amtW);
+    pdf.setTextColor(opts.color ?? 20);
+    lines.forEach((l, i) => pdf.text(l, M, y + i * (size + 2)));
+    pdf.text(amt, W - M, y, { align: 'right' });
+    y += Math.max(1, lines.length) * (size + 2);
   };
 
   /* ── header ── */
-  center((data.instituteName || 'Techely Learning Center').toUpperCase(), y, 13, 'bold');
-  y += 14;
-  if (data.instituteAddress) {
-    center(data.instituteAddress, y, 6.5, 'normal', 70);
-    y += 10;
-  }
-  if (data.institutePhone) {
-    center('Phone: ' + data.institutePhone, y, 6.5, 'normal', 70);
-    y += 10;
-  }
-  divider(y);
-  y += 12;
-  const isInvoice = data.kind === 'invoice';
-  center(isInvoice ? 'FEE INVOICE' : 'FEE PAYMENT RECEIPT', y, 8, 'bold', 60);
-  y += 15;
+  center((data.instituteName || 'Techely Learning Center').toUpperCase(), 12, 'bold');
+  if (data.instituteAddress) center(data.instituteAddress, 6.5, 'normal', 70);
+  if (data.institutePhone) center('Phone: ' + data.institutePhone, 6.5, 'normal', 70);
+  y += 2;
+  divider();
+  center(isInvoice ? 'FEE INVOICE' : 'FEE PAYMENT RECEIPT', 8, 'bold', 60);
+  y += 4;
 
   /* ── meta ── */
   pdf.setFont('courier', 'normal');
   pdf.setFontSize(7.5);
   pdf.setTextColor(20);
-  pdf.text((isInvoice ? 'Invoice: ' : 'Receipt: ') + data.receiptNo, M, y);
-  y += 10;
-  pdf.text('Date: ' + data.date, M, y);
-  y += 12;
-  dashed(y);
-  y += 11;
+  for (const t of [(isInvoice ? 'Invoice: ' : 'Receipt: ') + data.receiptNo, 'Date: ' + data.date]) {
+    for (const l of wrapText(pdf, t, 7.5, 'normal', CW)) {
+      pdf.text(l, M, y);
+      y += 10;
+    }
+  }
+  y += 1;
+  dashed();
+  y += 2;
 
   /* ── student ── */
   kv('Student', data.studentName);
   if (data.studentId) kv('ID', data.studentId);
   if (data.batchName) kv('Batch', data.batchName);
   kv('Month', data.month);
-  y += 3;
-  dashed(y);
-  y += 12;
+  y += 2;
+  dashed();
+  y += 2;
 
-  /* ── items ── */
-  pdf.setFont('courier', 'bold');
-  pdf.setFontSize(7.5);
-  pdf.text('ITEM', M, y);
-  pdf.text('QTY', W - M - LABEL_W - 24, y, { align: 'right' });
-  pdf.text('AMT', W - M, y, { align: 'right' });
-  y += 6;
-  dashed(y);
-  y += 11;
-
-  // jsPDF's courier (WinAnsi) drops non-ASCII punctuation, so keep it plain.
-  const label = data.itemLabel || `Tuition Fee - ${data.month}`;
+  /* ── item table ── */
   pdf.setFont('courier', 'bold');
   pdf.setFontSize(7.5);
   pdf.setTextColor(20);
-  const nameLines = pdf.splitTextToSize(label, W - M * 2 - LABEL_W - 24);
-  pdf.text(nameLines, M, y);
+  pdf.text('ITEM', M, y);
+  pdf.text('QTY', W - M - 52, y, { align: 'right' });
+  pdf.text('AMT', W - M, y, { align: 'right' });
+  y += 6;
+  dashed();
+  y += 2;
+
+  // jsPDF's courier (WinAnsi) drops non-ASCII punctuation, so keep it plain.
+  const label = data.itemLabel || `Tuition Fee - ${data.month}`;
+  const qtyW = 22;
+  const amtW = 52;
+  const labelLines = wrapText(pdf, label, 7.5, 'bold', CW - qtyW - amtW);
+  pdf.setFont('courier', 'bold');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(20);
+  labelLines.forEach((l, i) => pdf.text(l, M, y + i * 9));
   pdf.setFont('courier', 'normal');
-  pdf.text('1', W - M - LABEL_W - 24, y, { align: 'right' });
+  pdf.text('1', W - M - amtW, y, { align: 'right' });
   pdf.text(money(data.feeAmount), W - M, y, { align: 'right' });
-  y += Math.max(1, nameLines.length) * 9 + 4;
-  dashed(y);
-  y += 12;
+  y += Math.max(1, labelLines.length) * 9 + 4;
+  dashed();
+  y += 2;
 
   /* ── totals ── */
   const discount = data.discount ?? 0;
   const finalAmount = data.finalAmount ?? data.feeAmount;
-  sumRow('Subtotal', data.feeAmount);
-  if (discount > 0) sumRow('Discount', discount, true);
-  y += 3;
-  divider(y);
-  y += 15;
-  pdf.setFont('courier', 'bold');
-  pdf.setFontSize(10);
-  pdf.setTextColor(20);
-  pdf.text('GRAND TOTAL', M, y);
-  pdf.text(money(finalAmount), W - M, y, { align: 'right' });
-  y += 12;
-  divider(y);
-  y += 15;
+  amountRow('Subtotal', money(data.feeAmount));
+  if (discount > 0) amountRow('Discount', '-' + money(discount), { color: 160 });
+  y += 2;
+  divider();
+  amountRow('GRAND TOTAL', money(finalAmount), { bold: true, size: 10 });
+  y += 1;
+  divider();
 
   /* ── payment / status ── */
   if (isInvoice) {
@@ -183,21 +229,34 @@ function build(data: PosReceiptData, Doc: typeof import('jspdf').jsPDF): Doc {
     if (data.transactionId) kv('Txn ID', data.transactionId);
     if (data.receivedBy) kv('Received', data.receivedBy);
   }
+  y += 2;
+  dashed();
   y += 3;
-  dashed(y);
-  y += 18;
 
   /* ── footer ── */
-  center(isInvoice ? 'Please pay by the due date.' : 'Thank you!', y, 8, 'bold');
-  y += 11;
-  center(data.instituteName || 'Techely Learning Center', y, 6.5, 'normal', 90);
-  y += 10;
-  center('- - - - - - - - - - - - - - - -', y + 4, 8, 'normal', 160);
+  center(isInvoice ? 'Please pay by the due date.' : 'Thank you!', 8, 'bold');
+  center(data.instituteName || 'Techely Learning Center', 6.5, 'normal', 90);
+  center('- - - - - - - - - - - - - - - -', 8, 'normal', 160);
 
+  return y;
+}
+
+function makeDoc(jsPDF: DocCtor, height: number): Doc {
+  return new jsPDF({ unit: 'pt', format: [ROLL_W, height], orientation: 'portrait' }) as Doc;
+}
+
+function build(data: PosReceiptData, jsPDF: DocCtor): Doc {
+  // Pass 1 — measure on a throwaway tall page.
+  const measured = render(makeDoc(jsPDF, 2000), data);
+  const height = Math.max(MIN_H, Math.ceil(measured + 18));
+
+  // Pass 2 — real page, exactly as tall as the content needs.
+  const pdf = makeDoc(jsPDF, height);
+  render(pdf, data);
   return pdf;
 }
 
-/** Builds and downloads an 80 mm POS receipt PDF. */
+/** Builds and downloads an 80 mm POS document (receipt or invoice). */
 export async function downloadPosReceipt(data: PosReceiptData): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const pdf = build(data, jsPDF);
