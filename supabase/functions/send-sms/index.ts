@@ -64,12 +64,20 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
   if (!url || !anon) return false;
 
   try {
-    const res = await fetch(`${url}/auth/v1/user`, {
-      headers: { apikey: anon, Authorization: `Bearer ${token}` },
+    // Check via the SECURITY DEFINER `is_admin()` RPC — the same server-side
+    // roster the app's own route guard uses. (user_metadata.role is empty for
+    // admins created via the dashboard/fixture flow, so it is not reliable.)
+    const res = await fetch(`${url}/rest/v1/rpc/is_admin`, {
+      method: 'POST',
+      headers: {
+        apikey: anon,
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: '{}',
     });
     if (!res.ok) return false;
-    const user = (await res.json()) as { user_metadata?: { role?: string } };
-    return user?.user_metadata?.role === 'admin';
+    return (await res.json()) === true;
   } catch {
     return false;
   }
