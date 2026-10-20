@@ -52,6 +52,7 @@ export function wrapText(pdf: Doc, text: string, size: number, style: 'normal' |
   pdf.setFont('courier', style);
   pdf.setFontSize(size);
   const raw = String(text ?? '').replace(/\s+/g, ' ').trim() || '-';
+  if (!(maxW > 6)) return []; // no usable room — caller draws nothing
 
   // 1. split over-long tokens into chunks that fit
   const chunks: string[] = [];
@@ -84,6 +85,21 @@ export function wrapText(pdf: Doc, text: string, size: number, style: 'normal' |
   }
   if (line) lines.push(line);
   return lines.length ? lines : ['-'];
+}
+
+/**
+ * Hard-clips one line to `maxW` (with a plain ".." tail). Used for values that
+ * must never wrap — money amounts and the label column — so a huge figure can
+ * never push past the roll edge.
+ */
+export function clipText(pdf: Doc, text: string, size: number, style: 'normal' | 'bold', maxW: number): string {
+  pdf.setFont('courier', style);
+  pdf.setFontSize(size);
+  let out = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!out) return '-';
+  if (pdf.getTextWidth(out) <= maxW) return out;
+  while (out.length > 1 && pdf.getTextWidth(out + '..') > maxW) out = out.slice(0, -1);
+  return maxW >= pdf.getTextWidth(out + '..') ? out + '..' : out;
 }
 
 /** Draws the document on the given page and returns the last baseline used. */
@@ -123,10 +139,11 @@ function render(pdf: Doc, data: PosReceiptData): number {
   /** bold label column + wrapped value column */
   const kv = (k: string, v: string) => {
     const labelW = 52;
+    const kTxt = clipText(pdf, k, 7.5, 'bold', labelW);
     pdf.setFont('courier', 'bold');
     pdf.setFontSize(7.5);
     pdf.setTextColor(20);
-    pdf.text(wrapText(pdf, k, 7.5, 'bold', labelW)[0], M, y);
+    pdf.text(kTxt, M, y);
     const lines = wrapText(pdf, v, 7.5, 'normal', CW - labelW - 4);
     pdf.setFont('courier', 'normal');
     for (const l of lines) {
@@ -140,11 +157,12 @@ function render(pdf: Doc, data: PosReceiptData): number {
     const style: 'normal' | 'bold' = opts.bold ? 'bold' : 'normal';
     pdf.setFont('courier', style);
     pdf.setFontSize(size);
-    const amtW = pdf.getTextWidth(amt) + 6;
+    const amtTxt = clipText(pdf, amt, size, style, CW * 0.6);
+    const amtW = pdf.getTextWidth(amtTxt) + 6;
     const lines = wrapText(pdf, label, size, style, CW - amtW);
     pdf.setTextColor(opts.color ?? 20);
     lines.forEach((l, i) => pdf.text(l, M, y + i * (size + 2)));
-    pdf.text(amt, W - M, y, { align: 'right' });
+    pdf.text(amtTxt, W - M, y, { align: 'right' });
     y += Math.max(1, lines.length) * (size + 2);
   };
 
@@ -181,20 +199,21 @@ function render(pdf: Doc, data: PosReceiptData): number {
   y += 2;
 
   /* ── item table ── */
+  // jsPDF's courier (WinAnsi) drops non-ASCII punctuation, so keep it plain.
+  const label = data.itemLabel || `Tuition Fee - ${data.month}`;
+  const qtyW = 22;
+  const amtTxt = clipText(pdf, money(data.feeAmount), 7.5, 'normal', CW * 0.35);
+  const amtW = pdf.getTextWidth(amtTxt) + 6;
   pdf.setFont('courier', 'bold');
   pdf.setFontSize(7.5);
   pdf.setTextColor(20);
   pdf.text('ITEM', M, y);
-  pdf.text('QTY', W - M - 52, y, { align: 'right' });
+  pdf.text('QTY', W - M - amtW - 18, y, { align: 'right' });
   pdf.text('AMT', W - M, y, { align: 'right' });
   y += 6;
   dashed();
   y += 2;
 
-  // jsPDF's courier (WinAnsi) drops non-ASCII punctuation, so keep it plain.
-  const label = data.itemLabel || `Tuition Fee - ${data.month}`;
-  const qtyW = 22;
-  const amtW = 52;
   const labelLines = wrapText(pdf, label, 7.5, 'bold', CW - qtyW - amtW);
   pdf.setFont('courier', 'bold');
   pdf.setFontSize(7.5);
@@ -202,7 +221,7 @@ function render(pdf: Doc, data: PosReceiptData): number {
   labelLines.forEach((l, i) => pdf.text(l, M, y + i * 9));
   pdf.setFont('courier', 'normal');
   pdf.text('1', W - M - amtW, y, { align: 'right' });
-  pdf.text(money(data.feeAmount), W - M, y, { align: 'right' });
+  pdf.text(amtTxt, W - M, y, { align: 'right' });
   y += Math.max(1, labelLines.length) * 9 + 4;
   dashed();
   y += 2;
@@ -245,7 +264,8 @@ function makeDoc(jsPDF: DocCtor, height: number): Doc {
   return new jsPDF({ unit: 'pt', format: [ROLL_W, height], orientation: 'portrait' }) as Doc;
 }
 
-function build(data: PosReceiptData, jsPDF: DocCtor): Doc {
+/** Builds the document (exposed so tests can render it with a tracing jsPDF). */
+export function buildPosDoc(data: PosReceiptData, jsPDF: DocCtor): Doc {
   // Pass 1 — measure on a throwaway tall page.
   const measured = render(makeDoc(jsPDF, 2000), data);
   const height = Math.max(MIN_H, Math.ceil(measured + 18));
@@ -259,7 +279,7 @@ function build(data: PosReceiptData, jsPDF: DocCtor): Doc {
 /** Builds and downloads an 80 mm POS document (receipt or invoice). */
 export async function downloadPosReceipt(data: PosReceiptData): Promise<void> {
   const { jsPDF } = await import('jspdf');
-  const pdf = build(data, jsPDF);
+  const pdf = buildPosDoc(data, jsPDF);
   const safe = String(data.receiptNo || 'receipt').replace(/[^\w-]+/g, '');
   pdf.save(`Techely-${data.kind === 'invoice' ? 'invoice' : 'receipt'}-${safe}.pdf`);
 }
