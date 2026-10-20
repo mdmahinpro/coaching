@@ -68,6 +68,53 @@ SMS_SENDER_ID=CoachMS
 
 Keep `SMS_API_KEY` empty during local checks unless you intentionally want to send a real SMS.
 
+## Messaging proxy: Node route **or** Supabase Edge Function
+
+`src/lib/sms.ts` posts to the first endpoint that answers with JSON, in order:
+
+1. `VITE_MSG_ENDPOINT` — pin one explicitly (optional).
+2. `/api/send-sms` — the Node/Netlify/Vercel route (`server/sms-core.ts`).
+3. `<VITE_SUPABASE_URL>/functions/v1/send-sms` — the Supabase Edge Function.
+
+So the same build works on Render (route 2) **and** on plain static/shared
+hosting with no Node process at all (falls through to route 3). Nothing else in
+the app needs a server: fee automation runs in Postgres via `pg_cron` and the
+PDF invoices are generated in the browser.
+
+### Deploying the Edge Function
+
+Two ways — pick either.
+
+**A. Dashboard (no CLI, browser only)**
+
+1. Supabase → **Edge Functions** → **Deploy a new function** → name it exactly
+   `send-sms`.
+2. Turn **Verify JWT** *off* (the function does its own admin check).
+3. Paste `supabase/functions/send-sms/index.ts` → **Deploy**.
+
+**B. CLI**
+
+```bash
+npx supabase functions deploy send-sms --project-ref <your-ref> --no-verify-jwt
+```
+
+### Secrets for the Edge Function
+
+Set once (Dashboard → Edge Functions → Manage secrets, or CLI below):
+
+```bash
+npx supabase secrets set \
+  SMS_API_KEY=…            SMS_SENDER_ID=8809612781000 \
+  BREVO_API_KEY=…          BREVO_SENDER_EMAIL=…  BREVO_SENDER_NAME="Techely Learning Academy" \
+  --project-ref <your-ref>
+```
+
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are injected automatically by Supabase —
+do not set them. Keys must never appear in the Vite client bundle.
+
+`VITE_MSG_ENDPOINT` is only needed if you want to skip the same-origin probe
+(e.g. static hosting where `/api/send-sms` would return `index.html`).
+
 ## Run on your laptop
 
 From the repository directory:

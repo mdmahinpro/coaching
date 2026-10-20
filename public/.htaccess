@@ -14,6 +14,26 @@
   RewriteRule . /index.html [L]
 </IfModule>
 
+# ── Caching (shared hosting / cPanel) ───────────────────────────────
+# Vite emits content-hashed filenames in /assets, so they can be cached hard;
+# index.html must always revalidate so a new deploy shows up immediately.
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/webp "access plus 1 month"
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "index\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
 # ── Security headers ────────────────────────────────────────────────
 
 <IfModule mod_headers.c>
