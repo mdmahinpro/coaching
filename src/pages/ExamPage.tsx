@@ -113,10 +113,7 @@ export default function ExamPage() {
   const examTokenRef = useRef<string | null>(null);
 
   // Verify step
-  const [studentIdInput, setStudentIdInput] = useState('');
   const [student, setStudent] = useState<any | null>(null);
-  const [verifyError, setVerifyError] = useState('');
-  const [verifying, setVerifying] = useState(false);
 
   // Exam step
   const [currentQ, setCurrentQ] = useState(0);
@@ -141,13 +138,13 @@ export default function ExamPage() {
 
   // ── Enter the exam once identity is established (mints exam token) ─────────
   // Resolves questions (without answer key) or routes to the result view if the
-  // student has already submitted. `code` is the manual-verify Student ID.
+  // student has already submitted.
   const enterExam = useCallback(
-    async (opts: { code?: string; examStatus?: string }) => {
+    async (opts: { examStatus?: string }) => {
       if (!examId) {
         return;
       }
-      const join = await joinExam(examId, opts.code);
+      const join = await joinExam(examId);
       examTokenRef.current = join.exam_token;
       setStudent({ id: join.student_id, name: sanitize(join.student_name), student_id: join.student_code });
 
@@ -271,35 +268,10 @@ export default function ExamPage() {
     };
   }, [examId, step]);
 
-  // ── Verify Student ────────────────────────────────────────────────────────
-  // Manual-verify path: identity resolves server-side from the Student ID via
-  // exam_join, which validates approval/suspension and mints an exam token.
-  const handleVerify = async () => {
-    const code = studentIdInput.trim();
-    if (!code) {
-      return;
-    }
-    setVerifying(true);
-    setVerifyError('');
-
-    try {
-      await enterExam({ code });
-    } catch (err: any) {
-      const msg = String(err?.message ?? '');
-      if (msg.includes('STUDENT_NOT_FOUND')) {
-        setVerifyError('এই Student ID দিয়ে কোনো শিক্ষার্থী পাওয়া যায়নি।');
-      } else if (msg.includes('NOT_APPROVED')) {
-        setVerifyError('আপনি এখনো অনুমোদিত হননি। Admin এর সাথে যোগাযোগ করুন।');
-      } else if (msg.includes('SUSPENDED')) {
-        setVerifyError('আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে। Admin এর সাথে যোগাযোগ করুন।');
-      } else if (msg.includes('EXAM_NOT_FOUND')) {
-        setStep('ended');
-      } else {
-        setVerifyError('যাচাই করা যায়নি। আবার চেষ্টা করুন।');
-      }
-    } finally {
-      setVerifying(false);
-    }
+  // ── Enter exam ────────────────────────────────────────────────────────────
+  // Identity comes from the portal session; exam_join rejects anonymous callers.
+  const handleVerify = () => {
+    window.location.href = '/portal/login';
   };
 
   // ── Start Exam ────────────────────────────────────────────────────────────
@@ -614,41 +586,11 @@ export default function ExamPage() {
           </div>
 
           <div className="space-y-3">
-            <div>
-              <label className="text-xs text-slate-400 mb-1.5 block">আপনার Student ID লিখুন</label>
-              <input
-                value={studentIdInput}
-                onChange={(e) => {
-                  setStudentIdInput(e.target.value);
-                  setVerifyError('');
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
-                className="input-field text-center font-mono tracking-widest text-lg"
-                placeholder="CF250001"
-                autoFocus
-              />
-            </div>
-            {verifyError && (
-              <motion.p
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-red-400 text-sm text-center"
-              >
-                {verifyError}
-              </motion.p>
-            )}
-            <button
-              onClick={handleVerify}
-              disabled={verifying || !studentIdInput.trim()}
-              className="btn-primary w-full justify-center"
-            >
-              {verifying ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" /> যাচাই করা হচ্ছে…
-                </>
-              ) : (
-                'শুরু করুন'
-              )}
+            <p className="text-slate-300 text-sm text-center leading-relaxed">
+              এই পরীক্ষায় অংশ নিতে আগে পোর্টালে লগইন করতে হবে। লগইন করলে আপনার পরিচয় স্বয়ংক্রিয়ভাবে যাচাই হবে।
+            </p>
+            <button onClick={handleVerify} className="btn-primary w-full justify-center">
+              পোর্টালে লগইন করুন
             </button>
           </div>
         </motion.div>

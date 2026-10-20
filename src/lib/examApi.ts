@@ -53,14 +53,13 @@ export async function getExamMeta(examId: string): Promise<ExamMeta | null> {
 
 /**
  * Establish identity for an exam and mint an exam-scoped token.
- * Pass `studentCode` for the manual-verify path; otherwise the logged-in
- * portal session token is used automatically.
+ * The live database authorises from the portal session token only
+ * (exam_join(p_exam_id, p_portal_token)); there is no anonymous Student-ID path.
  */
-export async function joinExam(examId: string, studentCode?: string): Promise<ExamJoinResult> {
+export async function joinExam(examId: string): Promise<ExamJoinResult> {
   const { data, error } = await supabase.rpc('exam_join', {
     p_exam_id: examId,
-    p_portal_token: studentCode ? null : getStudentToken(),
-    p_student_code: studentCode ?? null,
+    p_portal_token: getStudentToken(),
   });
   const row = unwrap(data, error)?.[0];
   if (!row) {
@@ -92,6 +91,9 @@ export async function submitExam(
     p_exam_token: examToken,
     p_answers: answers,
     p_time_taken: timeTaken,
+    // The live function has a 4-arg overload (p_red_cards); omitting it makes
+    // PostgREST return PGRST203 "could not choose the best candidate".
+    p_red_cards: 0,
   });
   const row = unwrap(data, error)?.[0];
   if (!row) {

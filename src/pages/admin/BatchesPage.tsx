@@ -29,7 +29,7 @@ interface Batch {
   // teacher is a text column (teacher name string), not a relation object
   teacher?: string;
   schedule_days?: string[];
-  schedule_time?: string;
+  start_time?: string;
   capacity: number;
   enrolled_count?: number;
   monthly_fee?: number;
@@ -178,7 +178,7 @@ export default function BatchesPage() {
         class_level: editing.class_level ?? null,
         teacher_id: editing.teacher_id ?? null,
         schedule_days: editing.schedule_days ?? [],
-        schedule_time: editing.schedule_time ?? null,
+        start_time: editing.start_time ?? null,
         capacity: editing.capacity ?? 30,
         monthly_fee: editing.monthly_fee ?? 1500,
         fee: editing.monthly_fee ?? 1500,
@@ -317,11 +317,11 @@ export default function BatchesPage() {
                         {b.teacher}
                       </div>
                     )}
-                    {(days.length > 0 || b.schedule_time) && (
+                    {(days.length > 0 || b.start_time) && (
                       <div className="flex items-center gap-1.5">
                         <Clock size={11} className="text-sky-400" />
                         {days.length > 0 ? days.join('/') : ''}
-                        {b.schedule_time ? ` · ${b.schedule_time}` : ''}
+                        {b.start_time ? ` · ${b.start_time}` : ''}
                       </div>
                     )}
                     <div className="flex items-center gap-1.5">
@@ -458,8 +458,8 @@ export default function BatchesPage() {
                     <label className="text-xs text-slate-400 mb-1.5 block">Start Time</label>
                     <input
                       type="time"
-                      value={editing.schedule_time ?? ''}
-                      onChange={(e) => setEditing((p) => ({ ...p, schedule_time: e.target.value }))}
+                      value={editing.start_time ?? ''}
+                      onChange={(e) => setEditing((p) => ({ ...p, start_time: e.target.value }))}
                       className="input-field"
                     />
                   </div>
