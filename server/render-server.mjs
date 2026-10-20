@@ -36,10 +36,39 @@ app.post('/api/send-sms', async (req, res) => {
 
 // Static SPA
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
-app.use(express.static(dist));
 
-// SPA fallback: every non-API GET serves index.html
+// Hashed build assets are immutable — cache them hard. index.html must never be
+// cached, otherwise a browser can keep an old asset map and request chunk names
+// that no longer exist after a deploy.
+app.use(
+  '/assets',
+  express.static(join(dist, 'assets'), {
+    immutable: true,
+    maxAge: '1y',
+    fallthrough: true,
+  })
+);
+
+app.use(
+  express.static(dist, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-store, must-revalidate');
+      }
+    },
+  })
+);
+
+// A missing /assets/* file is a 404, never the SPA shell: answering with
+// index.html made the browser parse HTML as a JS module and surface the opaque
+// "Failed to fetch dynamically imported module" error.
+app.get(/^\/assets\//, (_req, res) => {
+  res.status(404).type('text/plain').send('Asset not found');
+});
+
+// SPA fallback: non-API, non-asset GETs serve index.html
 app.get(/^(?!\/api\/).*/, (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, must-revalidate');
   res.sendFile(join(dist, 'index.html'));
 });
 
