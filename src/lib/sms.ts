@@ -45,7 +45,7 @@ export async function sendSMS(
     });
     raw = await res.json().catch(() => null);
     const data = raw as { status?: string; sent?: number } | null;
-    if (res.ok && data?.status === 'sent') {
+    if (res.ok && (data?.status === 'sent' || data?.status === 'partial')) {
       sentCount = data.sent ?? phoneArr.length;
       status = 'sent';
     } else if (res.ok && data?.status === 'pending') {

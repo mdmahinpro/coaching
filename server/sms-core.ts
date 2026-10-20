@@ -1,13 +1,14 @@
 /**
- * Server-side SMS core — shared by the Vercel (`api/send-sms.ts`) and
- * Netlify (`netlify/functions/send-sms.ts`) entrypoints.
+ * Server-side SMS core — shared by the Render (`server/render-server.mjs`),
+ * Vercel (`api/send-sms.ts`) and Netlify (`netlify/functions/send-sms.ts`)
+ * entrypoints.
  *
- * The MIM SMS API key lives ONLY here, sourced from the `SMS_API_KEY`
- * server env var. It is never shipped to the browser bundle.
+ * The ZenSMS API key lives ONLY here, sourced from the `SMS_API_KEY` server
+ * env var. It is never shipped to the browser bundle.
  *
  * Every request must carry a valid Supabase admin JWT
- * (Authorization: Bearer <access_token>). The token is verified against
- * Supabase, and the caller must have user_metadata.role === 'admin'.
+ * (Authorization: Bearer <token>). The token is verified against Supabase,
+ * and the caller must have user_metadata.role === 'admin'.
  */
 
 export interface SmsRequestBody {
@@ -21,7 +22,7 @@ export interface SmsCoreResult {
   body: unknown;
 }
 
-const SMS_ENDPOINT = 'https://api.mimsms.com/smsapi';
+const ZENDSMS_ENDPOINT = 'https://api.zendsms.com/api/simple/send';
 
 /** Verify the bearer token belongs to an authenticated admin. */
 async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
@@ -46,6 +47,17 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Normalise a Bangladeshi mobile number to the 8801XXXXXXXXX format ZenSMS
+ * expects. Accepts 01XXXXXXXXX, 8801XXXXXXXXX and +8801XXXXXXXXX.
+ */
+export function normalisePhone(raw: string): string {
+  const digits = raw.replace(/\D+/g, '');
+  if (digits.startsWith('8801')) return digits;
+  if (digits.startsWith('01')) return `880${digits}`;
+  return digits;
 }
 
 /**
@@ -80,36 +92,39 @@ export async function handleSendSms(
   }
 
   const apiKey = process.env.SMS_API_KEY;
-  const senderId = process.env.SMS_SENDER_ID || 'CoachMS';
+  const senderId = process.env.SMS_SENDER_ID || '';
 
   // No key configured → treat as a no-op "pending" send (dev / demo).
   if (!apiKey) {
     return { ok: true, status: 200, body: { status: 'pending', sent: 0, raw: null } };
   }
 
+  // ZenSMS simple API: one GET per recipient. Send sequentially so a long
+  // recipient list cannot trip rate limits; collect per-number results.
+  const results: Array<{ phone: string; ok: boolean; raw: unknown }> = [];
   try {
-    const res = await fetch(SMS_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: apiKey,
-        senderid: senderId,
-        type: 'text',
-        scheduleat: '',
-        route: 'T',
-        contacts: phones.join(','),
-        msg: message,
-      }),
-    });
-    const raw = await res.json().catch(() => null);
-    const status = (raw as { status?: string } | null)?.status;
+    for (const rawPhone of phones) {
+      const to = normalisePhone(rawPhone);
+      const url =
+        `${ZENDSMS_ENDPOINT}?api_key=${encodeURIComponent(apiKey)}` +
+        `&to=${encodeURIComponent(to)}` +
+        `&sender_id=${encodeURIComponent(senderId)}` +
+        `&message=${encodeURIComponent(message)}`;
+      const res = await fetch(url);
+      const raw = await res.json().catch(() => null);
+      const success =
+        res.ok && (raw as { success?: boolean } | null)?.success === true;
+      results.push({ phone: to, ok: success, raw });
+    }
+
+    const sent = results.filter((r) => r.ok).length;
     return {
       ok: true,
       status: 200,
       body: {
-        status: status === 'success' ? 'sent' : 'failed',
-        sent: status === 'success' ? phones.length : 0,
-        raw,
+        status: sent === phones.length ? 'sent' : sent > 0 ? 'partial' : 'failed',
+        sent,
+        raw: results,
       },
     };
   } catch (err) {
