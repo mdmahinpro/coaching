@@ -54,6 +54,8 @@ const SAMPLE_VARS: Record<string, string> = {
 // ── Send SMS Tab ──────────────────────────────────────────────────────────────
 function SendSMSTab() {
   const [batches, setBatches] = useState<any[]>([]);
+  const [channel, setChannel] = useState<'sms' | 'email'>('sms');
+  const [emailSubject, setEmailSubject] = useState('');
   const [recipientType, setRecipientType] = useState<'all' | 'batch' | 'due' | 'custom'>('all');
   const [batchId, setBatchId] = useState('');
   const [dueFilter, setDueFilter] = useState<'this_month' | 'overdue'>('this_month');
@@ -166,10 +168,14 @@ function SendSMSTab() {
     setResult(null);
 
     let phones: string[] = [];
+    let recipients: string[] = [];
+    const emailField = channel === 'email' ? 'email' : 'phone';
+    type RecipientRow = { phone?: string | null; email?: string | null };
+    let studentRows: RecipientRow[] | null = null;
     try {
       // Fetch phone numbers
       if (recipientType === 'custom') {
-        phones = customNumbers
+        recipients = customNumbers
           .split('\n')
           .map((n) => n.trim())
           .filter(Boolean);
@@ -204,23 +210,30 @@ function SendSMSTab() {
         if (studentIds.length > 0) {
           const { data: studs } = await supabase
             .from('students')
-            .select('phone')
+            .select(emailField)
             .in('id', studentIds)
-            .not('phone', 'is', null);
-          phones = (studs ?? []).map((s: any) => s.phone).filter(Boolean);
+            .not(emailField, 'is', null);
+          studentRows = studs ?? [];
         }
       } else {
         let q = supabase
           .from('students')
-          .select('phone')
+          .select(emailField)
           .eq('status', 'active')
-          .not('phone', 'is', null);
+          .not(emailField, 'is', null);
         if (recipientType === 'batch' && batchId) {
           q = q.eq('batch_id', batchId);
         }
         const { data } = await q;
-        phones = (data ?? []).map((s: any) => s.phone).filter(Boolean);
+        studentRows = data ?? [];
       }
+
+      phones =
+        recipientType === 'custom'
+          ? (recipients as unknown as string[])
+          : (studentRows ?? [])
+              .map((s) => ((channel === 'email' ? s.email : s.phone) ?? '').trim())
+              .filter(Boolean);
 
       setProgress(40);
 
@@ -232,11 +245,16 @@ function SendSMSTab() {
       const res = await sendSMS(
         phones,
         message,
-        'custom'
+        'custom',
+        { channel, subject: emailSubject }
       );
       setProgress(100);
       setResult(res);
-      toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} numbers`);
+      toast.success(
+        channel === 'email'
+          ? `Email ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} recipient${phones.length > 1 ? 's' : ''}`
+          : `SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} numbers`
+      );
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -247,6 +265,53 @@ function SendSMSTab() {
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Channel selector — SMS or Email */}
+      <div className="card p-5 space-y-3">
+        <h3 className="font-semibold text-white text-sm">Channel</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setChannel('sms')}
+            className={`p-3 rounded-lg border text-sm flex items-center justify-center gap-2 transition-colors ${
+              channel === 'sms'
+                ? 'border-sky-500 bg-sky-500/10 text-sky-300'
+                : 'border-navy-700 text-slate-400 hover:border-navy-600'
+            }`}
+          >
+            📱 SMS <span className="text-xs text-slate-500">(ZenSMS)</span>
+          </button>
+          <button
+            onClick={() => setChannel('email')}
+            className={`p-3 rounded-lg border text-sm flex items-center justify-center gap-2 transition-colors ${
+              channel === 'email'
+                ? 'border-sky-500 bg-sky-500/10 text-sky-300'
+                : 'border-navy-700 text-slate-400 hover:border-navy-600'
+            }`}
+          >
+            ✉️ Email <span className="text-xs text-slate-500">(Brevo)</span>
+          </button>
+        </div>
+        {channel === 'email' && (
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Subject line</label>
+            <input
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              placeholder="e.g. Fee reminder / Exam notice"
+              className="input-field text-sm"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Uses students&apos; email field. Without a Brevo key on the server, emails are
+              logged as pending.
+            </p>
+          </div>
+        )}
+        {channel === 'sms' && (
+          <p className="text-xs text-slate-500">
+            Uses students&apos; phone field via the ZenSMS gateway.
+          </p>
+        )}
+      </div>
+
       {/* Recipient selector */}
       <div className="card p-5 space-y-4">
         <h3 className="font-semibold text-white text-sm">Recipients</h3>
@@ -368,7 +433,9 @@ function SendSMSTab() {
           />
           <div className="flex items-center justify-between mt-1">
             <span className={cn('text-xs', charCount > 160 ? 'text-amber-400' : 'text-slate-500')}>
-              {charCount} chars · {smsUnits} SMS unit{smsUnits > 1 ? 's' : ''}
+              {channel === 'email'
+                ? `${charCount} chars`
+                : `${charCount} chars · ${smsUnits} SMS unit${smsUnits > 1 ? 's' : ''}`}
             </span>
           </div>
         </div>

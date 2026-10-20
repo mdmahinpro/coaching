@@ -11,9 +11,12 @@
  * and the caller must have user_metadata.role === 'admin'.
  */
 
-export interface SmsRequestBody {
-  phones: string[];
+export interface MessageRequestBody {
+  channel?: 'sms' | 'email';
+  phones?: string[];
+  emails?: string[];
   message: string;
+  subject?: string;
 }
 
 export interface SmsCoreResult {
@@ -23,6 +26,12 @@ export interface SmsCoreResult {
 }
 
 const ZENDSMS_ENDPOINT = 'https://api.zendsms.com/api/simple/send';
+const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
+
+/** Basic sanity check for an email address (RFC-lite, enough for gating). */
+export function isEmail(raw: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim());
+}
 
 /** Verify the bearer token belongs to an authenticated admin. */
 async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
@@ -78,13 +87,19 @@ export async function handleSendSms(
     return { ok: false, status: 401, body: { error: 'Unauthorized' } };
   }
 
-  let body: SmsRequestBody;
+  let body: MessageRequestBody;
   try {
-    body = (typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody) as SmsRequestBody;
+    body = (typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody) as MessageRequestBody;
   } catch {
     return { ok: false, status: 400, body: { error: 'Invalid JSON body' } };
   }
 
+  // ── Email channel (Brevo) ────────────────────────────────────────────────
+  if (body?.channel === 'email') {
+    return sendEmails(body);
+  }
+
+  // ── SMS channel (ZenSMS) — default ───────────────────────────────────────
   const phones = Array.isArray(body?.phones) ? body.phones.filter(Boolean) : [];
   const message = typeof body?.message === 'string' ? body.message : '';
   if (!phones.length || !message) {
@@ -125,6 +140,82 @@ export async function handleSendSms(
         status: sent === phones.length ? 'sent' : sent > 0 ? 'partial' : 'failed',
         sent,
         raw: results,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 502,
+      body: { status: 'failed', sent: 0, error: String(err) },
+    };
+  }
+}
+
+/**
+ * Brevo transactional email. Up to 50 recipients per API call (Brevo's cap);
+ * larger lists are chunked. Addresses are validated and de-duplicated.
+ * Without BREVO_API_KEY the call no-ops as "pending" (dev/demo), mirroring
+ * the SMS behaviour.
+ */
+async function sendEmails(body: MessageRequestBody): Promise<SmsCoreResult> {
+  const emailsRaw = Array.isArray(body?.emails) ? body.emails.filter(Boolean) : [];
+  const emails = [...new Set(emailsRaw.map((e) => e.trim()).filter(isEmail))];
+  const message = typeof body?.message === 'string' ? body.message : '';
+  const subject =
+    typeof body?.subject === 'string' && body.subject.trim()
+      ? body.subject.trim()
+      : 'Message from your coaching center';
+
+  if (!emails.length || !message) {
+    return { ok: false, status: 400, body: { error: 'emails (valid) and message are required' } };
+  }
+
+  const apiKey = process.env.BREVO_API_KEY;
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'no-reply@techely.com';
+  const senderName = process.env.BREVO_SENDER_NAME || 'Coaching Center';
+
+  if (!apiKey) {
+    return { ok: true, status: 200, body: { status: 'pending', sent: 0, raw: null } };
+  }
+
+  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;white-space:pre-wrap">${message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br/>')}</div>`;
+
+  const results: Array<{ email: string; ok: boolean; raw: unknown }> = [];
+  try {
+    for (let i = 0; i < emails.length; i += 50) {
+      const chunk = emails.slice(i, i + 50);
+      const res = await fetch(BREVO_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: chunk.map((e) => ({ email: e })),
+          subject,
+          htmlContent: html,
+          textContent: message,
+        }),
+      });
+      const raw = await res.json().catch(() => null);
+      const ok = res.ok;
+      for (const e of chunk) results.push({ email: e, ok, raw: ok ? null : raw });
+    }
+
+    const sent = results.filter((r) => r.ok).length;
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        status: sent === emails.length ? 'sent' : sent > 0 ? 'partial' : 'failed',
+        sent,
+        raw: results.some((r) => !r.ok) ? results.filter((r) => !r.ok) : null,
       },
     };
   } catch (err) {

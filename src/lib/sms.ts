@@ -7,22 +7,39 @@ export interface SMSResult {
   raw?: unknown;
 }
 
+/** Channel used for a send: SMS via ZenSMS, or email via Brevo. */
+export type SendChannel = 'sms' | 'email';
+
+interface SendOptions {
+  type?: string;
+  channel?: SendChannel;
+  /** Email channel only: the subject line. */
+  subject?: string;
+}
+
 /**
- * Send SMS via the server-side function (`/api/send-sms`).
+ * Send SMS/email via the server-side function (`/api/send-sms`).
  *
- * The MIM SMS API key is NEVER in the client bundle — it lives only in the
- * serverless function's `SMS_API_KEY` env var. This call forwards the admin's
- * Supabase access token so the function can authorize the request.
+ * The ZenSMS + Brevo API keys are NEVER in the client bundle — they live only
+ * in the server's env (`SMS_API_KEY`, `BREVO_API_KEY`). This call forwards the
+ * admin's Supabase access token so the function can authorize the request.
+ *
+ * channel 'sms'   → `to` is phone numbers (01XXXXXXXXX style).
+ * channel 'email' → `to` is email addresses (logged in sms_logs with
+ *                   type prefixed `EMAIL:` so the log stays one table).
  */
 export async function sendSMS(
-  phones: string | string[],
+  to: string | string[],
   message: string,
-  type = 'custom'
+  type = 'custom',
+  opts: SendOptions = {}
 ): Promise<SMSResult> {
-  const phoneArr = Array.isArray(phones) ? phones : [phones];
-  if (!phoneArr.length) {
+  const channel: SendChannel = opts.channel === 'email' ? 'email' : 'sms';
+  const recipients = Array.isArray(to) ? to : [to];
+  if (!recipients.length) {
     return { sent: 0, failed: 0 };
   }
+  const logType = channel === 'email' ? `EMAIL:${type}` : type;
 
   let sentCount = 0;
   let failedCount = 0;
@@ -35,40 +52,45 @@ export async function sendSMS(
     } = await supabase.auth.getSession();
     const accessToken = session?.access_token;
 
+    const payload =
+      channel === 'email'
+        ? { channel, emails: recipients, message, subject: opts.subject }
+        : { channel, phones: recipients, message };
+
     const res = await fetch('/api/send-sms', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify({ phones: phoneArr, message }),
+      body: JSON.stringify(payload),
     });
     raw = await res.json().catch(() => null);
     const data = raw as { status?: string; sent?: number } | null;
     if (res.ok && (data?.status === 'sent' || data?.status === 'partial')) {
-      sentCount = data.sent ?? phoneArr.length;
+      sentCount = data.sent ?? recipients.length;
       status = 'sent';
     } else if (res.ok && data?.status === 'pending') {
       // No server key configured — treat as queued for demo/dev.
-      sentCount = phoneArr.length;
+      sentCount = recipients.length;
       status = 'pending';
     } else {
-      failedCount = phoneArr.length;
+      failedCount = recipients.length;
       status = 'failed';
     }
   } catch (err) {
     console.error('[SMS API Error]', err);
-    failedCount = phoneArr.length;
+    failedCount = recipients.length;
     status = 'failed';
   }
 
   // Log to DB (admin is authenticated → RLS permits the insert).
   try {
     await supabase.from('sms_logs').insert(
-      phoneArr.map((p) => ({
+      recipients.map((p) => ({
         phone: p,
         message,
-        type,
+        type: logType,
         status,
         response: raw,
       }))
