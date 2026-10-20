@@ -59,8 +59,11 @@ function ExamCard({ exam, myResult }: { exam: Exam; myResult?: any }) {
   const countdown = useCountdown(
     exam.start_time && exam.status === 'draft' ? exam.start_time : undefined
   );
-  const isActive = exam.status === 'active';
-  const isEnded = exam.status === 'ended';
+  // The DB keeps status 'active' after the scheduled end passes; the join RPC
+  // rejects those with EXAM_ENDED, so trust the clock as well as the status.
+  const timeUp = !!exam.end_time && new Date(exam.end_time).getTime() < Date.now();
+  const isActive = exam.status === 'active' && !timeUp;
+  const isEnded = exam.status === 'ended' || timeUp;
   const notStarted = exam.status === 'draft';
 
   return (
@@ -183,10 +186,11 @@ export default function PortalExamsPage() {
     },
   });
 
-  const active = exams.filter((e) => e.status === 'active');
+  const timeUp = (e: Exam) => !!e.end_time && new Date(e.end_time).getTime() < Date.now();
+  const active = exams.filter((e) => e.status === 'active' && !timeUp(e));
   const paused = exams.filter((e) => e.status === 'paused');
   const upcoming = exams.filter((e) => e.status === 'draft');
-  const ended = exams.filter((e) => e.status === 'ended');
+  const ended = exams.filter((e) => e.status === 'ended' || timeUp(e));
 
   return (
     <PortalLayout>
