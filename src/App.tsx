@@ -245,6 +245,30 @@ function AppRoutes() {
           }
         />
 
+        {/* Unified login entry — /login previously 404'd */}
+        <Route
+          path="/login"
+          element={
+            <div className="min-h-screen bg-navy-900 flex items-center justify-center px-4">
+              <div className="card p-8 max-w-sm w-full space-y-5 text-center">
+                <h1 className="font-inter font-bold text-xl text-white">লগইন</h1>
+                <p className="text-slate-400 text-sm">আপনি কোন প্যানেলে লগইন করতে চান?</p>
+                <div className="space-y-3">
+                  <a href="/portal/login" className="btn-primary w-full justify-center">
+                    ছাত্র পোর্টাল
+                  </a>
+                  <a href="/admin/login" className="btn-outline w-full justify-center">
+                    অ্যাডমিন প্যানেল
+                  </a>
+                </div>
+                <a href="/" className="block text-slate-400 text-xs hover:text-sky-400">
+                  ← হোমে ফিরে যান
+                </a>
+              </div>
+            </div>
+          }
+        />
+
         {/* Redirects */}
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/portal" element={<Navigate to="/portal/dashboard" replace />} />

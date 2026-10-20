@@ -103,7 +103,10 @@ export async function submitExam(
 }
 
 export async function getLeaderboard(examId: string) {
-  const { data, error } = await supabase.rpc('exam_get_leaderboard', { p_exam_id: examId });
+  const { data, error } = await supabase.rpc('exam_get_leaderboard', {
+    p_exam_id: examId,
+    p_portal_token: getStudentToken(),
+  });
   return unwrap(data, error) ?? [];
 }
 

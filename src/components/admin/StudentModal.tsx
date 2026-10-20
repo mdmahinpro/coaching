@@ -15,7 +15,7 @@ const schema = z.object({
   guardian_phone: z.string().optional(),
   address: z.string().optional(),
   class_level: z.string().optional(),
-  gender: z.enum(['male', 'female', 'other']).optional(),
+  gender: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.enum(['male', 'female', 'other']).optional()),
   batch_id: z.string().optional(),
   status: z.enum(['active', 'inactive', 'suspended']).default('active'),
   is_approved: z.boolean().default(true),
