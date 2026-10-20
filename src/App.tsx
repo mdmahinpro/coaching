@@ -29,6 +29,8 @@ const ExamsPage = lazy(() => import('@/pages/admin/ExamsPage'));
 const ResultsPage = lazy(() => import('@/pages/admin/ResultsPage'));
 const NoticesPage = lazy(() => import('@/pages/admin/NoticesPage'));
 const AdmissionsPage = lazy(() => import('@/pages/admin/AdmissionsPage'));
+const ExpensesPage = lazy(() => import('@/pages/admin/ExpensesPage'));
+const ClassesPage = lazy(() => import('@/pages/admin/ClassesPage'));
 const SMSPage = lazy(() => import('@/pages/admin/SMSPage'));
 const ReportsPage = lazy(() => import('@/pages/admin/ReportsPage'));
 const SettingsPage = lazy(() => import('@/pages/admin/SettingsPage'));
@@ -41,6 +43,7 @@ const PortalExamsPage = lazy(() => import('@/pages/portal/PortalExamsPage'));
 const PortalResultsPage = lazy(() => import('@/pages/portal/PortalResultsPage'));
 const PortalNoticePage = lazy(() => import('@/pages/portal/PortalNoticePage'));
 const PortalProfilePage = lazy(() => import('@/pages/portal/PortalProfilePage'));
+const PortalClassesPage = lazy(() => import('@/pages/portal/PortalClassesPage'));
 
 // ── Exam page — lazy (only needed for /exam/:id links) ───────────────────────
 const ExamPage = lazy(() => import('@/pages/ExamPage'));
@@ -146,6 +149,22 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/admin/expenses"
+            element={
+              <LazyWrapper>
+                <ExpensesPage />
+              </LazyWrapper>
+            }
+          />
+          <Route
+            path="/admin/classes"
+            element={
+              <LazyWrapper>
+                <ClassesPage />
+              </LazyWrapper>
+            }
+          />
+          <Route
             path="/admin/sms"
             element={
               <LazyWrapper>
@@ -206,6 +225,14 @@ function AppRoutes() {
             element={
               <LazyWrapper>
                 <PortalExamsPage />
+              </LazyWrapper>
+            }
+          />
+          <Route
+            path="/portal/classes"
+            element={
+              <LazyWrapper>
+                <PortalClassesPage />
               </LazyWrapper>
             }
           />

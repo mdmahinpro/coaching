@@ -22,6 +22,8 @@ const TABLES = [
   { key: 'teachers', label: 'Teachers' },
   { key: 'batches', label: 'Batches' },
   { key: 'fees', label: 'Fee Records' },
+  { key: 'expenses', label: 'Expenses' },
+  { key: 'class_resources', label: 'Classes & Materials' },
   { key: 'exams', label: 'Exams' },
   { key: 'mcq_questions', label: 'MCQ Questions' },
   { key: 'mcq_submissions', label: 'MCQ Submissions' },

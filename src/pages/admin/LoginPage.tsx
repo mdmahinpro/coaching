@@ -4,7 +4,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { GraduationCap, Lock, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { GraduationCap, Lock, Mail, Eye, EyeOff, ArrowLeft, Send } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import toast from 'react-hot-toast';
@@ -18,6 +19,9 @@ type F = z.infer<typeof schema>;
 export default function AdminLoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [shake, setShake] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
   const { signIn } = useAuthStore();
   const { settings } = useSettingsStore();
   const navigate = useNavigate();
@@ -167,7 +171,71 @@ export default function AdminLoginPage() {
                   'লগইন করুন'
                 )}
               </button>
+
+              <button
+                type="button"
+                onClick={() => setForgotMode(true)}
+                className="text-xs text-slate-500 hover:text-sky-400 transition-colors w-fit"
+              >
+                পাসওয়ার্ড ভুলে গেছেন?
+              </button>
             </form>
+
+            {/* Forgot-password panel */}
+            {forgotMode && (
+              <div className="mt-4 border-t border-white/5 pt-4 space-y-3">
+                {resetSent ? (
+                  <div className="card-glass p-3 text-xs text-emerald-300 leading-relaxed">
+                    ✅ রিসেট লিংক পাঠানো হয়েছে <b>{forgotEmail}</b> — ইমেইল চেক করুন। লিংক থেকে
+                    নতুন পাসওয়ার্ড সেট করার পর এখানেই লগইন করুন।
+                  </div>
+                ) : (
+                  <>
+                    <label className="text-xs text-slate-400 block">অ্যাকাউন্টের ইমেইল</label>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="admin@example.com"
+                      className="input-field"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={!forgotEmail}
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+                              redirectTo: `${window.location.origin}/admin/login`,
+                            });
+                            if (error) {
+                              toast.error(error.message);
+                              return;
+                            }
+                            setResetSent(true);
+                          } catch {
+                            toast.error('রিসেট লিংক পাঠানো যায়নি।');
+                          }
+                        }}
+                        className="btn-outline text-xs px-3 py-2"
+                      >
+                        <Send size={12} /> রিসেট লিংক পাঠান
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotMode(false);
+                          setResetSent(false);
+                        }}
+                        className="text-xs text-slate-500 hover:text-white px-2"
+                      >
+                        বাতিল
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </motion.div>
 

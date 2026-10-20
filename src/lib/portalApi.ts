@@ -40,6 +40,15 @@ function unwrap<T>(data: T | null, error: { message?: string } | null): T {
   return data as T;
 }
 
+/** Class resources (live classes + documents) for this student's batch. */
+export async function fetchResources(kind?: 'video' | 'document') {
+  const { data, error } = await supabase.rpc('portal_get_resources', {
+    p_token: requireToken(),
+    p_kind: kind ?? null,
+  });
+  return unwrap(data, error) ?? [];
+}
+
 export async function fetchProfile() {
   const { data, error } = await supabase.rpc('portal_get_profile', { p_token: requireToken() });
   return unwrap(data, error)?.[0] ?? null;

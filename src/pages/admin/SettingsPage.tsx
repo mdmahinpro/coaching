@@ -18,15 +18,17 @@ import {
   Eye,
   EyeOff,
   Lock as LockIcon,
+  CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
-type Tab = 'institute' | 'payment' | 'sms' | 'stats' | 'social' | 'appearance' | 'admins';
+type Tab = 'institute' | 'payment' | 'sms' | 'fees' | 'stats' | 'social' | 'appearance' | 'admins';
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'institute', label: 'Institute', icon: Building },
   { id: 'payment', label: 'Payment', icon: CreditCard },
+  { id: 'fees', label: 'Fee Automation', icon: CalendarClock },
   { id: 'sms', label: 'SMS', icon: Send },
   { id: 'stats', label: 'Stats', icon: BarChart2 },
   { id: 'social', label: 'Social', icon: Share2 },
@@ -464,6 +466,11 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ── Fee Automation ── */}
+          {tab === 'fees' && (
+            <FeeAutomationTab />
+          )}
+
           {/* ── Stats ── */}
           {tab === 'stats' && (
             <div className="card p-5 space-y-4">
@@ -750,5 +757,86 @@ export default function SettingsPage() {
         </div>
       </div>
     </AdminLayout>
+  );
+}
+
+/* ── Fee Automation tab — monthly auto-generation on/off ────────────────── */
+function FeeAutomationTab() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'fee_auto_enabled')
+        .maybeSingle();
+      setEnabled(data?.value === 'true');
+    })();
+  }, []);
+
+  const toggle = async (next: boolean) => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('site_settings')
+      .upsert({ key: 'fee_auto_enabled', value: next ? 'true' : 'false' }, { onConflict: 'key' });
+    setSaving(false);
+    if (error) {
+      handleSupabaseError(error);
+      return;
+    }
+    setEnabled(next);
+    toast.success(
+      next
+        ? 'স্বয়ংক্রিয় ফি চালু হয়েছে — প্রতি মাসের ১ তারিখে ফি তৈরি হবে।'
+        : 'স্বয়ংক্রিয় ফি বন্ধ করা হয়েছে।'
+    );
+  };
+
+  return (
+    <div className="card p-5 space-y-4">
+      <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+        <CalendarClock size={15} className="text-sky-400" /> Monthly Fee Automation
+      </h3>
+      {enabled === null ? (
+        <Loader2 size={18} className="animate-spin text-slate-400" />
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm text-white">Automatic fee generation</div>
+              <div className="text-xs text-slate-400 mt-1 leading-relaxed">
+                When ON, fees for the current month are generated automatically for every
+                active student (daily check, ~6:30 AM Bangladesh time). Students who join
+                mid-month get that month&apos;s fee only — never a fee for a month before
+                they joined. When OFF, generate fees manually from Fee Management.
+              </div>
+            </div>
+            <button
+              onClick={() => toggle(!enabled)}
+              disabled={saving}
+              className={cn(
+                'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors',
+                enabled ? 'bg-emerald-500/80' : 'bg-navy-700',
+              )}
+              aria-pressed={enabled}
+            >
+              <span
+                className={cn(
+                  'inline-block h-5 w-5 transform rounded-full bg-white transition-transform',
+                  enabled ? 'translate-x-6' : 'translate-x-1',
+                )}
+              />
+            </button>
+          </div>
+          <div className="card-glass p-3 text-xs text-slate-400 font-hind">
+            {enabled
+              ? '✅ চালু — এই মাসের ফি স্বয়ংক্রিয়ভাবে তৈরি হচ্ছে।'
+              : '⏸ বন্ধ — ফি ম্যানুয়ালি তৈরি করতে হবে (ফি ম্যানেজমেন্ট থেকে)।'}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

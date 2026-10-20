@@ -9,6 +9,7 @@ import {
   TrendingUp,
   AlertCircle,
   BookOpen,
+  TrendingDown,
   ClipboardList,
   ChevronRight,
   Database,
@@ -62,6 +63,7 @@ type DashboardData = {
     monthCollected: number;
     pendingFees: number;
     activeExams: number;
+    monthExpenses: number;
   };
   enrollmentData: { month: string; students: number }[];
   feeDonut: { name: string; value: number }[];
@@ -85,6 +87,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     admissionsRes,
     examsRes,
     allFeesRes,
+    monthExpensesRes,
   ] = await Promise.all([
     supabase.from('students').select('id', { count: 'exact', head: true }),
     supabase.from('students').select('id,created_at').gte('created_at', sixMonthsAgo),
@@ -96,6 +99,11 @@ async function fetchDashboardData(): Promise<DashboardData> {
       .lte('payment_date', monthEnd),
     supabase.from('fees').select('amount').eq('status', 'pending'),
     supabase.from('exams').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase
+      .from('expenses')
+      .select('amount')
+      .gte('expense_date', monthStart.slice(0, 10))
+      .lte('expense_date', monthEnd.slice(0, 10)),
     supabase
       .from('admission_requests')
       .select('id,name,guardian_name,created_at,batch_id')
@@ -197,6 +205,10 @@ async function fetchDashboardData(): Promise<DashboardData> {
       monthCollected,
       pendingFees,
       activeExams: activeExamRes.count ?? 0,
+      monthExpenses: (monthExpensesRes.data ?? []).reduce(
+        (s: number, r: any) => s + (r.amount ?? 0),
+        0
+      ),
     },
     enrollmentData: trend,
     feeDonut,
@@ -223,6 +235,7 @@ export default function DashboardPage() {
     monthCollected: 0,
     pendingFees: 0,
     activeExams: 0,
+    monthExpenses: 0,
   };
   const enrollmentData = data?.enrollmentData ?? [];
   const feeDonut = data?.feeDonut ?? [];
@@ -372,9 +385,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+            Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
           ) : (
             <>
               <StatsCard
@@ -406,6 +419,13 @@ export default function DashboardPage() {
                 icon={BookOpen}
                 color="violet"
                 index={3}
+              />
+              <StatsCard
+                title="Month Spent"
+                value={formatCurrency(stats.monthExpenses)}
+                icon={TrendingDown}
+                color="red"
+                index={4}
               />
             </>
           )}

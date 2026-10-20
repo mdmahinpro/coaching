@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Trophy,
   Bell,
+  MonitorPlay,
 } from 'lucide-react';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils';
 const NAV_LINKS = [
   { to: '/portal/dashboard', label: 'হোম', icon: LayoutDashboard },
   { to: '/portal/fees', label: 'ফি', icon: Banknote },
+  { to: '/portal/classes', label: 'ক্লাস', icon: MonitorPlay },
   { to: '/portal/exams', label: 'পরীক্ষা', icon: ClipboardList },
   { to: '/portal/results', label: 'ফলাফল', icon: Trophy },
   { to: '/portal/notices', label: 'নোটিশ', icon: Bell },

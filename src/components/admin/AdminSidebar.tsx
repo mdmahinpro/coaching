@@ -17,6 +17,8 @@ import {
   ChevronRight,
   LogOut,
   X,
+  Wallet,
+  MonitorPlay,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -34,11 +36,15 @@ const sections = [
       { to: '/admin/students', icon: Users, label: 'Students' },
       { to: '/admin/batches', icon: BookOpen, label: 'Batches' },
       { to: '/admin/exams', icon: GraduationCap, label: 'Exams & Results' },
+      { to: '/admin/classes', icon: MonitorPlay, label: 'Classes & Materials' },
     ],
   },
   {
     label: 'FINANCE',
-    items: [{ to: '/admin/fees', icon: CreditCard, label: 'Fee Management' }],
+    items: [
+      { to: '/admin/fees', icon: CreditCard, label: 'Fee Management' },
+      { to: '/admin/expenses', icon: Wallet, label: 'Expenses' },
+    ],
   },
   {
     label: 'PEOPLE',
