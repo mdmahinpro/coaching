@@ -37,8 +37,21 @@ export default function AdminLoginPage() {
       toast.error('ইমেইল বা পাসওয়ার্ড সঠিক নয়।');
       return;
     }
+    // Auth succeeded — but the dashboard gate is server-side (is_admin() on the
+    // admin_users roster). Saying "success" for a non-admin account made logins
+    // look broken: the toast appeared, then ProtectedRoute bounced straight back.
+    const role = useAuthStore.getState().role;
+    if (role !== 'admin') {
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
+      toast.error(
+        'এই অ্যাকাউন্টটি অ্যাডমিন নয়। অ্যাডমিন রোস্টারে ইমেইলটি যোগ করুন।',
+        { duration: 6000 },
+      );
+      return;
+    }
     toast.success('স্বাগতম!');
-    navigate('/admin/dashboard');
+    navigate('/admin/dashboard', { replace: true });
   };
 
   return (
