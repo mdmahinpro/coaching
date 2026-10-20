@@ -238,7 +238,10 @@ export default function ExamPage() {
         }
         setStep('verify');
       } catch (err) {
-        handleSupabaseError(err);
+        // A bad or deleted exam id is a normal case: the friendly “not found”
+        // screen below covers it, so never surface the raw PostgREST error.
+        console.warn('[exam] meta load failed', err);
+        setExam(null);
         setStep('ended');
       }
     })();
