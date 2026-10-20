@@ -691,6 +691,30 @@ function RecordPaymentTab() {
     toast.success(`Payment recorded! Receipt: ${receiptNo}`);
     setSaving(false);
 
+    // POS behaviour: the receipt prints the moment the payment is taken.
+    // Never blocks the payment flow if PDF generation fails.
+    try {
+      await generateReceipt({
+        receiptNo,
+        date: formatDate(new Date().toISOString()),
+        studentName: selectedStudent.name,
+        studentId: selectedStudent.student_id,
+        batchName: selectedFee.batch?.name,
+        month: selectedFee.month,
+        feeAmount: selectedFee.amount,
+        discount,
+        finalAmount,
+        paymentMethod,
+        transactionId: transactionId || undefined,
+        receivedBy: receivedBy || undefined,
+        instituteName: settings.centerName,
+        instituteAddress: settings.centerAddress,
+        institutePhone: settings.centerPhone,
+      });
+    } catch (err) {
+      console.error('[POS receipt]', err);
+    }
+
     // Reset for next payment
     setUnpaidFees((prev) => prev.filter((f) => f.id !== selectedFee.id));
     setSelectedFee(null);
