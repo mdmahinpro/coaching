@@ -23,6 +23,9 @@ export interface PosReceiptData {
   receivedBy?: string;
   /** Optional line-item label override */
   itemLabel?: string;
+  /** 'receipt' (paid, default) or 'invoice' (bill awaiting payment) */
+  kind?: 'receipt' | 'invoice';
+  dueDate?: string;
 }
 
 type Doc = InstanceType<typeof import('jspdf').jsPDF>;
@@ -104,14 +107,15 @@ function build(data: PosReceiptData, Doc: typeof import('jspdf').jsPDF): Doc {
   }
   divider(y);
   y += 12;
-  center('FEE PAYMENT RECEIPT', y, 8, 'bold', 60);
+  const isInvoice = data.kind === 'invoice';
+  center(isInvoice ? 'FEE INVOICE' : 'FEE PAYMENT RECEIPT', y, 8, 'bold', 60);
   y += 15;
 
   /* ── meta ── */
   pdf.setFont('courier', 'normal');
   pdf.setFontSize(7.5);
   pdf.setTextColor(20);
-  pdf.text('Receipt: ' + data.receiptNo, M, y);
+  pdf.text((isInvoice ? 'Invoice: ' : 'Receipt: ') + data.receiptNo, M, y);
   y += 10;
   pdf.text('Date: ' + data.date, M, y);
   y += 12;
@@ -137,7 +141,8 @@ function build(data: PosReceiptData, Doc: typeof import('jspdf').jsPDF): Doc {
   dashed(y);
   y += 11;
 
-  const label = data.itemLabel || `Tuition Fee — ${data.month}`;
+  // jsPDF's courier (WinAnsi) drops non-ASCII punctuation, so keep it plain.
+  const label = data.itemLabel || `Tuition Fee - ${data.month}`;
   pdf.setFont('courier', 'bold');
   pdf.setFontSize(7.5);
   pdf.setTextColor(20);
@@ -167,16 +172,23 @@ function build(data: PosReceiptData, Doc: typeof import('jspdf').jsPDF): Doc {
   divider(y);
   y += 15;
 
-  /* ── payment ── */
-  kv('Paid via', String(data.paymentMethod || 'Cash'));
-  if (data.transactionId) kv('Txn ID', data.transactionId);
-  if (data.receivedBy) kv('Received', data.receivedBy);
+  /* ── payment / status ── */
+  if (isInvoice) {
+    kv('Status', 'UNPAID');
+    if (data.dueDate) kv('Pay by', data.dueDate);
+    kv('Amount Due', money(finalAmount));
+  } else {
+    const method = String(data.paymentMethod || 'Cash');
+    kv('Paid via', method.charAt(0).toUpperCase() + method.slice(1));
+    if (data.transactionId) kv('Txn ID', data.transactionId);
+    if (data.receivedBy) kv('Received', data.receivedBy);
+  }
   y += 3;
   dashed(y);
   y += 18;
 
   /* ── footer ── */
-  center('Thank you!', y, 8, 'bold');
+  center(isInvoice ? 'Please pay by the due date.' : 'Thank you!', y, 8, 'bold');
   y += 11;
   center(data.instituteName || 'Techely Learning Center', y, 6.5, 'normal', 90);
   y += 10;
@@ -190,5 +202,5 @@ export async function downloadPosReceipt(data: PosReceiptData): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const pdf = build(data, jsPDF);
   const safe = String(data.receiptNo || 'receipt').replace(/[^\w-]+/g, '');
-  pdf.save(`Techely-receipt-${safe}.pdf`);
+  pdf.save(`Techely-${data.kind === 'invoice' ? 'invoice' : 'receipt'}-${safe}.pdf`);
 }

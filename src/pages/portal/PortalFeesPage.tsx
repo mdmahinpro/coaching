@@ -15,9 +15,11 @@ import {
   ExternalLink,
   DollarSign,
   Loader2,
+  FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { generateStudentReceipt } from '@/lib/pdf';
+import { downloadPosReceipt } from '@/lib/posReceipt';
 
 interface Fee {
   id: string;
@@ -87,6 +89,36 @@ export default function PortalFeesPage() {
         transactionId: note.transaction_id,
         instituteName: settings.centerName,
       });
+    } catch (err) {
+      console.error('[PDF Error]', err);
+      toast.error('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const posData = (fee: Fee, kind: 'receipt' | 'invoice') => {
+    const note = parseNote(fee.note);
+    return {
+      kind,
+      receiptNo: note.receipt_no ?? fee.id.slice(-8).toUpperCase(),
+      date: formatDate(fee.payment_date ?? new Date().toISOString()),
+      studentName: student?.name ?? '',
+      studentId: student?.student_id,
+      month: fee.month,
+      feeAmount: fee.amount,
+      discount: note.discount ?? 0,
+      finalAmount: note.final_amount ?? fee.amount,
+      paymentMethod: note.payment_method ?? 'Cash',
+      transactionId: note.transaction_id,
+      dueDate: fee.month ? `${fee.month} 10` : formatDate(new Date().toISOString()),
+      instituteName: settings.centerName,
+      instituteAddress: settings.centerAddress,
+      institutePhone: settings.centerPhone,
+    };
+  };
+
+  const downloadInvoice = async (fee: Fee) => {
+    try {
+      await downloadPosReceipt(posData(fee, 'invoice'));
     } catch (err) {
       console.error('[PDF Error]', err);
       toast.error('Failed to generate PDF. Please try again.');
@@ -203,6 +235,27 @@ export default function PortalFeesPage() {
               )}
             </div>
           </div>
+          {!isPaid && !isWaived && (
+            <button
+              onClick={async () => {
+                setDownloadReceiptLoading(true);
+                await downloadInvoice(fee);
+                setDownloadReceiptLoading(false);
+              }}
+              disabled={downloadReceiptLoading}
+              className="btn-outline text-xs py-1.5 px-3 shrink-0"
+            >
+              {downloadReceiptLoading ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" /> Generating…
+                </>
+              ) : (
+                <>
+                  <FileText size={12} /> Invoice
+                </>
+              )}
+            </button>
+          )}
           {isPaid && (
             <button
               onClick={async () => {
