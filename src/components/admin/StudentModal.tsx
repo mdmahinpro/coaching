@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { X, Save, Upload, User, AlertCircle } from 'lucide-react';
+import { X, Save, Upload, User, AlertCircle, Check, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -449,7 +449,10 @@ export function StudentModal({ open, student, batches = [], onSave, onClose }: P
                             : 'bg-white/5 border-white/10 text-slate-400'
                         }`}
                       >
-                        {field.value ? '✓ Approved' : '✗ Not Approved'}
+                        <span className="flex items-center gap-1.5">
+                          {field.value ? <Check size={14} /> : <XIcon size={14} />}
+                          {field.value ? 'Approved' : 'Not Approved'}
+                        </span>
                       </button>
                     )}
                   />

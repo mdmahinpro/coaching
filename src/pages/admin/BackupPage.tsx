@@ -10,6 +10,7 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -194,7 +195,7 @@ export default function BackupPage() {
         timeStyle: 'short',
       });
       saveHistory(dateStr);
-      toast.success(`✅ ব্যাকআপ সফল! ${totalRecords} records saved`);
+      toast.success(`ব্যাকআপ সফল! ${totalRecords} records saved`);
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -282,7 +283,7 @@ export default function BackupPage() {
           totalRestored += (rows as any[]).length;
         }
       }
-      toast.success(`✅ Restore complete! ${totalRestored} records restored`);
+      toast.success(`Restore complete! ${totalRestored} records restored`);
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -479,7 +480,7 @@ export default function BackupPage() {
                 {confirmStep === 1 && (
                   <div className="card p-3 border border-amber-400/20 space-y-2">
                     <p className="text-amber-400 text-sm font-semibold">
-                      ⚠ এটি বর্তমান ডেটা মুছে ফেলবে। নিশ্চিত?
+                      <AlertTriangle className="mr-1 inline h-4 w-4" /> এটি বর্তমান ডেটা মুছে ফেলবে। নিশ্চিত?
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -534,7 +535,7 @@ export default function BackupPage() {
         <div className="card-glass p-4 border border-sky-400/10 flex items-start gap-3">
           <Info size={16} className="text-sky-400 shrink-0 mt-0.5" />
           <p className="text-slate-400 text-sm leading-relaxed font-hind">
-            ℹ️ এই ব্যাকআপ ফাইলটি ভবিষ্যতে নতুন ফিচার যোগ হলেও কাজ করবে। নতুন ফিচারের ডেটা পুরোনো
+            এই ব্যাকআপ ফাইলটি ভবিষ্যতে নতুন ফিচার যোগ হলেও কাজ করবে। নতুন ফিচারের ডেটা পুরোনো
             ব্যাকআপে থাকবে না, তবে পুরোনো ডেটা নিরাপদ থাকবে।
           </p>
         </div>
@@ -543,7 +544,7 @@ export default function BackupPage() {
         <div className="card-glass p-4 border border-emerald-400/10 flex items-start gap-3">
           <Database size={16} className="text-emerald-400 shrink-0 mt-0.5" />
           <p className="text-slate-400 text-sm leading-relaxed font-hind">
-            🤖 স্বয়ংক্রিয় ব্যাকআপ প্রতিদিন মdzনায় চলবে (pg_cron via Supabase)। স্বয়ংক্রিয়
+            স্বয়ংক্রিয় ব্যাকআপ প্রতিদিন মdzনায় চলবে (pg_cron via Supabase)। স্বয়ংক্রিয়
             ব্যাকআপগুলো ইতিহাসে দেখুন এবং ডাউনলোড করুন। প্রথম ব্যাকআপ আগামীকাল (মdzনা ০০:০০) পাওয়া
             যাবে।
           </p>

@@ -130,7 +130,7 @@ export default function NoticeBoardPage() {
                         {n.is_pinned && <span className="badge-blue">Pinned</span>}
                         {n.category && (
                           <span className={style.badge}>
-                            {isUrgent && '🚨 '}{n.category}
+                            {isUrgent && <AlertTriangle className="h-3.5 w-3.5 inline" />}{n.category}
                           </span>
                         )}
                       </div>

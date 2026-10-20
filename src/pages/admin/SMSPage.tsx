@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   X,
   RefreshCw,
+  Smartphone,
+  Mail,
 } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { sendSMS, fillTemplate, SMS_TEMPLATES } from '@/lib/sms';
@@ -277,7 +279,7 @@ function SendSMSTab() {
                 : 'border-navy-700 text-slate-400 hover:border-navy-600'
             }`}
           >
-            📱 SMS <span className="text-xs text-slate-500">(ZenSMS)</span>
+            <Smartphone className="h-4 w-4" /> SMS <span className="text-xs text-slate-500">(ZenSMS)</span>
           </button>
           <button
             onClick={() => setChannel('email')}
@@ -287,7 +289,7 @@ function SendSMSTab() {
                 : 'border-navy-700 text-slate-400 hover:border-navy-600'
             }`}
           >
-            ✉️ Email <span className="text-xs text-slate-500">(Brevo)</span>
+            <Mail className="h-4 w-4" /> Email <span className="text-xs text-slate-500">(Brevo)</span>
           </button>
         </div>
         {channel === 'email' && (

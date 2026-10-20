@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
@@ -25,7 +26,8 @@ import {
   CheckCircle2,
   XCircle,
   BarChart2,
-} from 'lucide-react';
+  Medal,
+ ArrowLeft,} from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Exam {
@@ -990,7 +992,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
           }}
           className="text-slate-400 text-sm hover:text-white"
         >
-          ← Back to All Exams
+          <ArrowLeft className="h-4 w-4" /> Back to All Exams
         </button>
       </div>
     );
@@ -1013,7 +1015,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
                     : 'bg-transparent border-white/20 text-slate-500'
               )}
             >
-              {step > i + 1 ? '✓' : i + 1}
+              {step > i + 1 ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
             </button>
             <span
               className={cn(
@@ -1200,7 +1202,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
 
           <div className="flex gap-3 pt-2">
             <button onClick={() => setStep(1)} className="btn-outline text-sm">
-              ← Back
+              <ArrowLeft className="h-4 w-4" /> Back
             </button>
             <button onClick={() => setStep(3)} className="btn-primary text-sm ml-auto">
               Next: Preview →
@@ -1265,7 +1267,7 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
 
           <div className="flex gap-3 pt-2">
             <button onClick={() => setStep(2)} className="btn-outline text-sm">
-              ← Back
+              <ArrowLeft className="h-4 w-4" /> Back
             </button>
             <button
               onClick={() => handleSave(false)}
@@ -1369,10 +1371,10 @@ function ResultsTab({ exams }: { exams: Exam[] }) {
     a.click();
   };
 
-  const RANK_ICONS: Record<number, { icon: string; cls: string }> = {
-    1: { icon: '🥇', cls: 'text-amber-400' },
-    2: { icon: '🥈', cls: 'text-slate-300' },
-    3: { icon: '🥉', cls: 'text-amber-700' },
+  const RANK_ICONS: Record<number, { icon: ReactNode; cls: string }> = {
+    1: { icon: <Medal className="h-5 w-5" />, cls: 'text-amber-400' },
+    2: { icon: <Medal className="h-5 w-5" />, cls: 'text-slate-300' },
+    3: { icon: <Medal className="h-5 w-5" />, cls: 'text-amber-700' },
   };
 
   const selectedExam = exams.find((e) => e.id === examId);

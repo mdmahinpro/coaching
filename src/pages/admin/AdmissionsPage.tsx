@@ -193,7 +193,7 @@ export default function AdmissionsPage() {
 
       // Send SMS with correct password
       if (admission.phone) {
-        const msg = `🎉 ${admission.name}, ভর্তি অনুমোদিত!\nStudent ID: ${studentId}\nPassword: ${password}\nপোর্টাল: /portal/login\n- ${settings.centerName}`;
+        const msg = `${admission.name}, ভর্তি অনুমোদিত!\nStudent ID: ${studentId}\nPassword: ${password}\nপোর্টাল: /portal/login\n- ${settings.centerName}`;
         await sendSMS(admission.phone, msg, 'APPROVED');
       }
 

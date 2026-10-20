@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
-import { GraduationCap, Lock, Mail, Eye, EyeOff, ArrowLeft, Send } from 'lucide-react';
+import { GraduationCap, Lock, Mail, Eye, EyeOff, ArrowLeft, Send, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -186,7 +186,7 @@ export default function AdminLoginPage() {
               <div className="mt-4 border-t border-white/5 pt-4 space-y-3">
                 {resetSent ? (
                   <div className="card-glass p-3 text-xs text-emerald-300 leading-relaxed">
-                    ✅ রিসেট লিংক পাঠানো হয়েছে <b>{forgotEmail}</b> — ইমেইল চেক করুন। লিংক থেকে
+                    <CheckCircle2 className="mr-1 inline h-4 w-4" /> রিসেট লিংক পাঠানো হয়েছে <b>{forgotEmail}</b> — ইমেইল চেক করুন। লিংক থেকে
                     নতুন পাসওয়ার্ড সেট করার পর এখানেই লগইন করুন।
                   </div>
                 ) : (

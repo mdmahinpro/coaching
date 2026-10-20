@@ -171,11 +171,11 @@ export const SMS_TEMPLATES: Record<string, { label: string; key: string; body: s
   NOTICE: {
     key: 'NOTICE',
     label: 'General Notice',
-    body: '📢 {শিরোনাম}: {বার্তা} - {ইনস্টিটিউট}',
+    body: '{শিরোনাম}: {বার্তা} - {ইনস্টিটিউট}',
   },
   APPROVED: {
     key: 'APPROVED',
     label: 'Admission Approved',
-    body: '🎉 {নাম}, ভর্তি অনুমোদিত! আইডি: {আইডি}। পোর্টাল: {লিংক} - {ইনস্টিটিউট}',
+    body: '{নাম}, ভর্তি অনুমোদিত! আইডি: {আইডি}। পোর্টাল: {লিংক} - {ইনস্টিটিউট}',
   },
 };

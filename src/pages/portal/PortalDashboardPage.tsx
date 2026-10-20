@@ -136,7 +136,7 @@ export default function PortalDashboardPage() {
         <div className="flex items-start gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
             <h1 className="font-inter font-black text-xl text-white mb-1 font-hind">
-              স্বাগতম, <span className="text-gradient">{student?.name}</span>! 👋
+              স্বাগতম, <span className="text-gradient">{student?.name}</span>!
             </h1>
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <span className="font-mono text-sky-400 text-xs bg-sky-400/10 px-2.5 py-1 rounded-lg">

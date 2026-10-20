@@ -210,7 +210,7 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
     <div class="card">
       <div class="header">
         <div class="inst-row">
-          <div class="inst-logo">🎓</div>
+          <div class="inst-logo"></div>
           <div class="inst-name">${escapeHtml(r.instituteName)}</div>
         </div>
         <div class="result-badge">
@@ -271,7 +271,7 @@ export async function generateResultCard(r: ResultCardData): Promise<void> {
         </div>
 
         <div class="pass-stamp">
-          <div class="pass-stamp-icon">${passed ? '🎉' : '😔'}</div>
+          <div class="pass-stamp-icon">${passed ? '' : ''}</div>
           <div class="pass-stamp-text">${passed ? 'PASSED' : 'FAILED'}</div>
           <div class="pass-stamp-sub">${passed ? 'অভিনন্দন! তুমি পরীক্ষায় পাস করেছ।' : 'আরও পড়াশোনা করো। পরেরবার পারবে!'}</div>
         </div>

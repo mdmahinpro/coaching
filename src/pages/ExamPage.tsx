@@ -26,6 +26,11 @@ import {
   BookOpen,
   AlertTriangle,
   Trophy,
+  Medal,
+  PartyPopper,
+  Frown,
+  Check,
+  type LucideIcon,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -833,8 +838,9 @@ export default function ExamPage() {
               >
                 {unanswered > 0 && (
                   <div className="mb-4 p-3 rounded-xl bg-amber-400/10 border border-amber-400/20">
-                    <p className="text-amber-400 text-sm">
-                      ⚠ আপনি {unanswered}টি প্রশ্নের উত্তর দেননি।
+                    <p className="text-amber-400 text-sm flex items-center justify-center gap-1.5">
+                      <AlertTriangle size={15} className="shrink-0" />
+                      আপনি {unanswered}টি প্রশ্নের উত্তর দেননি।
                     </p>
                   </div>
                 )}
@@ -931,7 +937,7 @@ function ResultView({
   const unanswered =
     reviewQuestions.length - (submission.correct_count ?? 0) - (submission.wrong_count ?? 0);
 
-  const RANK_ICONS: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+  const RANK_ICONS: Record<number, LucideIcon> = { 1: Medal, 2: Medal, 3: Medal };
 
   const circumference = 2 * Math.PI * 54; // r=54
   const strokeDash = circumference - (pct / 100) * circumference;
@@ -945,7 +951,13 @@ function ResultView({
           animate={{ opacity: 1, y: 0 }}
           className="card p-8 text-center"
         >
-          <div className="text-4xl mb-2">{passed ? '🎉' : '😔'}</div>
+          <div className="flex justify-center mb-2">
+            {passed ? (
+              <PartyPopper size={36} className="text-amber-400" />
+            ) : (
+              <Frown size={36} className="text-slate-400" />
+            )}
+          </div>
           <h2 className="font-inter font-black text-2xl text-white mb-1">
             {passed ? 'অভিনন্দন!' : 'আরও চেষ্টা করুন'}
           </h2>
@@ -1022,7 +1034,14 @@ function ResultView({
                       : 'border-white/15 bg-white/5 text-white'
               )}
             >
-              <span className="text-xl">{RANK_ICONS[rank] ?? '🏅'}</span>
+              {(() => {
+                const RankIcon = RANK_ICONS[rank];
+                return RankIcon ? (
+                  <RankIcon size={20} className={rank === 1 ? 'text-amber-400' : rank === 2 ? 'text-slate-300' : 'text-amber-600'} />
+                ) : (
+                  <Medal size={20} className="text-white/70" />
+                );
+              })()}
               <span className="font-inter font-bold">আপনার র‍্যাংক: #{rank}</span>
             </div>
           )}
@@ -1052,10 +1071,15 @@ function ResultView({
                       isMe && 'bg-sky-400/5 border-l-2 border-sky-400'
                     )}
                   >
-                    <span className="w-7 text-center">
-                      {RANK_ICONS[lRank] ?? (
-                        <span className="text-slate-500 text-sm font-mono">#{lRank}</span>
-                      )}
+                    <span className="w-7 text-center flex justify-center">
+                      {(() => {
+                        const RankIcon = RANK_ICONS[lRank];
+                        return RankIcon ? (
+                          <RankIcon size={18} className={lRank === 1 ? 'text-amber-400' : lRank === 2 ? 'text-slate-300' : 'text-amber-600'} />
+                        ) : (
+                          <span className="text-slate-500 text-sm font-mono">#{lRank}</span>
+                        );
+                      })()}
                     </span>
                     <span
                       className={cn(
@@ -1157,7 +1181,7 @@ function ResultView({
                               <span className="font-bold w-4">{o}.</span>
                               <span className="font-hind truncate">{optText}</span>
                               {isCorrect && !isSelected && (
-                                <span className="ml-auto text-[10px] text-emerald-400">✓</span>
+                                <Check size={12} className="ml-auto shrink-0" />
                               )}
                             </div>
                           );

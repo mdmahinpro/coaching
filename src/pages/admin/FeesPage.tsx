@@ -22,6 +22,12 @@ import {
   User,
   ChevronDown,
   ChevronUp,
+  SkipForward,
+  Ban,
+  Banknote,
+  CircleDot,
+  Smartphone,
+  type LucideIcon,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -491,7 +497,7 @@ function GenerateTab({ batches }: { batches: any[] }) {
               </span>
             </p>
             <p className="text-amber-400/80 text-xs mt-2">
-              ⚠ Suspended students are automatically skipped
+              <AlertTriangle size={13} className="inline shrink-0" /> Suspended students are automatically skipped
             </p>
           </div>
         )}
@@ -524,15 +530,21 @@ function GenerateTab({ batches }: { batches: any[] }) {
             <p className="font-semibold text-white mb-3">Generation Complete</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">✅ Fee records created</span>
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-400" /> Fee records created
+                </span>
                 <span className="text-emerald-400 font-bold">{result.created}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">⏭ Skipped (already exist)</span>
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <SkipForward size={14} className="text-amber-400" /> Skipped (already exist)
+                </span>
                 <span className="text-amber-400 font-bold">{result.skippedExisting}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">🚫 Skipped (suspended)</span>
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <Ban size={14} className="text-red-400" /> Skipped (suspended)
+                </span>
                 <span className="text-red-400 font-bold">{result.skippedSuspended}</span>
               </div>
             </div>
@@ -767,12 +779,12 @@ function RecordPaymentTab() {
   const PAYMENT_METHODS: {
     id: 'cash' | 'bkash' | 'nagad';
     label: string;
-    icon: string;
+    icon: LucideIcon;
     sub?: string;
   }[] = [
-    { id: 'cash', label: 'Cash', icon: '💵' },
-    { id: 'bkash', label: 'bKash', icon: '🅱️', sub: '01XXXXXXXXX' },
-    { id: 'nagad', label: 'Nagad', icon: '🟠', sub: '01XXXXXXXXX' },
+    { id: 'cash', label: 'Cash', icon: Banknote },
+    { id: 'bkash', label: 'bKash', icon: Smartphone, sub: '01XXXXXXXXX' },
+    { id: 'nagad', label: 'Nagad', icon: CircleDot, sub: '01XXXXXXXXX' },
   ];
 
   return (
@@ -937,7 +949,7 @@ function RecordPaymentTab() {
                             : 'border-transparent hover:border-white/10'
                         )}
                       >
-                        <span className="text-xl">{m.icon}</span>
+                        <m.icon size={20} className="text-sky-400" />
                         <span className="text-xs font-medium text-white">{m.label}</span>
                         {m.sub && <span className="text-[10px] text-slate-500">{m.sub}</span>}
                       </button>

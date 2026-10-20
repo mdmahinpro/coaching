@@ -4,7 +4,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { Avatar } from '@/components/shared/Avatar';
 import { cn, sanitize } from '@/lib/utils';
-import { Trophy, Download, BarChart2, X, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Trophy, Download, BarChart2, X, CheckCircle2, XCircle, Loader2, Medal, type LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -165,10 +165,10 @@ export default function ResultsPage() {
   };
 
   const selectedExam = exams.find((e) => e.id === examId);
-  const RANK_ICONS: Record<number, { icon: string; cls: string }> = {
-    1: { icon: '🥇', cls: 'text-amber-400' },
-    2: { icon: '🥈', cls: 'text-slate-300' },
-    3: { icon: '🥉', cls: 'text-amber-700' },
+  const RANK_ICONS: Record<number, { icon: LucideIcon; cls: string }> = {
+    1: { icon: Medal, cls: 'text-amber-400' },
+    2: { icon: Medal, cls: 'text-slate-300' },
+    3: { icon: Medal, cls: 'text-amber-700' },
   };
 
   return (
@@ -280,7 +280,7 @@ export default function ResultsPage() {
                       >
                         <td className="px-4 py-3">
                           {ri ? (
-                            <span className={cn('text-lg', ri.cls)}>{ri.icon}</span>
+                            <ri.icon size={18} className={ri.cls} />
                           ) : (
                             <span className="text-slate-400 font-mono text-sm">#{rank}</span>
                           )}

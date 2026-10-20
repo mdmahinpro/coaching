@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { GraduationCap, Loader2, CheckCircle2 } from 'lucide-react';
+import { GraduationCap, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -124,8 +124,9 @@ export default function PortalSignupPage() {
 
           {/* Info note */}
           <div className="card p-3 mb-5 border border-amber-400/15">
-            <p className="text-amber-400 text-xs font-hind leading-relaxed">
-              ⚠️ শুধুমাত্র অনুমোদিত ছাত্ররা পোর্টালে লগইন করতে এবং পরীক্ষায় অংশ নিতে পারবে।
+            <p className="text-amber-400 text-xs font-hind leading-relaxed inline-flex items-start gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
+              <span>শুধুমাত্র অনুমোদিত ছাত্ররা পোর্টালে লগইন করতে এবং পরীক্ষায় অংশ নিতে পারবে।</span>
             </p>
           </div>
 

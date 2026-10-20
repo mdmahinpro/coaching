@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { StudentProtectedRoute } from '@/components/StudentProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ArrowLeft } from 'lucide-react';
 
 // ── Public pages — eager (small, needed on any direct URL) ────────────────────
 import HomePage from '@/pages/public/HomePage';
@@ -288,8 +289,8 @@ function AppRoutes() {
                     অ্যাডমিন প্যানেল
                   </a>
                 </div>
-                <a href="/" className="block text-slate-400 text-xs hover:text-sky-400">
-                  ← হোমে ফিরে যান
+                <a href="/" className="inline-flex items-center gap-1 text-slate-400 text-xs hover:text-sky-400">
+                  <ArrowLeft className="h-3.5 w-3.5" /> হোমে ফিরে যান
                 </a>
               </div>
             </div>

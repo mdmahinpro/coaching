@@ -148,7 +148,7 @@ export default function NoticesPage() {
       try {
         const preview =
           (editing.content ?? '').slice(0, 60) + ((editing.content?.length ?? 0) > 60 ? '…' : '');
-        const msg = `📢 ${settings.centerName}: ${editing.title} — ${preview}`;
+        const msg = `${settings.centerName}: ${editing.title} — ${preview}`;
         let phones: string[] = [];
         if (payload.target === 'batch' && payload.batch_id) {
           const { data: students } = await supabase

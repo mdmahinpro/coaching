@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, Users, BookOpen, Award, TrendingUp } from 'lucide-react';
+import { ArrowRight, Users, BookOpen, Award, TrendingUp, GraduationCap } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useEffect, useState } from 'react';
 import { useIntersection } from '@/hooks/useIntersection';
@@ -75,7 +75,9 @@ export function HeroSection() {
               transition={{ delay: 0.1 }}
               className="inline-flex items-center gap-2 mb-6"
             >
-              <span className="badge-blue animate-[pulseDot_1.5s_ease-in-out_infinite]">🎓</span>
+              <span className="badge-blue animate-[pulseDot_1.5s_ease-in-out_infinite] inline-flex items-center">
+                <GraduationCap size={14} />
+              </span>
               <span className="badge-blue">ভর্তি চলছে ২০২৫</span>
             </motion.div>
 

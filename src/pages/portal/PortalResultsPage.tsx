@@ -15,6 +15,8 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  Timer,
+  Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -244,7 +246,7 @@ export default function PortalResultsPage() {
                         <span className="font-mono text-violet-400 text-xs">#{s.rank}</span>
                       )}
                       <span className="text-slate-500 text-xs flex items-center gap-1">
-                        ⏱ {fmtTime(s.time_taken)}
+                        <Timer className="h-3.5 w-3.5" /> {fmtTime(s.time_taken)}
                       </span>
                       <span className="text-emerald-400 text-xs">
                         {s.correct_count ?? '?'} correct
@@ -389,7 +391,11 @@ export default function PortalResultsPage() {
                                   <span className="truncate font-hind">{v}</span>
                                   {isStudentChoice && (
                                     <span className="ml-auto shrink-0">
-                                      {isCorrect ? '✓' : '✗'}
+                                      {isCorrect ? (
+                                        <Check className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <X className="h-3.5 w-3.5" />
+                                      )}
                                     </span>
                                   )}
                                 </div>

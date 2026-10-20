@@ -19,7 +19,10 @@ import {
   EyeOff,
   Lock as LockIcon,
   CalendarClock,
-} from 'lucide-react';
+  Info,
+  CheckCircle2,
+  PauseCircle,
+ RefreshCw,} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
@@ -121,7 +124,7 @@ export default function SettingsPage() {
     updateSettings(form);
     try {
       await saveToDB(form);
-      toast.success('✅ সেটিংস সংরক্ষিত হয়েছে');
+      toast.success('সেটিংস সংরক্ষিত হয়েছে');
     } catch (err: any) {
       toast.error('সংরক্ষণ ব্যর্থ: ' + (err?.message ?? 'Unknown error'));
     } finally {
@@ -138,7 +141,7 @@ export default function SettingsPage() {
     try {
       await sendSMS(
         testPhone,
-        `📱 Test SMS from ${form.centerName}. MIMSMS API is working!`,
+        `Test SMS from ${form.centerName}. MIMSMS API is working!`,
         'custom'
       );
     } catch (err) {
@@ -410,7 +413,10 @@ export default function SettingsPage() {
               </Field>
               {(form.bkashNumber || form.nagadNumber) && (
                 <div className="card-glass p-3 text-xs text-slate-400 space-y-1 font-hind">
-                  <p>ℹ️ এই নম্বরগুলো ছাত্র পোর্টালে ফি পরিশোধের জন্য দেখানো হবে।</p>
+                  <p className="flex items-center gap-1.5">
+                    <Info className="h-3.5 w-3.5 shrink-0" />
+                    এই নম্বরগুলো ছাত্র পোর্টালে ফি পরিশোধের জন্য দেখানো হবে।
+                  </p>
                 </div>
               )}
             </div>
@@ -483,7 +489,7 @@ export default function SettingsPage() {
                   disabled={loadingStats}
                   className="btn-outline text-xs py-1.5 px-3"
                 >
-                  {loadingStats ? <Loader2 size={12} className="animate-spin" /> : '↻'} Load from DB
+                  {loadingStats ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} className="animate-spin" />} Load from DB
                 </button>
               </div>
               <label className="flex items-center gap-3 cursor-pointer">
@@ -730,9 +736,12 @@ export default function SettingsPage() {
                     Create Admin Account
                   </button>
                 </form>
-                <div className="card-glass p-3 text-xs text-slate-500 font-hind">
-                  ℹ️ New admin will receive a verification email. After verifying, they can login
-                  via /admin/login.
+                <div className="card-glass p-3 text-xs text-slate-500 font-hind flex items-start gap-1.5">
+                  <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    New admin will receive a verification email. After verifying, they can login
+                    via /admin/login.
+                  </span>
                 </div>
               </div>
             </div>
@@ -830,10 +839,16 @@ function FeeAutomationTab() {
               />
             </button>
           </div>
-          <div className="card-glass p-3 text-xs text-slate-400 font-hind">
-            {enabled
-              ? '✅ চালু — এই মাসের ফি স্বয়ংক্রিয়ভাবে তৈরি হচ্ছে।'
-              : '⏸ বন্ধ — ফি ম্যানুয়ালি তৈরি করতে হবে (ফি ম্যানেজমেন্ট থেকে)।'}
+          <div className="card-glass p-3 text-xs text-slate-400 font-hind flex items-start gap-1.5">
+            {(() => {
+              const St = enabled ? CheckCircle2 : PauseCircle;
+              return <St className={cn('h-3.5 w-3.5 shrink-0 mt-0.5', enabled ? 'text-emerald-400' : 'text-slate-400')} />;
+            })()}
+            <span>
+              {enabled
+                ? 'চালু — এই মাসের ফি স্বয়ংক্রিয়ভাবে তৈরি হচ্ছে।'
+                : 'বন্ধ — ফি ম্যানুয়ালি তৈরি করতে হবে (ফি ম্যানেজমেন্ট থেকে)।'}
+            </span>
           </div>
         </>
       )}

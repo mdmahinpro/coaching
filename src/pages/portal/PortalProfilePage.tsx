@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { updatePhoto, changePassword } from '@/lib/portalApi';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { useStudentStore } from '@/store/useStudentStore';
-import { Camera, Save, Lock, Loader2, User, Phone, Mail, BookOpen, Hash } from 'lucide-react';
+import { Camera, Save, Lock, Loader2, User, Phone, Mail, BookOpen, Hash, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -209,7 +209,13 @@ export default function PortalProfilePage() {
                   student.status === 'active' ? 'badge-green' : 'badge-yellow'
                 )}
               >
-                {student.status === 'active' ? '✓ Active' : student.status}
+                {student.status === 'active' ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="h-3 w-3" /> Active
+                  </span>
+                ) : (
+                  student.status
+                )}
               </span>
             </div>
           </div>

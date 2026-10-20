@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   BookOpen, Clock, Trophy, MessageSquare, Star, Shield,
-  ChevronRight, Bell, ArrowRight
+  ChevronRight, Bell, ArrowRight, Megaphone
 } from 'lucide-react';
 
 const whyUs = [
@@ -98,8 +98,8 @@ export default function HomePage() {
         <div className="bg-navy-700/60 border-y border-navy-700/80 py-2.5 overflow-hidden">
           <div className="flex items-center gap-0">
             <div className="shrink-0 bg-sky-500 text-white text-xs font-bold px-4 py-1 mr-4 flex items-center gap-1.5 z-10">
-              <Bell size={12} />
-              <span>📢 NOTICE</span>
+              <Megaphone size={12} className="shrink-0" />
+              <span>NOTICE</span>
             </div>
             <div className="overflow-hidden flex-1">
               <div className="ticker-track">

@@ -19,7 +19,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { Download, Trophy, BarChart2, Users, DollarSign } from 'lucide-react';
+import { Download, Trophy, BarChart2, Users, DollarSign, Medal } from 'lucide-react';
 
 const CHART_TOOLTIP_STYLE = {
   background: '#0f172a',
@@ -558,7 +558,13 @@ function ExamSummaryTab() {
                   <div key={s.id} className="flex items-center gap-3 px-5 py-3">
                     <span className="w-7 text-center text-sm">
                       {i < 3 ? (
-                        ['🥇', '🥈', '🥉'][i]
+                        i === 0 ? (
+                          <Medal className="h-4 w-4 text-amber-400" />
+                        ) : i === 1 ? (
+                          <Medal className="h-4 w-4 text-slate-300" />
+                        ) : (
+                          <Medal className="h-4 w-4 text-amber-700" />
+                        )
                       ) : (
                         <span className="text-slate-500">#{i + 1}</span>
                       )}
@@ -691,7 +697,13 @@ function TopStudentsTab() {
                 >
                   <span className="w-8 text-center text-lg shrink-0">
                     {rank <= 3 ? (
-                      ['🥇', '🥈', '🥉'][rank - 1]
+                      rank === 1 ? (
+                      <Medal className="h-5 w-5 text-amber-400" />
+                    ) : rank === 2 ? (
+                      <Medal className="h-5 w-5 text-slate-300" />
+                    ) : (
+                      <Medal className="h-5 w-5 text-amber-700" />
+                    )
                     ) : (
                       <span className="text-slate-500 text-sm font-mono">#{rank}</span>
                     )}
