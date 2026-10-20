@@ -1,6 +1,6 @@
 /**
  * Vercel serverless function: POST /api/send-sms
- * Delegates to the shared core; the MIM SMS key stays server-side.
+ * Delegates to the shared core; the ZenSMS key stays server-side.
  */
 import { handleSendSms } from '../server/sms-core';
 

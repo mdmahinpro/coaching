@@ -1,7 +1,7 @@
 /**
  * Netlify function: POST /.netlify/functions/send-sms
  * (also reachable at /api/send-sms via the redirect in netlify.toml)
- * Delegates to the shared core; the MIM SMS key stays server-side.
+ * Delegates to the shared core; the ZenSMS key stays server-side.
  */
 import { handleSendSms } from '../../server/sms-core';
 

@@ -4,7 +4,7 @@
  * Serves the built SPA from dist/ (with SPA fallback for client-side routes
  * like /exam/:id and /portal/*) and exposes POST /api/send-sms using the same
  * shared core as the Vercel (`api/send-sms.ts`) and Netlify
- * (`netlify/functions/send-sms.ts`) entrypoints, so the MIM SMS key stays
+ * (`netlify/functions/send-sms.ts`) entrypoints, so the ZenSMS key stays
  * server-side on Render too.
  *
  * Render settings this expects:

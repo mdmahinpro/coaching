@@ -763,9 +763,15 @@ function SMSSettingsTab() {
         'test'
       );
       if (res.sent > 0) {
-        toast.success('Test SMS sent!');
+        toast.success('Test SMS sent! Check SMS Log for the gateway response.');
+      } else if (res.raw && (res.raw as { status?: string }).status === 'pending') {
+        toast.error(
+          'No SMS_API_KEY on the server yet — logged as pending. Set it in the hosting env (or Edge secrets), then test again.'
+        );
       } else {
-        toast.error('SMS failed or no server key configured.');
+        toast.error(
+          `SMS failed. Gateway response: ${JSON.stringify(res.raw).slice(0, 120) || 'see SMS Log'}`
+        );
       }
     } catch (err) {
       handleSupabaseError(err);
@@ -777,13 +783,14 @@ function SMSSettingsTab() {
   return (
     <div className="max-w-lg space-y-5">
       <div className="card p-5 space-y-3">
-        <h3 className="font-semibold text-white">MIMSMS Configuration</h3>
+        <h3 className="font-semibold text-white">ZenSMS Configuration</h3>
         <div className="card p-3 border border-sky-400/20">
           <p className="text-slate-300 text-xs leading-relaxed">
-            The SMS API key is now stored securely on the server and is never exposed to the
-            browser. Set the <span className="font-mono text-sky-400">SMS_API_KEY</span> and{' '}
+            The SMS API key is stored securely on the server and is never exposed to the browser.
+            Set the <span className="font-mono text-sky-400">SMS_API_KEY</span> and{' '}
             <span className="font-mono text-sky-400">SMS_SENDER_ID</span> environment variables in
-            your hosting platform (Netlify / Vercel) to enable delivery.
+            your hosting platform (Render env, or Supabase Edge Function secrets) to enable
+            delivery. Gateway: <span className="font-mono text-sky-400">api.zendsms.com</span>.
           </p>
         </div>
       </div>

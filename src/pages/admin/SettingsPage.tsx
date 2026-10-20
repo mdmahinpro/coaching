@@ -141,7 +141,7 @@ export default function SettingsPage() {
     try {
       await sendSMS(
         testPhone,
-        `Test SMS from ${form.centerName}. MIMSMS API is working!`,
+        `Test SMS from ${form.centerName}. ZenSMS API is working!`,
         'custom'
       );
     } catch (err) {
@@ -426,13 +426,13 @@ export default function SettingsPage() {
           {tab === 'sms' && (
             <div className="card p-5 space-y-4">
               <h3 className="font-semibold text-white text-sm flex items-center gap-2">
-                <Smartphone size={15} className="text-violet-400" /> MIMSMS Configuration
+                <Smartphone size={15} className="text-violet-400" /> ZenSMS Configuration
               </h3>
               <div className="card-glass p-3 text-xs text-slate-300 leading-relaxed">
                 The SMS API key is stored securely on the server and never exposed to the browser.
                 Configure the <code className="text-sky-400">SMS_API_KEY</code> and{' '}
                 <code className="text-sky-400">SMS_SENDER_ID</code> environment variables in your
-                hosting platform (Netlify / Vercel) to enable delivery.
+                hosting platform (Render env or Supabase Edge secrets) to enable delivery.
               </div>
               <div className="border-t border-white/5 pt-4">
                 <p className="text-xs text-slate-400 mb-2">
@@ -462,7 +462,7 @@ export default function SettingsPage() {
               </div>
               <div className="card-glass p-3 text-xs text-slate-400 font-hind">
                 <p>
-                  API: <code className="text-sky-400 text-xs">https://api.mimsms.com/smsapi</code>
+                  API: <code className="text-sky-400 text-xs">https://api.zendsms.com/api/simple/send</code>
                 </p>
                 <p className="mt-1">
                   Without a server API key, SMS will be logged as &apos;pending&apos; in the
