@@ -6,6 +6,10 @@ A full-stack web application for **Techely Learning Academy** with three surface
 - **Admin panel** — students, batches, teachers, fees, exams, notices, SMS, reports, settings, backups
 - **Student portal** — login, dashboard, fees, exams, results, notices, profile
 
+> **Start here:** the non-technical, day-to-day operating guide lives in
+> [`readme/STARTER-GUIDE.md`](readme/STARTER-GUIDE.md) — settings, payments
+> approval, exams, go-live checklist, demo-data cleanup.
+
 ## Tech stack
 
 | Layer | Technology |
