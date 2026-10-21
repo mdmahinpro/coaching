@@ -252,11 +252,17 @@ function SendSMSTab() {
       );
       setProgress(100);
       setResult(res);
-      toast.success(
-        channel === 'email'
-          ? `Email ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} recipient${phones.length > 1 ? 's' : ''}`
-          : `SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${phones.length} numbers`
-      );
+      if (res.status === 'sent') {
+        toast.success(
+          channel === 'email'
+            ? `Email sent to ${res.sent} recipient${res.sent > 1 ? 's' : ''}`
+            : `SMS sent to ${res.sent} number${res.sent > 1 ? 's' : ''}`
+        );
+      } else if (res.status === 'pending') {
+        toast.error(`Not sent — ${res.hint ?? 'no provider key on the server'}`);
+      } else {
+        toast.error(`Send failed — ${res.hint ?? 'unknown error'}`);
+      }
     } catch (err) {
       handleSupabaseError(err);
     } finally {
@@ -762,15 +768,13 @@ function SMSSettingsTab() {
         `Test SMS from ${settings.centerName} — ${new Date().toLocaleTimeString()}`,
         'test'
       );
-      if (res.sent > 0) {
+      if (res.status === 'sent') {
         toast.success('Test SMS sent! Check SMS Log for the gateway response.');
-      } else if (res.raw && (res.raw as { status?: string }).status === 'pending') {
-        toast.error(
-          'No SMS_API_KEY on the server yet — logged as pending. Set it in the hosting env (or Edge secrets), then test again.'
-        );
+      } else if (res.status === 'pending') {
+        toast.error(`Not sent: ${res.hint ?? 'SMS_API_KEY is missing on the server'}`);
       } else {
         toast.error(
-          `SMS failed. Gateway response: ${JSON.stringify(res.raw).slice(0, 120) || 'see SMS Log'}`
+          `Send failed: ${res.hint ?? JSON.stringify(res.raw).slice(0, 140) ?? 'see SMS Log'}`
         );
       }
     } catch (err) {

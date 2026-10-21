@@ -39,8 +39,11 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
   if (!token) {
     return false;
   }
-  const url = process.env.SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY;
+  // Accept BOTH naming conventions: Render docs (and Vite) use the VITE_
+  // prefixed names, while Supabase-style deployments use the bare ones. Only
+  // setting one convention used to make every send fail with 401.
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anon) {
     return false;
   }
@@ -118,9 +121,22 @@ export async function handleSendSms(
   const apiKey = process.env.SMS_API_KEY;
   const senderId = process.env.SMS_SENDER_ID || '';
 
-  // No key configured → treat as a no-op "pending" send (dev / demo).
+  // No key configured → treat as a no-op "pending" send (dev / demo), but say
+  // so loudly: a silent no-op is indistinguishable from "SMS never arrived".
   if (!apiKey) {
-    return { ok: true, status: 200, body: { status: 'pending', sent: 0, raw: null } };
+    console.warn(
+      '[send-sms] SMS_API_KEY is not set on this host — no SMS was sent (status: pending).'
+    );
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        status: 'pending',
+        sent: 0,
+        raw: null,
+        hint: 'SMS_API_KEY is not set in the server environment',
+      },
+    };
   }
 
   // ZenSMS simple API: one GET per recipient. Send sequentially so a long

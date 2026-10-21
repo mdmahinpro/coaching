@@ -1119,7 +1119,13 @@ function DueReportTab({ batches }: { batches: any[] }) {
     setSending(fee.id);
     const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
     const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
-    toast.success(`SMS ${res.sent > 0 ? 'sent' : 'queued'} to ${fee.student.name}`);
+    if (res.status === 'sent') {
+      toast.success(`SMS sent to ${fee.student.name}`);
+    } else if (res.status === 'pending') {
+      toast.error(`Not sent: ${res.hint ?? 'no provider key on the server'}`);
+    } else {
+      toast.error(`Send failed: ${res.hint ?? 'unknown error'}`);
+    }
     setSending(null);
   };
 

@@ -11,7 +11,9 @@
  *   Build command:  pnpm install && pnpm run build
  *   Start command:  node server/render-server.mjs
  *   Env vars:       VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
- *                   (SMS_API_KEY optional — without it SMS replies "pending")
+ *                   (bare SUPABASE_URL / SUPABASE_ANON_KEY also accepted)
+ *                   SMS_API_KEY + SMS_SENDER_ID (optional — without them SMS
+ *                   replies "pending" with a hint instead of silently no-oping)
  *
  * The .ts import relies on Node >= 22.6 native type-stripping (unflagged from
  * 23.6); sms-core.ts uses only erasable TS, per tsconfig.server.json.

@@ -4,6 +4,10 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 export interface SMSResult {
   sent: number;
   failed: number;
+  /** `pending` means the server had no provider key — NOTHING was sent. */
+  status: 'sent' | 'failed' | 'pending';
+  /** Human-readable reason for a non-sent result. */
+  hint?: string;
   raw?: unknown;
 }
 
@@ -85,7 +89,7 @@ export async function sendSMS(
   const channel: SendChannel = opts.channel === 'email' ? 'email' : 'sms';
   const recipients = Array.isArray(to) ? to : [to];
   if (!recipients.length) {
-    return { sent: 0, failed: 0 };
+    return { sent: 0, failed: 0, status: 'failed', hint: 'No recipients' };
   }
   const logType = channel === 'email' ? `EMAIL:${type}` : type;
 
@@ -93,6 +97,7 @@ export async function sendSMS(
   let failedCount = 0;
   let raw: unknown = null;
   let status: 'sent' | 'failed' | 'pending' = 'failed';
+  let hint: string | undefined;
 
   try {
     const {
@@ -107,22 +112,28 @@ export async function sendSMS(
 
     const res = await postMessage(payload, accessToken);
     raw = await res.json().catch(() => null);
-    const data = raw as { status?: string; sent?: number } | null;
+    const data = raw as { status?: string; sent?: number; hint?: string; error?: string } | null;
     if (res.ok && (data?.status === 'sent' || data?.status === 'partial')) {
       sentCount = data.sent ?? recipients.length;
       status = 'sent';
     } else if (res.ok && data?.status === 'pending') {
-      // No server key configured — treat as queued for demo/dev.
-      sentCount = recipients.length;
+      // No provider key on the server — nothing left this device.
+      sentCount = 0;
       status = 'pending';
+      hint = data?.hint ?? 'No provider key configured on the server';
     } else {
       failedCount = recipients.length;
       status = 'failed';
+      hint =
+        data?.hint ??
+        data?.error ??
+        (res.ok ? 'Unexpected response from the messaging server' : `HTTP ${res.status}`);
     }
   } catch (err) {
     console.error('[SMS API Error]', err);
     failedCount = recipients.length;
     status = 'failed';
+    hint = err instanceof Error ? err.message : 'Network error reaching the messaging server';
   }
 
   // Log to DB (admin is authenticated → RLS permits the insert).
@@ -140,7 +151,7 @@ export async function sendSMS(
     handleSupabaseError(err);
   }
 
-  return { sent: sentCount, failed: failedCount, raw };
+  return { sent: sentCount, failed: failedCount, status, hint, raw };
 }
 
 export function fillTemplate(template: string, vars: Record<string, string>): string {

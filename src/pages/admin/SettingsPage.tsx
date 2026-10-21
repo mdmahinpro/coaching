@@ -139,11 +139,20 @@ export default function SettingsPage() {
     }
     setSendingTest(true);
     try {
-      await sendSMS(
+      const res = await sendSMS(
         testPhone,
         `Test SMS from ${form.centerName}. ZenSMS API is working!`,
         'custom'
       );
+      if (res.status === 'sent') {
+        toast.success('Test SMS sent — check your phone.');
+      } else if (res.status === 'pending') {
+        toast.error(
+          `Not sent: ${res.hint ?? 'SMS_API_KEY is missing on the server'}. Set SMS_API_KEY + SMS_SENDER_ID in the hosting env, redeploy, then test again.`
+        );
+      } else {
+        toast.error(`Not sent: ${res.hint ?? 'unknown error'}`);
+      }
     } catch (err) {
       handleSupabaseError(err);
     } finally {
