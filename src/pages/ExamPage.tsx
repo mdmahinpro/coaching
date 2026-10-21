@@ -97,6 +97,9 @@ const parseAnswers = (raw: unknown): Record<string, string> => {
   }
 };
 
+/** Postgres uuid — anything else can never be an exam id. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const fmtTime = (s: number) => {
   const m = Math.floor(Math.abs(s) / 60)
     .toString()
@@ -205,6 +208,13 @@ export default function ExamPage() {
   // ── Load exam ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!examId) {
+      return;
+    }
+    // A hand-typed/dead link can carry a non-UUID slug; querying Postgres with
+    // it only earns a 400 (22P02) and console noise. Treat it as "not found".
+    if (!UUID_RE.test(examId)) {
+      setExam(null);
+      setStep('ended');
       return;
     }
     const loggedIn = !!getStudentToken();

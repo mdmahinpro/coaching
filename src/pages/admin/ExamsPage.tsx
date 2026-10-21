@@ -1302,9 +1302,34 @@ function CreateExamTab({ batches, onDone }: { batches: any[]; onDone: () => void
 }
 
 // ── Results Tab ───────────────────────────────────────────────────────────────
-function ResultsTab({ exams }: { exams: Exam[] }) {
+function ResultsTab() {
   const [examId, setExamId] = useState('');
+  const [exams, setExams] = useState<Exam[]>([]);
   const [subs, setSubs] = useState<any[]>([]);
+
+  // Same query key as AllExamsTab, so results/create tabs reuse the cached list
+  // instead of the page fetching it a second time in parallel.
+  useQuery({
+    queryKey: ['admin', 'exams'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exams')
+        .select('*, batch:batches(name)')
+        .order('created_at', { ascending: false });
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setExams(
+        (data ?? []).map((x: any) => ({
+          ...x,
+          title: sanitize(x.title ?? ''),
+          batch: { name: sanitize(x.batch?.name ?? '') },
+        })) as Exam[]
+      );
+      return true;
+    },
+  });
   const [questions, setQuestions] = useState<Question[]>([]);
   const [breakdown, setBreakdown] = useState<any | null>(null);
 
@@ -1607,30 +1632,22 @@ function ResultsTab({ exams }: { exams: Exam[] }) {
 export default function ExamsPage() {
   const [tab, setTab] = useState<Tab>('all');
   const [batches, setBatches] = useState<any[]>([]);
-  const [allExams, setAllExams] = useState<Exam[]>([]);
 
+  // Batches only: the exam list is fetched by the tab that renders it
+  // (`AllExamsTab` / `ResultsTab`), so the page no longer issues the same
+  // `exams?select=*,batch:batches(name)` request twice on every mount.
   useQuery({
-    queryKey: ['admin', 'exams', 'form-context', tab],
+    queryKey: ['admin', 'batches', 'active'],
     queryFn: async () => {
-      const [{ data: b, error: e1 }, { data: e, error: e2 }] = await Promise.all([
-        supabase.from('batches').select('id,name').eq('is_active', true),
-        supabase
-          .from('exams')
-          .select('*, batch:batches(name)')
-          .order('created_at', { ascending: false }),
-      ]);
-      if (e1 || e2) {
-        handleSupabaseError(e1 ?? e2);
+      const { data: b, error } = await supabase
+        .from('batches')
+        .select('id,name')
+        .eq('is_active', true);
+      if (error) {
+        handleSupabaseError(error);
         return null;
       }
       setBatches((b ?? []).map((x: any) => ({ ...x, name: sanitize(x.name ?? '') })));
-      setAllExams(
-        (e ?? []).map((x: any) => ({
-          ...x,
-          title: sanitize(x.title ?? ''),
-          batch: { name: sanitize(x.batch?.name ?? '') },
-        })) as Exam[]
-      );
       return true;
     },
   });
@@ -1662,7 +1679,7 @@ export default function ExamsPage() {
 
       {tab === 'all' && <AllExamsTab onTabChange={setTab} />}
       {tab === 'create' && <CreateExamTab batches={batches} onDone={() => setTab('all')} />}
-      {tab === 'results' && <ResultsTab exams={allExams} />}
+      {tab === 'results' && <ResultsTab />}
     </AdminLayout>
   );
 }
