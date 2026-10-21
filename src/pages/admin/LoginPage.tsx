@@ -38,7 +38,20 @@ export default function AdminLoginPage() {
     if (error) {
       setShake(true);
       setTimeout(() => setShake(false), 600);
-      toast.error('ইমেইল বা পাসওয়ার্ড সঠিক নয়।');
+      // Show the real reason. A blanket "wrong password" hid the two cases that
+      // actually happen here: unverified email and unconfirmed accounts.
+      const msg = error.toLowerCase();
+      if (msg.includes('email not confirmed')) {
+        toast.error('ইমেইল এখনো ভেরিফাই হয়নি। ইনবক্সের কনফার্মেশন লিংকে ক্লিক করুন।', {
+          duration: 7000,
+        });
+      } else if (msg.includes('rate limit') || msg.includes('too many')) {
+        toast.error('অনেকবার চেষ্টা হয়েছে — কিছুক্ষণ পর আবার চেষ্টা করুন।');
+      } else if (msg.includes('invalid login credentials')) {
+        toast.error('ইমেইল বা পাসওয়ার্ড সঠিক নয়।');
+      } else {
+        toast.error(error);
+      }
       return;
     }
     // Auth succeeded — but the dashboard gate is server-side (is_admin() on the

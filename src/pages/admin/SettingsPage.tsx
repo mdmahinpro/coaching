@@ -1,5 +1,6 @@
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { supabase } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -71,7 +72,11 @@ export default function SettingsPage() {
   const [confPw, setConfPw] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('');
+  // The signed-in admin's own email, straight from the live session. The old
+  // code kept this in a state variable that was NEVER assigned, so the
+  // "current password" check re-authenticated with an empty email and always
+  // failed with "wrong password".
+  const adminEmail = useAuthStore((s) => s.user?.email ?? '');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminPw, setNewAdminPw] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
@@ -81,20 +86,6 @@ export default function SettingsPage() {
   useEffect(() => {
     setForm({ ...settings });
   }, [settings]);
-  useQuery({
-    queryKey: ['admin', 'current-user'],
-    queryFn: async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) {
-        handleSupabaseError(error);
-        return null;
-      }
-      if (data.user?.email) {
-        setAdminEmail(data.user.email);
-      }
-      return true;
-    },
-  });
 
   // Live color preview
   useEffect(() => {
@@ -189,12 +180,34 @@ export default function SettingsPage() {
     }
     setSavingPw(true);
     try {
+      // Resolve the signed-in email defensively: the store is populated at
+      // session init, but fall back to a live getUser() so a stale store can
+      // never send an empty email to the password check.
+      let emailForCheck = adminEmail;
+      if (!emailForCheck) {
+        const { data } = await supabase.auth.getUser();
+        emailForCheck = data.user?.email ?? '';
+      }
+      if (!emailForCheck) {
+        toast.error('সেশন পাওয়া যায়নি — আবার লগইন করুন।');
+        return;
+      }
+
       const { error: verifyErr } = await supabase.auth.signInWithPassword({
-        email: adminEmail,
+        email: emailForCheck,
         password: curPw,
       });
       if (verifyErr) {
-        toast.error('Current password is incorrect');
+        const msg = verifyErr.message.toLowerCase();
+        if (msg.includes('invalid login credentials')) {
+          toast.error('বর্তমান পাসওয়ার্ড সঠিক নয়।');
+        } else if (msg.includes('email not confirmed')) {
+          toast.error('অ্যাকাউন্টের ইমেইল এখনো ভেরিফাই হয়নি।');
+        } else if (msg.includes('rate limit') || msg.includes('too many')) {
+          toast.error('অনেকবার চেষ্টা হয়েছে — কিছুক্ষণ পর আবার চেষ্টা করুন।');
+        } else {
+          toast.error(verifyErr.message);
+        }
         return;
       }
       const { error } = await supabase.auth.updateUser({ password: newPw });
