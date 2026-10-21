@@ -358,7 +358,8 @@ export default function StudentsPage() {
               </button>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="border-b border-navy-700">
                   <th className="text-left px-4 py-3 text-slate-400 font-medium w-8">
@@ -464,7 +465,8 @@ export default function StudentsPage() {
                   </motion.tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </div>
 

@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Youtube, FileText, PlayCircle, ExternalLink } from 'lucide-react';
-import { useStudentStore } from '@/store/useStudentStore';
+import { Loader2, Youtube, FileText, PlayCircle, ExternalLink, X } from 'lucide-react';
 import { fetchResources } from '@/lib/portalApi';
-import { supabase } from '@/lib/supabase';
 
 export interface PortalResource {
   id: string;
@@ -21,7 +19,7 @@ export interface PortalResource {
 export default function PortalClassesPage() {
   const [items, setItems] = useState<PortalResource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeVideo, setActiveVideo] = useState<PortalResource | null>(null);
+  const [playing, setPlaying] = useState<PortalResource | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -37,11 +35,15 @@ export default function PortalClassesPage() {
   const videos = useMemo(() => items.filter((i) => i.kind === 'video'), [items]);
   const documents = useMemo(() => items.filter((i) => i.kind === 'document'), [items]);
 
+  // Lock body scroll while the fullscreen player is open
   useEffect(() => {
-    if (!activeVideo && videos.length) {
-      setActiveVideo(videos[0]);
+    if (playing) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
     }
-  }, [videos, activeVideo]);
+  }, [playing]);
 
   return (
     <motion.div
@@ -61,79 +63,49 @@ export default function PortalClassesPage() {
         </div>
       ) : (
         <>
-          {/* ── Live classes: player + playlist ── */}
+          {/* ── Live classes — YouTube-style thumbnail grid ── */}
           {videos.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                 <Youtube size={16} className="text-rose-400" /> লাইভ ক্লাস ({videos.length})
               </h2>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-                {/* Player */}
-                <div className="space-y-3">
-                  {activeVideo && (
-                    <>
-                      <div className="rounded-xl overflow-hidden bg-black aspect-video">
-                        <iframe
-                          key={activeVideo.id}
-                          src={`https://www.youtube.com/embed/${activeVideo.youtube_id}?rel=0`}
-                          title={activeVideo.title}
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-white">{activeVideo.title}</div>
-                        {activeVideo.caption && (
-                          <div className="text-xs text-slate-400 mt-0.5">{activeVideo.caption}</div>
-                        )}
-                        <a
-                          href={activeVideo.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 mt-1"
-                        >
-                          YouTube-এ দেখুন <ExternalLink size={11} />
-                        </a>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Playlist — class by class */}
-                <div className="card p-2 max-h-[420px] overflow-y-auto">
-                  {videos.map((v, idx) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setActiveVideo(v)}
-                      className={`w-full text-left flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                        activeVideo?.id === v.id
-                          ? 'bg-sky-500/15 text-sky-200'
-                          : 'hover:bg-navy-800/70 text-slate-300'
-                      }`}
-                    >
-                      <span className="w-6 h-6 rounded-full bg-navy-800 flex items-center justify-center text-xs shrink-0">
-                        {idx + 1}
-                      </span>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                {videos.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setPlaying(v)}
+                    className="text-left group"
+                  >
+                    <div className="relative rounded-xl overflow-hidden bg-navy-800 aspect-video">
                       {v.youtube_id ? (
                         <img
-                          src={`https://i.ytimg.com/vi/${v.youtube_id}/default.jpg`}
+                          src={`https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`}
                           alt=""
-                          className="w-16 h-9 rounded object-cover shrink-0 bg-navy-800"
+                          loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                         />
                       ) : (
-                        <PlayCircle size={30} className="shrink-0 text-slate-500" />
+                        <div className="w-full h-full flex items-center justify-center">
+                          <PlayCircle size={36} className="text-slate-500" />
+                        </div>
                       )}
-                      <span className="min-w-0">
-                        <span className="block text-sm truncate">{v.title}</span>
-                        {v.caption && (
-                          <span className="block text-xs text-slate-500 truncate">{v.caption}</span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                      <PlayCircle
+                        size={34}
+                        className="absolute inset-0 m-auto text-white/90 drop-shadow group-hover:scale-110 transition-transform"
+                      />
+                    </div>
+                    <div className="mt-1.5 min-w-0">
+                      <div className="text-[13px] font-medium text-white leading-snug line-clamp-2">
+                        {v.title}
+                      </div>
+                      {v.caption && (
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">{v.caption}</div>
+                      )}
+                    </div>
+                  </button>
+                ))}
               </div>
             </section>
           )}
@@ -169,6 +141,49 @@ export default function PortalClassesPage() {
             </section>
           )}
         </>
+      )}
+
+      {/* ── Fullscreen player overlay (takes the whole window) ── */}
+      {playing && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+          <div className="flex items-center justify-between px-3 py-2.5 shrink-0">
+            <div className="min-w-0 pr-3">
+              <div className="text-sm font-semibold text-white truncate">{playing.title}</div>
+              {playing.caption && (
+                <div className="text-xs text-slate-400 truncate">{playing.caption}</div>
+              )}
+            </div>
+            <button
+              onClick={() => setPlaying(null)}
+              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 active:bg-white/20"
+              aria-label="বন্ধ করুন"
+            >
+              <X size={18} className="text-white" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center min-h-0 px-1 pb-1">
+            <div className="w-full max-h-full aspect-video max-w-[calc((100dvh-56px)*16/9)]">
+              <iframe
+                key={playing.id}
+                src={`https://www.youtube.com/embed/${playing.youtube_id}?rel=0&autoplay=1`}
+                title={playing.title}
+                className="w-full h-full rounded-lg"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+          <div className="shrink-0 px-4 pb-2 text-center">
+            <a
+              href={playing.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300"
+            >
+              YouTube-এ দেখুন <ExternalLink size={11} />
+            </a>
+          </div>
+        </div>
       )}
     </motion.div>
   );

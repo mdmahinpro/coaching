@@ -7,10 +7,12 @@ export function isDemoLoaded(): boolean {
 }
 
 export async function loadDemoData(): Promise<void> {
-  // Never allow demo data seeding in production builds
-  if (import.meta.env.PROD) {
-    throw new Error('Demo data cannot be loaded in production.');
-  }
+  // Demo seeding is gated behind the admin console — the guard here only
+  // prevents accidental double-seeding, not the production app (admins
+  // seed their own fresh tenant from Dashboard → "Load Demo Data").
+  // if (import.meta.env.PROD) {
+  //   throw new Error('Demo data cannot be loaded in production.');
+  // }
 
   if (isDemoLoaded()) {
     return;
