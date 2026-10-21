@@ -137,7 +137,10 @@ grant execute on function public.exam_join(uuid, text, text) to anon, authentica
 --    remaining_seconds = (first_joined_at + duration) - now, floored at 0,
 --    capped at the full duration. Server-side truth; the client just
 --    displays it. timer_enabled = false → null (no timer).
-create or replace function public.exam_get_questions(p_exam_token text)
+-- The new column set changes the OUT row type, so the old signature must be
+-- dropped first (CREATE OR REPLACE cannot alter a table function's shape).
+drop function if exists public.exam_get_questions(text);
+create function public.exam_get_questions(p_exam_token text)
 returns table (
   id                uuid,
   question_text     text,
@@ -208,6 +211,9 @@ grant execute on function public.exam_get_questions(text) to anon, authenticated
 --    client or a resumed session can't write a submission after
 --    first_joined_at + duration (or the exam's end_time, whichever is the
 --    effective cap).
+-- exam_submit's return row changed (auto-submitted flag column added in this
+-- pack), so drop the old signature first.
+drop function if exists public.exam_submit(text, jsonb, integer, integer);
 create or replace function public.exam_submit(
   p_exam_token  text,
   p_answers     jsonb,

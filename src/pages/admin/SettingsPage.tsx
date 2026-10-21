@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { supabase } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Save,
@@ -29,6 +30,14 @@ import { handleSupabaseError } from '@/utils/errorHandler';
 import { SmsGatewayForm } from '@/components/admin/SmsGatewayForm';
 
 type Tab = 'institute' | 'payment' | 'sms' | 'fees' | 'stats' | 'social' | 'appearance' | 'admins';
+
+interface AdminRow {
+  email: string;
+  user_id: string;
+  created_at: string;
+  is_self: boolean;
+}
+
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'institute', label: 'Institute', icon: Building },
   { id: 'payment', label: 'Payment', icon: CreditCard },
@@ -42,9 +51,12 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 
 export default function SettingsPage() {
   const { settings, updateSettings, saveToDB } = useSettingsStore();
-  const [tab, setTab] = useState<Tab>('institute');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as Tab | null) ?? 'institute';
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [form, setForm] = useState({ ...settings });
   const [saving, setSaving] = useState(false);
+  const [admins, setAdmins] = useState<AdminRow[]>([]);
 
   // SMS test
   const [testPhone, setTestPhone] = useState('');
@@ -208,17 +220,29 @@ export default function SettingsPage() {
     }
     setAddingAdmin(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: newAdminEmail,
-        password: newAdminPw,
-        options: { data: { role: 'admin', name: 'Admin' } },
+      // Server-side RPC: creates the auth user + email identity + admin
+      // roster row in one transaction. The old supabase.auth.signUp() call
+      // replaced THIS admin's session and never added the roster row, so the
+      // new account had no admin rights.
+      const { error } = await supabase.rpc('admin_create_admin', {
+        p_email: newAdminEmail.trim().toLowerCase(),
+        p_password: newAdminPw,
+        p_name: 'Admin',
       });
       if (error) {
-        toast.error(error.message);
+        const map: Record<string, string> = {
+          'email-exists': 'এই ইমেইলে ইতিমধ্যে একটি অ্যাকাউন্ট আছে।',
+          'weak-password': 'পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে।',
+          'invalid-email': 'সঠিক ইমেইল দিন।',
+          'not-authorized': 'আপনার অ্যাডমিন অনুমতি নেই।',
+        };
+        const key = Object.keys(map).find((k) => error.message.includes(k));
+        toast.error(key ? map[key] : error.message);
       } else {
-        toast.success('Admin account created! They need to verify email.');
+        toast.success(`${newAdminEmail.trim().toLowerCase()} অ্যাডমিন হিসেবে যোগ হয়েছে`);
         setNewAdminEmail('');
         setNewAdminPw('');
+        void loadAdmins();
       }
     } catch (err) {
       handleSupabaseError(err);
@@ -226,6 +250,20 @@ export default function SettingsPage() {
       setAddingAdmin(false);
     }
   };
+
+  const loadAdmins = async () => {
+    const { data, error } = await supabase.rpc('admin_list_admins');
+    if (!error && Array.isArray(data)) {
+      setAdmins(data as AdminRow[]);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'admins') {
+      void loadAdmins();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div>
@@ -238,7 +276,7 @@ export default function SettingsPage() {
     <AdminLayout title="সেটিংস">
       <div className="max-w-2xl">
         {/* Tab bar */}
-        <div className="flex border-b border-navy-700/50 mb-6 gap-0 overflow-x-auto -mx-1 px-1">
+        <div className="flex border-b border-navy-700/50 mb-6 gap-0 overflow-x-auto -mx-1 px-1 scrollbar-thin">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -652,6 +690,28 @@ export default function SettingsPage() {
                     <span className="badge-green text-xs">Active</span>
                   </div>
                 </div>
+
+                {admins.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-xs text-slate-400 font-semibold">
+                      সব অ্যাডমিন ({admins.length})
+                    </p>
+                    {admins.map((a) => (
+                      <div
+                        key={a.user_id}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-navy-800/40"
+                      >
+                        <Users size={13} className="text-slate-500 shrink-0" />
+                        <span className="text-xs text-slate-300 truncate flex-1 min-w-0">
+                          {a.email}
+                        </span>
+                        {a.is_self && (
+                          <span className="badge-green text-[10px] shrink-0">আপনি</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <form
                   onSubmit={handleChangePassword}

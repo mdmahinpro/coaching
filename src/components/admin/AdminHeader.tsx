@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, Menu, LogOut, X, Hash, Wallet, Megaphone, ArrowRight } from 'lucide-react';
+import { Bell, Search, Menu, LogOut, X, Hash, Wallet, Megaphone, ArrowRight, ShieldCheck } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -410,6 +410,13 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                   <p className="text-white text-sm font-medium truncate">{name}</p>
                   <p className="text-slate-500 text-xs truncate">{user?.email}</p>
                 </div>
+                <Link
+                  to="/admin/settings?tab=admins"
+                  onClick={() => setShowDropdown(false)}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  <ShieldCheck size={14} /> Admins & Password
+                </Link>
                 <Link
                   to="/admin/settings"
                   onClick={() => setShowDropdown(false)}

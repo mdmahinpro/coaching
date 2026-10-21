@@ -42,7 +42,11 @@ create policy "admin_all_fee_payment_requests" on public.fee_payment_requests
   with check (public.is_admin());
 
 -- Students never touch the table directly — only via RPCs below.
-revoke all on public.fee_payment_requests from anon, authenticated;
+-- Note: direct DML stays revoked; SELECT stays granted so the admin
+-- Fees → Payment Requests tab can join the table through RLS (the RLS
+-- policy itself is what blocks non-admins, not the grant).
+revoke insert, update, delete on public.fee_payment_requests from anon, authenticated;
+grant select on public.fee_payment_requests to authenticated;
 
 -- Personal-notice column: payment notifications are visible only to the
 -- payer. Added before any reference; no-op if a previous run created it.
