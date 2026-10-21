@@ -4,7 +4,7 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
-import { Pin, Bell, Pencil, Trash2, Save, Send, X, Loader2 } from 'lucide-react';
+import { Pin, Bell, Pencil, Trash2, Save, Mail, X, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDate, cn, sanitize } from '@/lib/utils';
 import { useSettingsStore } from '@/store/useSettingsStore';
@@ -46,7 +46,9 @@ export default function NoticesPage() {
   const [editing, setEditing] = useState<Partial<Notice>>(EMPTY);
   const [isEdit, setIsEdit] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [sendSMSFlag, setSendSMSFlag] = useState(false);
+  // Notices go out by email (Brevo) — far cheaper than SMS and long-form
+  // content fits, so the notification is email-only.
+  const [emailStudentsFlag, setEmailStudentsFlag] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -97,7 +99,7 @@ export default function NoticesPage() {
   const resetForm = () => {
     setEditing(EMPTY);
     setIsEdit(false);
-    setSendSMSFlag(false);
+    setEmailStudentsFlag(false);
   };
 
   const openEdit = (n: Notice) => {
@@ -143,31 +145,38 @@ export default function NoticesPage() {
       return;
     }
 
-    // Send SMS
-    if (sendSMSFlag && payload.is_published) {
+    // Email the notice to students
+    if (emailStudentsFlag && payload.is_published) {
       try {
-        const preview =
-          (editing.content ?? '').slice(0, 60) + ((editing.content?.length ?? 0) > 60 ? '…' : '');
-        const msg = `${settings.centerName}: ${editing.title} — ${preview}`;
-        let phones: string[] = [];
+        const body = `${editing.title}\n\n${sanitize(editing.content ?? '')}\n\n- ${settings.centerName}`;
+        let query = supabase
+          .from('students')
+          .select('email')
+          .eq('status', 'active')
+          .not('email', 'is', null);
         if (payload.target === 'batch' && payload.batch_id) {
-          const { data: students } = await supabase
-            .from('students')
-            .select('phone')
-            .eq('batch_id', payload.batch_id)
-            .eq('status', 'active')
-            .not('phone', 'is', null);
-          phones = (students ?? []).map((s) => s.phone).filter(Boolean);
-        } else {
-          const { data: students } = await supabase
-            .from('students')
-            .select('phone')
-            .eq('status', 'active')
-            .not('phone', 'is', null);
-          phones = (students ?? []).map((s) => s.phone).filter(Boolean);
+          query = query.eq('batch_id', payload.batch_id);
         }
-        if (phones.length) {
-          await sendSMS(phones, msg, 'NOTICE');
+        const { data: students } = await query;
+        const emails = [
+          ...new Set(
+            (students ?? [])
+              .map((s) => (s.email ?? '').trim())
+              .filter(Boolean)
+          ),
+        ];
+        if (!emails.length) {
+          toast.error('Notice published, but no student has an email address');
+        } else {
+          const res = await sendSMS(emails, body, 'NOTICE', {
+            channel: 'email',
+            subject: `${settings.centerName}: ${editing.title}`,
+          });
+          if (res.status === 'sent') {
+            toast.success(`Notice emailed to ${emails.length} student${emails.length > 1 ? 's' : ''}`);
+          } else {
+            toast.error(`Email not sent: ${res.hint ?? 'no provider key on the server'}`);
+          }
         }
       } catch (err) {
         handleSupabaseError(err);
@@ -297,12 +306,12 @@ export default function NoticesPage() {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={sendSMSFlag}
-                  onChange={(e) => setSendSMSFlag(e.target.checked)}
+                  checked={emailStudentsFlag}
+                  onChange={(e) => setEmailStudentsFlag(e.target.checked)}
                   className="rounded accent-violet-400 w-4 h-4"
                 />
                 <span className="text-slate-300 text-sm flex items-center gap-1">
-                  <Send size={12} className="text-violet-400" /> SMS students on publish
+                  <Mail size={12} className="text-violet-400" /> Email students on publish
                 </span>
               </label>
             </div>
