@@ -179,8 +179,27 @@ async function sendSms(body: MessageBody): Promise<Response> {
     }
 
     const sent = results.filter((r) => r.ok).length;
+    if (sent < phones.length) {
+      // Pass the gateway's own words through — a bare "failed" is unactionable.
+      const firstFail = results.find((r) => !r.ok)?.raw as
+        | { message?: string; error?: string; description?: string }
+        | null;
+      const reason =
+        firstFail?.message ||
+        firstFail?.error ||
+        firstFail?.description ||
+        (firstFail ? JSON.stringify(firstFail).slice(0, 200) : 'no response from gateway');
+      console.warn(`[send-sms] ZenSMS rejected: ${reason}`);
+      return json(200, {
+        status: sent > 0 ? 'partial' : 'failed',
+        sent,
+        raw: results,
+        hint: `ZenSMS: ${reason}`,
+        error: reason,
+      });
+    }
     return json(200, {
-      status: sent === phones.length ? 'sent' : sent > 0 ? 'partial' : 'failed',
+      status: 'sent',
       sent,
       raw: results,
     });
