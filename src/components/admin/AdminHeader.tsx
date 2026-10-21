@@ -333,7 +333,8 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="fixed right-3 top-14 w-[calc(100vw-24px)] max-w-80 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-50 shadow-2xl"
+                className="fixed right-3 top-14 w-[calc(100vw-24px)] max-w-80 rounded-xl overflow-hidden z-50 shadow-2xl border border-navy-700/80"
+                style={{ background: '#0f172a' }}
               >
                 <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                   <p className="text-white text-sm font-semibold">নোটিফিকেশন</p>
@@ -369,10 +370,10 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                           <p className="text-white text-xs font-medium leading-snug line-clamp-2">
                             {n.title}
                           </p>
-                          <p className="text-slate-500 text-[11px] mt-0.5">{n.subtitle}</p>
-                          <p className="text-slate-600 text-[10px] mt-0.5">{n.when}</p>
+                          <p className="text-slate-400 text-[11px] mt-0.5 truncate">{n.subtitle}</p>
+                          <p className="text-slate-500 text-[10px] mt-0.5">{n.when}</p>
                         </div>
-                        <ArrowRight size={12} className="text-slate-600 shrink-0 mt-1" />
+                        <ArrowRight size={12} className="text-slate-500 shrink-0 mt-1" />
                       </Link>
                     ))
                   )}
@@ -404,7 +405,8 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 w-52 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-50 shadow-2xl"
+                className="absolute right-0 top-full mt-2 w-52 rounded-xl overflow-hidden z-50 shadow-2xl border border-navy-700/80"
+                style={{ background: '#0f172a' }}
               >
                 <div className="px-4 py-3 border-b border-white/5">
                   <p className="text-white text-sm font-medium truncate">{name}</p>

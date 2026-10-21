@@ -46,8 +46,9 @@ function EnrollmentTab() {
   const [batchData, setBatchData] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
 
-  const { isLoading: loading } = useQuery({
+  const { data: ready } = useQuery({
     queryKey: ['admin', 'reports', 'enrollment'],
+    staleTime: 30_000,
     queryFn: async () => {
       const { data: students, error } = await supabase
         .from('students')
@@ -88,10 +89,22 @@ function EnrollmentTab() {
         Object.values(byBatch)
           .sort((a, b) => b.students - a.students)
           .slice(0, 8)
+          .map((b) => ({
+            // Long institute-y batch names blew past the axis and overlapped
+            // the bars on phones; the full name stays in the tooltip.
+            name: b.name.length > 14 ? `${b.name.slice(0, 13)}…` : b.name,
+            fullName: b.name,
+            students: b.students,
+          }))
       );
       return true;
     },
   });
+
+  // Skeleton shows until the query has actually resolved — the old
+  // `isLoading` flag is false when a cached query re-renders, which made the
+  // charts flash empty (all zeros) before the data arrived.
+  const loading = !ready;
 
   if (loading) {
     return (
@@ -105,11 +118,9 @@ function EnrollmentTab() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="card p-4 text-center col-span-1 sm:col-span-3">
-          <p className="text-slate-400 text-sm">Total Students</p>
-          <p className="font-inter font-black text-4xl text-sky-400">{total}</p>
-        </div>
+      <div className="card p-4 text-center">
+        <p className="text-slate-400 text-sm">Total Students</p>
+        <p className="font-inter font-black text-4xl text-sky-400">{total}</p>
       </div>
       <div className="card p-5">
         <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
@@ -177,15 +188,16 @@ function FeesTab() {
   const [batchFees, setBatchFees] = useState<any[]>([]);
   const [totals, setTotals] = useState({ collected: 0, pending: 0, overdue: 0 });
 
-  const { isLoading: loading } = useQuery({
+  const { data: ready } = useQuery({
     queryKey: ['admin', 'reports', 'fees'],
+    staleTime: 30_000,
     queryFn: async () => {
       const { data: fees, error } = await supabase
         .from('fees')
         .select('amount,status,month,note,batch_id,batch:batches(name)');
       if (error) {
         handleSupabaseError(error);
-        return null;
+        return true;
       }
       const list = fees ?? [];
 
@@ -268,6 +280,8 @@ function FeesTab() {
     a.click();
   };
 
+  const loading = !ready;
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -282,15 +296,23 @@ function FeesTab() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-3">
         {[
           { label: 'Collected', val: totals.collected, color: 'text-emerald-400' },
           { label: 'Pending', val: totals.pending, color: 'text-amber-400' },
           { label: 'Overdue', val: totals.overdue, color: 'text-red-400' },
         ].map((s) => (
-          <div key={s.label} className="card p-4 text-center">
-            <p className="text-slate-400 text-xs mb-1">{s.label}</p>
-            <p className={cn('font-inter font-black text-lg', s.color)}>{formatCurrency(s.val)}</p>
+          <div key={s.label} className="card p-3 sm:p-4 text-center min-w-0">
+            <p className="text-slate-400 text-[11px] sm:text-xs mb-1">{s.label}</p>
+            <p
+              title={formatCurrency(s.val)}
+              className={cn(
+                'font-inter font-black text-sm sm:text-lg truncate leading-tight',
+                s.color
+              )}
+            >
+              {formatCurrency(s.val)}
+            </p>
           </div>
         ))}
       </div>
@@ -311,7 +333,9 @@ function FeesTab() {
                   outerRadius={80}
                   dataKey="value"
                   paddingAngle={3}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ percent }) =>
+                    percent >= 0.08 ? `${Math.round(percent * 100)}%` : ''
+                  }
                   labelLine={false}
                 >
                   {donutData.map((_, i) => (
@@ -418,9 +442,10 @@ function ExamSummaryTab() {
     },
   });
 
-  const { isLoading: loading } = useQuery({
+  const { data: ready } = useQuery({
     queryKey: ['admin', 'exam-summary', examId],
     enabled: !!examId,
+    staleTime: 30_000,
     queryFn: async () => {
       const exam = exams.find((e) => e.id === examId);
       const { data: subs, error } = await supabase
@@ -430,7 +455,7 @@ function ExamSummaryTab() {
         .order('score', { ascending: false });
       if (error) {
         handleSupabaseError(error);
-        return null;
+        return true;
       }
       const list = subs ?? [];
       const total = exam?.total_marks ?? 100;
@@ -444,32 +469,36 @@ function ExamSummaryTab() {
         ].filter((d) => d.value > 0)
       );
 
-      const grades = {
-        'A (90%+)': 0,
-        'B (75-89%)': 0,
-        'C (60-74%)': 0,
-        'D (40-59%)': 0,
-        'F (<40%)': 0,
+      const grades: Record<string, { short: string; range: string; count: number }> = {
+        a: { short: 'A', range: '90%+', count: 0 },
+        b: { short: 'B', range: '75–89%', count: 0 },
+        c: { short: 'C', range: '60–74%', count: 0 },
+        d: { short: 'D', range: '40–59%', count: 0 },
+        f: { short: 'F', range: 'below 40%', count: 0 },
       };
       list.forEach((s) => {
-        const pct = (s.score / total) * 100;
+        const pct = total > 0 ? (s.score / total) * 100 : 0;
         if (pct >= 90) {
-          grades['A (90%+)']++;
+          grades.a.count++;
         } else if (pct >= 75) {
-          grades['B (75-89%)']++;
+          grades.b.count++;
         } else if (pct >= 60) {
-          grades['C (60-74%)']++;
+          grades.c.count++;
         } else if (pct >= 40) {
-          grades['D (40-59%)']++;
+          grades.d.count++;
         } else {
-          grades['F (<40%)']++;
+          grades.f.count++;
         }
       });
-      setGradeData(Object.entries(grades).map(([grade, count]) => ({ grade, count })));
+      setGradeData(
+        Object.values(grades).map((g) => ({ grade: g.short, range: g.range, count: g.count }))
+      );
       setTop10(list.slice(0, 10));
       return true;
     },
   });
+
+  const loading = !!examId && !ready;
 
   return (
     <div className="space-y-5">
@@ -515,7 +544,9 @@ function ExamSummaryTab() {
                       outerRadius={75}
                       dataKey="value"
                       paddingAngle={4}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ percent }) =>
+                        percent >= 0.1 ? `${Math.round(percent * 100)}%` : ''
+                      }
                       labelLine={false}
                     >
                       <Cell fill="#34d399" />
@@ -533,9 +564,15 @@ function ExamSummaryTab() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={gradeData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="grade" stroke="#475569" tick={{ fontSize: 10 }} />
+                    <XAxis dataKey="grade" stroke="#475569" tick={{ fontSize: 11 }} />
                     <YAxis stroke="#475569" tick={{ fontSize: 11 }} allowDecimals={false} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                    <Tooltip
+                      contentStyle={CHART_TOOLTIP_STYLE}
+                      formatter={(v, _n, p: any) => [
+                        `${v} students`,
+                        `Grade ${p?.payload?.grade} · ${p?.payload?.range}`,
+                      ]}
+                    />
                     <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                       {gradeData.map((_, i) => (
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -569,9 +606,9 @@ function ExamSummaryTab() {
                         <span className="text-slate-500">#{i + 1}</span>
                       )}
                     </span>
-                    <div className="flex-1">
-                      <p className="text-white text-sm font-medium">{s.student?.name ?? '—'}</p>
-                      <p className="font-mono text-sky-400 text-xs">{s.student?.student_id}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{s.student?.name ?? '—'}</p>
+                      <p className="font-mono text-sky-400 text-xs truncate">{s.student?.student_id}</p>
                     </div>
                     <span className="font-inter font-bold text-white">{s.score}</span>
                     <span className="text-slate-500 text-xs">
@@ -592,8 +629,9 @@ function ExamSummaryTab() {
 function TopStudentsTab() {
   const [students, setStudents] = useState<any[]>([]);
 
-  const { isLoading: loading } = useQuery({
+  const { data: ready } = useQuery({
     queryKey: ['admin', 'top-students'],
+    staleTime: 30_000,
     queryFn: async () => {
       const { data: subs, error } = await supabase
         .from('mcq_submissions')
@@ -602,7 +640,7 @@ function TopStudentsTab() {
         );
       if (error) {
         handleSupabaseError(error);
-        return null;
+        return true;
       }
 
       // Average score % per student
@@ -647,6 +685,8 @@ function TopStudentsTab() {
       return true;
     },
   });
+
+  const loading = !ready;
 
   const exportCSV = () => {
     const rows = [
@@ -751,7 +791,7 @@ export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>('enrollment');
   return (
     <AdminLayout title="রিপোর্ট ও বিশ্লেষণ">
-      <div className="flex border-b border-navy-700/50 mb-6 gap-1 overflow-x-auto">
+      <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex border-b border-navy-700/50 mb-6 gap-1 overflow-x-auto scrollbar-thin">
         {TABS.map((t) => (
           <button
             key={t.id}
