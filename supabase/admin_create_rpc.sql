@@ -73,7 +73,7 @@ begin
     id, user_id, provider_id, provider, identity_data,
     last_sign_in_at, created_at, updated_at
   ) values (
-    gen_random_uuid()::text, v_uid, v_uid::text, 'email',
+    gen_random_uuid(), v_uid, v_uid::text, 'email',
     jsonb_build_object('sub', v_uid::text, 'email', v_email, 'email_verified', true),
     now(), now(), now()
   )
@@ -140,7 +140,7 @@ begin
   insert into auth.identities
          (id, user_id, provider_id, provider, identity_data,
           last_sign_in_at, created_at, updated_at)
-  select gen_random_uuid()::text, v_uid, v_uid::text, 'email',
+  select gen_random_uuid(), v_uid, v_uid::text, 'email',
          jsonb_build_object('sub', v_uid::text, 'email', lower(v_email),
                             'email_verified', true),
          now(), now(), now()
