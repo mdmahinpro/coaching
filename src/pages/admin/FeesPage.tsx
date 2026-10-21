@@ -27,6 +27,7 @@ import {
   Banknote,
   CircleDot,
   Smartphone,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -1068,6 +1069,9 @@ function DueReportTab({ batches }: { batches: any[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<string | null>(null);
   const [bulkSending, setBulkSending] = useState(false);
+  // Reminders go out over SMS (paid per message) or Brevo email (much cheaper),
+  // so the admin picks the channel right where the dues are listed.
+  const [channel, setChannel] = useState<'sms' | 'email'>('sms');
 
   const { isLoading: loading, refetch: load } = useQuery({
     queryKey: ['admin', 'fees', 'due-list', filter, batchFilter],
@@ -1077,7 +1081,7 @@ function DueReportTab({ batches }: { batches: any[] }) {
       const lastMonthLoad = `${MONTHS[nowLoad.getMonth() === 0 ? 11 : nowLoad.getMonth() - 1]} ${nowLoad.getMonth() === 0 ? nowLoad.getFullYear() - 1 : nowLoad.getFullYear()}`;
       let q = supabase
         .from('fees')
-        .select('*, student:students(id, name, student_id, phone, photo_url), batch:batches(name)')
+        .select('*, student:students(id, name, student_id, phone, email, photo_url), batch:batches(name)')
         .neq('status', 'paid')
         .order('due_date', { ascending: true });
 
@@ -1111,16 +1115,23 @@ function DueReportTab({ batches }: { batches: any[] }) {
     },
   });
 
+  const reminderBody = (fee: any) =>
+    `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
+
   const sendReminder = async (fee: any) => {
-    if (!fee.student?.phone) {
-      toast.error('No phone number');
+    const contact = channel === 'email' ? fee.student?.email : fee.student?.phone;
+    if (!contact) {
+      toast.error(channel === 'email' ? 'No email address' : 'No phone number');
       return;
     }
     setSending(fee.id);
-    const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-    const res = await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
+    const res = await sendSMS(String(contact), reminderBody(fee), 'FEE_REMINDER', {
+      channel,
+      subject: channel === 'email' ? `Fee Reminder — ${fee.month}` : undefined,
+    });
+    const label = channel === 'email' ? 'Email' : 'SMS';
     if (res.status === 'sent') {
-      toast.success(`SMS sent to ${fee.student.name}`);
+      toast.success(`${label} sent to ${fee.student.name}`);
     } else if (res.status === 'pending') {
       toast.error(`Not sent: ${res.hint ?? 'no provider key on the server'}`);
     } else {
@@ -1130,16 +1141,34 @@ function DueReportTab({ batches }: { batches: any[] }) {
   };
 
   const sendBulkSMS = async () => {
-    const targets = dues.filter((f) => selected.has(f.id) && f.student?.phone);
+    const field = channel === 'email' ? 'email' : 'phone';
+    const targets = dues.filter((f) => selected.has(f.id) && f.student?.[field]);
     if (!targets.length) {
+      toast.error(
+        channel === 'email'
+          ? 'None of the selected students has an email address'
+          : 'None of the selected students has a phone number'
+      );
       return;
     }
     setBulkSending(true);
+    let sent = 0;
+    let failed = 0;
+    let hint = '';
     for (const fee of targets) {
-      const msg = `প্রিয় ${fee.student.name}, ${fee.month} মাসের ৳${fee.amount} ফি বাকি আছে। দয়া করে পরিশোধ করুন। - ${settings.centerName}`;
-      await sendSMS(fee.student.phone, msg, 'FEE_REMINDER');
+      const res = await sendSMS(String(fee.student[field]), reminderBody(fee), 'FEE_REMINDER', {
+        channel,
+        subject: channel === 'email' ? `Fee Reminder — ${fee.month}` : undefined,
+      });
+      if (res.status === 'sent') sent++;
+      else {
+        failed++;
+        hint = hint || res.hint || '';
+      }
     }
-    toast.success(`SMS sent to ${targets.length} students`);
+    const label = channel === 'email' ? 'Email' : 'SMS';
+    if (failed === 0) toast.success(`${label} sent to ${sent} students`);
+    else toast.error(`${sent} sent, ${failed} failed${hint ? ` — ${hint}` : ''}`);
     setBulkSending(false);
     setSelected(new Set());
   };
@@ -1162,6 +1191,25 @@ function DueReportTab({ batches }: { batches: any[] }) {
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
+        {/* Reminder channel — email is far cheaper per message than SMS */}
+        <div className="flex items-center gap-1 rounded-lg border border-navy-700/60 p-0.5">
+          <button
+            onClick={() => setChannel('sms')}
+            className={`px-2.5 py-1 rounded-md text-xs flex items-center gap-1.5 transition-colors ${
+              channel === 'sms' ? 'bg-sky-500/15 text-sky-300' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Smartphone size={12} /> SMS
+          </button>
+          <button
+            onClick={() => setChannel('email')}
+            className={`px-2.5 py-1 rounded-md text-xs flex items-center gap-1.5 transition-colors ${
+              channel === 'email' ? 'bg-sky-500/15 text-sky-300' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Mail size={12} /> Email
+          </button>
+        </div>
         {DUE_FILTERS.map((f) => (
           <button
             key={f.id}
@@ -1190,7 +1238,7 @@ function DueReportTab({ batches }: { batches: any[] }) {
             className="btn-primary text-sm py-1.5 ml-auto"
           >
             {bulkSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            Send SMS to {selected.size} selected
+            Send {channel === 'email' ? 'Email' : 'SMS'} to {selected.size} selected
           </button>
         )}
       </div>
@@ -1227,8 +1275,10 @@ function DueReportTab({ batches }: { batches: any[] }) {
                   <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">
                     Days Overdue
                   </th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">Phone</th>
-                  <th className="px-4 py-3 text-slate-400 font-medium text-xs">SMS</th>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium text-xs">
+                    {channel === 'email' ? 'Email' : 'Phone'}
+                  </th>
+                  <th className="px-4 py-3 text-slate-400 font-medium text-xs">Remind</th>
                 </tr>
               </thead>
               <tbody>
@@ -1276,14 +1326,17 @@ function DueReportTab({ batches }: { batches: any[] }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-sm">
-                        {f.student?.phone || '—'}
+                        {(channel === 'email' ? f.student?.email : f.student?.phone) || '—'}
                       </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => sendReminder(f)}
-                          disabled={sending === f.id || !f.student?.phone}
+                          disabled={
+                            sending === f.id ||
+                            !(channel === 'email' ? f.student?.email : f.student?.phone)
+                          }
                           className="p-1.5 rounded-lg hover:bg-sky-500/15 text-slate-400 hover:text-sky-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          title="Send SMS Reminder"
+                          title={channel === 'email' ? 'Send email reminder' : 'Send SMS reminder'}
                         >
                           {sending === f.id ? (
                             <Loader2 size={13} className="animate-spin" />

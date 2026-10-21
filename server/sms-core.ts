@@ -20,7 +20,7 @@ import {
   resolveGatewayConfig,
   type GatewayConfig,
   type GatewayRow,
-} from './sms-gateway';
+} from './sms-gateway.ts';
 
 export interface MessageRequestBody {
   channel?: 'sms' | 'email';
