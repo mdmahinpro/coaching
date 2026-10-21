@@ -68,9 +68,23 @@ export async function joinExam(examId: string): Promise<ExamJoinResult> {
   return row as ExamJoinResult;
 }
 
-export async function getExamQuestions(examToken: string) {
+/** Rows plus the server-computed time the student has left.
+ *  remainingSeconds: number = seconds left · null = timer off ·
+ *  undefined = old RPC without the stamp (client falls back). */
+export interface ExamQuestionsResult {
+  questions: any[];
+  remainingSeconds: number | null | undefined;
+}
+
+export async function getExamQuestions(examToken: string): Promise<ExamQuestionsResult> {
   const { data, error } = await supabase.rpc('exam_get_questions', { p_exam_token: examToken });
-  return unwrap(data, error) ?? [];
+  const rows: any[] = (unwrap(data, error) ?? []) as any[];
+  // remaining_seconds is stamped identically on every row; null when timer off.
+  const hasStamp = rows.length > 0 && rows[0] && 'remaining_seconds' in rows[0];
+  return {
+    questions: rows,
+    remainingSeconds: hasStamp ? (rows[0].remaining_seconds as number | null) : undefined,
+  };
 }
 
 export interface ExamSubmitResult {

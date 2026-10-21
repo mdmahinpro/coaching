@@ -100,6 +100,17 @@ const parseAnswers = (raw: unknown): Record<string, string> => {
 /** Postgres uuid — anything else can never be an exam id. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Fallback when the live RPC doesn't stamp remaining_seconds yet. */
+const computeClientRemaining = (exam: ExamData | null): number | null => {
+  if (!exam || exam.timer_enabled === false) {
+    return null;
+  }
+  if (exam.end_time) {
+    return Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
+  }
+  return (exam.duration_minutes ?? 30) * 60;
+};
+
 const fmtTime = (s: number) => {
   const m = Math.floor(Math.abs(s) / 60)
     .toString()
@@ -126,11 +137,14 @@ export default function ExamPage() {
   // Exam step
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [remainingSecs, setRemainingSecs] = useState(0);
+  const [remainingSecs, setRemainingSecs] = useState<number | null>(0);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Server-stamped remaining seconds from the latest get_exam_questions call.
+  // null = timer disabled; undefined = old RPC without the stamp (client fallback).
+  const serverRemainingRef = useRef<number | null | undefined>(undefined);
   // Ref always pointing at the latest handleSubmit to avoid stale closures in timer/realtime
   const handleSubmitRef = useRef<(auto?: boolean) => Promise<void>>(async () => {});
   // Synchronous guard against double-submission (timer + realtime may fire before React re-renders)
@@ -140,6 +154,9 @@ export default function ExamPage() {
 
   // Result step
   const [submission, setSubmission] = useState<Submission | null>(null);
+  // Why the 'ended' screen is showing: exam over, not started yet, or the
+  // student's batch doesn't match this exam.
+  const [joinError, setJoinError] = useState<'ended' | 'not-eligible' | 'not-started'>('ended');
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   // Answer key + questions, fetched only AFTER submitting (for the review breakdown).
   const [reviewQuestions, setReviewQuestions] = useState<ReviewQuestion[]>([]);
@@ -152,7 +169,23 @@ export default function ExamPage() {
       if (!examId) {
         return;
       }
-      const join = await joinExam(examId);
+      let join: Awaited<ReturnType<typeof joinExam>>;
+      try {
+        join = await joinExam(examId);
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? '');
+        setExam(null);
+        setJoinError(
+          msg.includes('NOT_ELIGIBLE')
+            ? 'not-eligible'
+            : msg.includes('EXAM_NOT_STARTED')
+              ? 'not-started'
+              : 'ended'
+        );
+        setStep('ended');
+        return;
+      }
+      setJoinError('ended');
       examTokenRef.current = join.exam_token;
       setStudent({ id: join.student_id, name: sanitize(join.student_name), student_id: join.student_code });
 
@@ -172,7 +205,7 @@ export default function ExamPage() {
         return;
       }
 
-      const qs = await getExamQuestions(join.exam_token);
+      const { questions: qs, remainingSeconds } = await getExamQuestions(join.exam_token);
       const normalised = (qs ?? []).map((qq: any) => ({
         ...qq,
         question_text: sanitize(qq.question_text),
@@ -183,22 +216,34 @@ export default function ExamPage() {
       }));
       setQuestions(normalised as Question[]);
 
+      // Server-computed time. The clock starts at the FIRST join and is stored
+      // server-side, so logout/login resumes with the remaining time instead of
+      // minting a fresh full-duration timer.
+      serverRemainingRef.current = remainingSeconds;
+      const serverSecs =
+        remainingSeconds === undefined
+          ? (computeClientRemaining(exam) as number)
+          : remainingSeconds;
+
       // Resume in-progress answers from localStorage.
       const saved = localStorage.getItem(`exam-answers-${examId}-${join.student_id}`);
       if (saved) {
         try {
           setAnswers(JSON.parse(saved));
-          let secs = (exam?.duration_minutes ?? 30) * 60;
-          if (exam?.timer_enabled !== false && exam?.end_time) {
-            secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
+          setRemainingSecs(serverSecs);
+          if (serverSecs !== null && serverSecs <= 0) {
+            // Time is gone; straight to submit so the server can rule.
+            setStep('exam');
+            setTimeout(() => handleSubmitRef.current(true), 0);
+          } else {
+            setStep('exam');
           }
-          setRemainingSecs(secs);
-          setStep('exam');
           return;
         } catch {
           /* fall through to instructions */
         }
       }
+      setRemainingSecs(serverSecs);
       setStep('instructions');
     },
     // exam is read for duration/timer; examId is stable per route
@@ -304,14 +349,18 @@ export default function ExamPage() {
       }
     }
 
-    // Compute remaining seconds
-    let secs = (exam?.duration_minutes ?? 30) * 60;
-    if (exam?.timer_enabled !== false && exam?.end_time) {
-      secs = Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
-    }
+    // Remaining time comes from the server's first-join clock; if that stamp
+    // already ran out, go straight in with 0 and the auto-submit fires.
+    const secs =
+      serverRemainingRef.current === undefined
+        ? computeClientRemaining(exam)
+        : serverRemainingRef.current;
     setRemainingSecs(secs);
 
     setStep('exam');
+    if (secs !== null && secs <= 0) {
+      setTimeout(() => handleSubmitRef.current(true), 0);
+    }
   };
 
   // ── Timer ─────────────────────────────────────────────────────────────────
@@ -325,13 +374,13 @@ export default function ExamPage() {
 
     timerRef.current = setInterval(() => {
       setRemainingSecs((prev) => {
-        if (prev <= 1) {
+        if ((prev ?? 0) <= 1) {
           clearInterval(timerRef.current!);
           toast.error('সময় শেষ! স্বয়ংক্রিয়ভাবে জমা হয়েছে।', { duration: 5000 });
           handleSubmitRef.current(true);
           return 0;
         }
-        return prev - 1;
+        return (prev ?? 0) - 1;
       });
     }, 1000);
 
@@ -410,18 +459,19 @@ export default function ExamPage() {
       setSubmitOpen(false);
 
       const totalSecs = (exam?.duration_minutes ?? 30) * 60;
-      const timeTaken = exam?.timer_enabled === false ? 0 : totalSecs - remainingSecs;
+      const timeTaken =
+        exam?.timer_enabled === false ? 0 : totalSecs - (remainingSecs ?? 0);
 
       const restartTimer = () => {
-        if (exam?.timer_enabled !== false && remainingSecs > 0) {
+        if (exam?.timer_enabled !== false && (remainingSecs ?? 0) > 0) {
           timerRef.current = setInterval(() => {
             setRemainingSecs((prev) => {
-              if (prev <= 1) {
+              if ((prev ?? 0) <= 1) {
                 clearInterval(timerRef.current!);
                 handleSubmitRef.current(true);
                 return 0;
               }
-              return prev - 1;
+              return (prev ?? 0) - 1;
             });
           }, 1000);
         }
@@ -527,7 +577,11 @@ export default function ExamPage() {
 
   const unanswered = questions.filter((q) => !answers[q.id]).length;
   const timerColor =
-    remainingSecs < 60 ? 'text-red-400' : remainingSecs < 300 ? 'text-amber-400' : 'text-sky-400';
+    remainingSecs !== null && remainingSecs < 60
+      ? 'text-red-400'
+      : remainingSecs !== null && remainingSecs < 300
+        ? 'text-amber-400'
+        : 'text-sky-400';
 
   // ── Render: Loading ───────────────────────────────────────────────────────
   if (step === 'loading') {
@@ -557,14 +611,34 @@ export default function ExamPage() {
                 এই লিঙ্কটি সঠিক নয় অথবা পরীক্ষাটি মুছে ফেলা হয়েছে।
               </p>
             </>
+          ) : joinError === 'not-eligible' ? (
+            <>
+              <h2 className="font-inter font-bold text-xl text-white font-hind">
+                আপনি এই পরীক্ষায় অংশ নিতে পারবেন না
+              </h2>
+              <p className="text-slate-400 text-sm font-hind">
+                এই পরীক্ষাটি অন্য ব্যাচের জন্য। শুধুমাত্র নির্দিষ্ট ক্লাস/ব্যাচের শিক্ষার্থীরা অংশ নিতে পারবে।
+              </p>
+            </>
+          ) : joinError === 'not-started' ? (
+            <>
+              <h2 className="font-inter font-bold text-xl text-white font-hind">পরীক্ষা এখনো শুরু হয়নি</h2>
+              <div className="space-y-1">
+                <p className="text-white font-semibold font-hind">{exam?.title}</p>
+                {exam?.subject && <p className="text-slate-400 text-sm">{exam.subject}</p>}
+              </div>
+              <p className="text-slate-500 text-sm font-hind">
+                পরীক্ষাটি নির্ধারিত সময়ে শুরু হবে। ততক্ষণ অপেক্ষা করুন।
+              </p>
+            </>
           ) : (
             <>
               <h2 className="font-inter font-bold text-xl text-white">পরীক্ষা শেষ হয়ে গেছে</h2>
               <div className="space-y-1">
-                <p className="text-white font-semibold font-hind">{exam.title}</p>
-                {exam.subject && <p className="text-slate-400 text-sm">{exam.subject}</p>}
+                <p className="text-white font-semibold font-hind">{exam?.title}</p>
+                {exam?.subject && <p className="text-slate-400 text-sm">{exam.subject}</p>}
               </div>
-              <p className="text-slate-500 text-sm">
+              <p className="text-slate-500 text-sm font-hind">
                 এই পরীক্ষার সময় শেষ হয়েছে। আর যোগ দেওয়া সম্ভব নয়।
               </p>
             </>
@@ -701,10 +775,10 @@ export default function ExamPage() {
                   className={cn(
                     'font-inter font-black text-2xl tabular-nums transition-colors',
                     timerColor,
-                    remainingSecs < 60 && 'animate-pulse'
+                    remainingSecs !== null && remainingSecs < 60 && 'animate-pulse'
                   )}
                 >
-                  {fmtTime(remainingSecs)}
+                  {fmtTime(remainingSecs ?? 0)}
                 </span>
               )}
               <span className="text-slate-500 text-[10px]">
