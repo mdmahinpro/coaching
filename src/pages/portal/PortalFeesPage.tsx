@@ -18,6 +18,7 @@ import {
   FileText,
   Hourglass,
   XCircle,
+  Banknote,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { generateStudentReceipt } from '@/lib/pdf';
@@ -36,7 +37,7 @@ interface Fee {
 interface PaymentRequest {
   id: string;
   fee_id: string;
-  method: 'bkash' | 'nagad';
+  method: 'bkash' | 'nagad' | 'cash';
   digits: string;
   status: 'waiting' | 'approved' | 'rejected';
   created_at: string;
@@ -44,8 +45,12 @@ interface PaymentRequest {
   amount: number;
 }
 
+/** Bangla label for a payment method. */
+const methodLabel = (m: string) => (m === 'bkash' ? 'bKash' : m === 'nagad' ? 'Nagad' : 'ক্যাশ');
+
 /** Mobile payment sheet: shows the bKash/Nagad number, asks which number
- *  (last 3 digits) was used, submits a waiting-for-confirmation request. */
+ *  (last 3 digits) was used, submits a waiting-for-confirmation request.
+ *  Cash skips the digits step — it's confirmed by admin like any other. */
 function PaymentSheet({
   fee,
   onClose,
@@ -56,7 +61,7 @@ function PaymentSheet({
   onSubmitted: () => void;
 }) {
   const { settings } = useSettingsStore();
-  const [method, setMethod] = useState<'bkash' | 'nagad' | null>(null);
+  const [method, setMethod] = useState<'bkash' | 'nagad' | 'cash' | null>(null);
   const [digits, setDigits] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,29 +110,63 @@ function PaymentSheet({
 
         {/* Step 1: choose method */}
         {!method && (
-          <div className="grid grid-cols-2 gap-3">
-            {settings.bkashNumber && (
-              <button
-                onClick={() => setMethod('bkash')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-pink-500/10 border border-pink-500/30 text-pink-400 font-bold font-hind active:scale-95 transition-transform"
-              >
-                <Smartphone size={22} /> bKash
-              </button>
-            )}
-            {settings.nagadNumber && (
-              <button
-                onClick={() => setMethod('nagad')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold font-hind active:scale-95 transition-transform"
-              >
-                <Smartphone size={22} /> Nagad
-              </button>
-            )}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {settings.bkashNumber && (
+                <button
+                  onClick={() => setMethod('bkash')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-pink-500/10 border border-pink-500/30 text-pink-400 font-bold font-hind active:scale-95 transition-transform"
+                >
+                  <Smartphone size={22} /> bKash
+                </button>
+              )}
+              {settings.nagadNumber && (
+                <button
+                  onClick={() => setMethod('nagad')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold font-hind active:scale-95 transition-transform"
+                >
+                  <Smartphone size={22} /> Nagad
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setMethod('cash')}
+              className="w-full flex items-center justify-center gap-2 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold font-hind active:scale-95 transition-transform"
+            >
+              <Banknote size={20} /> ক্যাশে দিয়েছি (অফিসে)
+            </button>
           </div>
         )}
 
-        {/* Step 2: send money + last 3 digits */}
-        {method && (
+        {/* Step 2: send money + last 3 digits — cash skips both */}
+        {method === 'cash' ? (
           <div className="space-y-4">
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+              <p className="text-sm text-emerald-300 font-hind leading-relaxed">
+                অফিসে ক্যাশে পেমেন্ট করার জানানো হচ্ছে। অ্যাডমিন যাচাই করে নিশ্চিত করবেন —
+                নিশ্চিত হলে এই মাসের বকেয়া কেটে যাবে।
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setMethod(null)} className="btn-outline flex-1 py-2.5 font-hind">
+                পিছনে
+              </button>
+              <button
+                onClick={submit}
+                disabled={submitting}
+                className="btn-primary flex-[2] py-2.5 font-hind disabled:opacity-50"
+              >
+                {submitting ? (
+                  <Loader2 size={16} className="animate-spin mx-auto" />
+                ) : (
+                  'জমা দিন'
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          method && (
+        <div className="space-y-4">
             <div className="p-3 rounded-xl bg-white/5 border border-white/10">
               <p className="text-xs text-slate-400 font-hind mb-1">
                 ধাপ ১ — নিচের নাম্বারে Send Money করুন:
@@ -171,11 +210,13 @@ function PaymentSheet({
                 )}
               </button>
             </div>
-            <p className="text-xs text-slate-500 text-center font-hind">
-              জমা দিলে পেমেন্টটি "অপেক্ষমাণ" থাকবে — অ্যাডমিন যাচাই করে নিশ্চিত করবেন।
-            </p>
-          </div>
+        </div>
+          )
         )}
+
+        <p className="text-xs text-slate-500 text-center font-hind">
+          জমা দিলে পেমেন্টটি "অপেক্ষমাণ" থাকবে — অ্যাডমিন যাচাই করে নিশ্চিত করবেন।
+        </p>
 
         <button
           onClick={onClose}
@@ -384,8 +425,8 @@ export default function PortalFeesPage() {
                         <Hourglass size={13} className="shrink-0 animate-pulse" />
                       )}
                       {openReq.status === 'approved'
-                        ? `পেমেন্ট নিশ্চিত হয়েছে (${openReq.method === 'bkash' ? 'bKash' : 'Nagad'} •••${openReq.digits})`
-                        : `পেমেন্ট যাচাইয়ের অপেক্ষায় — ${openReq.method === 'bkash' ? 'bKash' : 'Nagad'} •••${openReq.digits}`}
+                        ? `পেমেন্ট নিশ্চিত হয়েছে (${methodLabel(openReq.method)}${openReq.digits ? ` •••${openReq.digits}` : ''})`
+                        : `পেমেন্ট যাচাইয়ের অপেক্ষায় — ${methodLabel(openReq.method)}${openReq.digits ? ` •••${openReq.digits}` : ''}`}
                     </div>
                   ) : (
                     <>

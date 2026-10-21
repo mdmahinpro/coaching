@@ -139,6 +139,8 @@ grant execute on function public.exam_join(uuid, text, text) to anon, authentica
 --    displays it. timer_enabled = false → null (no timer).
 -- The new column set changes the OUT row type, so the old signature must be
 -- dropped first (CREATE OR REPLACE cannot alter a table function's shape).
+-- (If an earlier partial run left the old no-deadline version in place,
+--  dropping it again is harmless — drop-if-exists is idempotent.)
 drop function if exists public.exam_get_questions(text);
 create function public.exam_get_questions(p_exam_token text)
 returns table (
@@ -212,7 +214,11 @@ grant execute on function public.exam_get_questions(text) to anon, authenticated
 --    first_joined_at + duration (or the exam's end_time, whichever is the
 --    effective cap).
 -- exam_submit's return row changed (auto-submitted flag column added in this
--- pack), so drop the old signature first.
+-- pack), so drop the old signature first. The 3-arg legacy overload (no
+-- p_red_cards) also has NO deadline check; if it survived an earlier partial
+-- run, PostgREST must never resolve to it again — drop both, then create one
+-- canonical function.
+drop function if exists public.exam_submit(text, jsonb, integer);
 drop function if exists public.exam_submit(text, jsonb, integer, integer);
 create or replace function public.exam_submit(
   p_exam_token  text,

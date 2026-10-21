@@ -28,6 +28,21 @@ create table if not exists public.fee_payment_requests (
   created_at    timestamptz not null default now()
 );
 
+-- ── Cash payments: widen the constraints (idempotent re-runs welcome) ──
+-- Cash students report no digits, so digits '' is valid for method 'cash'
+-- only; mobile methods keep the 3-digit rule.
+alter table public.fee_payment_requests drop constraint if exists fee_payment_requests_method_check;
+alter table public.fee_payment_requests drop constraint if exists fee_payment_requests_digits_check;
+alter table public.fee_payment_requests
+  add constraint fee_payment_requests_method_check
+  check (method in ('bkash','nagad','cash'));
+alter table public.fee_payment_requests
+  add constraint fee_payment_requests_digits_check
+  check (
+    (method in ('bkash','nagad') and digits ~ '^[0-9]{3}$')
+    or (method = 'cash' and digits = '')
+  );
+
 create index if not exists idx_fee_pay_req_fee
   on public.fee_payment_requests (fee_id, status);
 create index if not exists idx_fee_pay_req_student
@@ -84,11 +99,15 @@ begin
     raise exception 'Session expired. Please log in again.';
   end if;
 
-  if p_method not in ('bkash','nagad') then
+  if p_method not in ('bkash','nagad','cash') then
     raise exception 'Invalid payment method.';
   end if;
 
-  if p_digits !~ '^[0-9]{3}$' then
+  -- Cash pays at the office desk — no transaction number to report.
+  -- Mobile methods must carry the last 3 digits of the paying number.
+  if p_method = 'cash' then
+    p_digits := '';
+  elsif p_digits !~ '^[0-9]{3}$' then
     raise exception 'Enter the last 3 digits of the payment number.';
   end if;
 
@@ -128,8 +147,13 @@ begin
     v_title,
     'Thank you, ' || coalesce(v_name,'student') || '! Your ' || v_month ||
     ' fee payment of ৳' || to_char(v_amount, 'FM999999') ||
-    ' via ' || (case p_method when 'bkash' then 'bKash' else 'Nagad' end) ||
-    ' (number ending ' || p_digits || ') has been received and is now waiting for confirmation. You will be notified once the office approves it.',
+    (case
+       when p_method = 'cash'
+         then ' has been reported as a cash payment at the office.'
+       else ' via ' || (case p_method when 'bkash' then 'bKash' else 'Nagad' end) ||
+            ' (number ending ' || p_digits || ') has been received'
+     end) ||
+    ' and is now waiting for confirmation. You will be notified once the office approves it.',
     'fee',
     'all',
     null,
@@ -246,8 +270,12 @@ begin
          note = coalesce(
            jsonb_pretty(jsonb_build_object(
              'receipt_no', v_receipt,
-             'payment_method', case v_method when 'bkash' then 'bKash' else 'Nagad' end,
-             'transaction_id', v_digits,
+             'payment_method', case v_method
+                                 when 'bkash' then 'bKash'
+                                 when 'nagad' then 'Nagad'
+                                 else 'Cash'
+                               end,
+             'transaction_id', nullif(v_digits, ''),
              'discount', 0,
              'final_amount', v_final,
              'received_by', v_admin,

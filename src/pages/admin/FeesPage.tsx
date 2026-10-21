@@ -1521,10 +1521,19 @@ function PaymentRequestsTab() {
                       </span>
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {r.method === 'bkash' ? 'bKash' : 'Nagad'} • শেষ ৩ ডিজিট:{' '}
-                      <span className="font-inter font-bold text-white tracking-widest">
-                        {r.digits}
-                      </span>{' '}
+                      {r.method === 'bkash'
+                        ? 'bKash'
+                        : r.method === 'nagad'
+                          ? 'Nagad'
+                          : 'ক্যাশ (অফিস)'}
+                      {r.method !== 'cash' && (
+                        <>
+                          {' '}• শেষ ৩ ডিজিট:{' '}
+                          <span className="font-inter font-bold text-white tracking-widest">
+                            {r.digits}
+                          </span>
+                        </>
+                      )}{' '}
                       • {formatDate(r.created_at)}
                     </p>
                     {r.reviewed_by && (

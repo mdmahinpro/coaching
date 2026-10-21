@@ -100,13 +100,19 @@ const parseAnswers = (raw: unknown): Record<string, string> => {
 /** Postgres uuid — anything else can never be an exam id. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Fallback when the live RPC doesn't stamp remaining_seconds yet. */
+/** Fallback when the live RPC doesn't stamp remaining_seconds yet.
+ *  Uses the exam's scheduled end_time when present, so a stale page can never
+ *  resurrect a full-duration timer after the window closed. */
 const computeClientRemaining = (exam: ExamData | null): number | null => {
   if (!exam || exam.timer_enabled === false) {
     return null;
   }
   if (exam.end_time) {
     return Math.max(0, Math.floor((new Date(exam.end_time).getTime() - Date.now()) / 1000));
+  }
+  if (exam.start_time) {
+    const elapsed = Math.floor((Date.now() - new Date(exam.start_time).getTime()) / 1000);
+    return Math.max(0, (exam.duration_minutes ?? 30) * 60 - elapsed);
   }
   return (exam.duration_minutes ?? 30) * 60;
 };

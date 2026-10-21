@@ -86,12 +86,17 @@ export async function fetchPaymentRequests() {
 }
 
 /** Submit a payment confirmation request: method + last 3 digits of the number used. */
-export async function submitPaymentRequest(feeId: string, method: 'bkash' | 'nagad', digits: string) {
+export async function submitPaymentRequest(
+  feeId: string,
+  method: 'bkash' | 'nagad' | 'cash',
+  digits: string
+) {
   const { data, error } = await supabase.rpc('portal_submit_payment_request', {
     p_token: requireToken(),
     p_fee_id: feeId,
     p_method: method,
-    p_digits: digits,
+    // Cash carries no transaction digits; the RPC blanks them anyway.
+    p_digits: method === 'cash' ? '' : digits,
   });
   return unwrap(data, error);
 }
