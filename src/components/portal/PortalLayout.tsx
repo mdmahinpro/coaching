@@ -8,7 +8,14 @@ export function PortalLayout({ children }: Props) {
   return (
     <div className="min-h-screen bg-navy-900">
       <PortalNav />
-      <main className="pt-14 pb-20 md:pb-8 max-w-5xl mx-auto px-4 py-6">{children}</main>
+      <main
+        className="pt-14 pb-20 md:pb-8 max-w-5xl mx-auto px-4 py-6"
+        style={{
+          paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        {children}
+      </main>
     </div>
   );
 }

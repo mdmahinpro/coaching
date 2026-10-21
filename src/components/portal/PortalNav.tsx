@@ -97,7 +97,10 @@ export function PortalNav() {
       </nav>
 
       {/* Mobile bottom tab bar */}
-      <div className="fixed bottom-0 inset-x-0 z-50 md:hidden bg-navy-800/95 backdrop-blur-md border-t border-white/5">
+      <div
+        className="fixed bottom-0 inset-x-0 z-50 md:hidden bg-navy-800/95 backdrop-blur-md border-t border-white/5"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         <div className="flex">
           {NAV_LINKS.map((l) => {
             const active = location.pathname === l.to;

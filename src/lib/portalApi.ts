@@ -70,11 +70,30 @@ export async function fetchSubmissions() {
 }
 
 export async function fetchNotices(type?: string) {
-  const { data, error } = await supabase.rpc('portal_get_notices', {
+  const { data, error } = await supabase.rpc('portal_get_notices_v2', {
     p_token: requireToken(),
     p_type: type ?? null,
   });
   return unwrap(data, error) ?? [];
+}
+
+/** The student's mobile-payments history (bKash/Nagad confirmation requests). */
+export async function fetchPaymentRequests() {
+  const { data, error } = await supabase.rpc('portal_get_payment_requests', {
+    p_token: requireToken(),
+  });
+  return unwrap(data, error) ?? [];
+}
+
+/** Submit a payment confirmation request: method + last 3 digits of the number used. */
+export async function submitPaymentRequest(feeId: string, method: 'bkash' | 'nagad', digits: string) {
+  const { data, error } = await supabase.rpc('portal_submit_payment_request', {
+    p_token: requireToken(),
+    p_fee_id: feeId,
+    p_method: method,
+    p_digits: digits,
+  });
+  return unwrap(data, error);
 }
 
 export async function updatePhoto(photoUrl: string) {

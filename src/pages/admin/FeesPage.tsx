@@ -28,6 +28,7 @@ import {
   CircleDot,
   Smartphone,
   Mail,
+  XCircle,
   type LucideIcon,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -53,9 +54,10 @@ const MONTHS = [
 ];
 const now = new Date();
 
-type Tab = 'overview' | 'generate' | 'record' | 'due' | 'audit';
+type Tab = 'overview' | 'requests' | 'generate' | 'record' | 'due' | 'audit';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'requests', label: 'Payment Requests' },
   { id: 'generate', label: 'Generate Fees' },
   { id: 'record', label: 'Record Payment' },
   { id: 'due', label: 'Due Report' },
@@ -1368,6 +1370,203 @@ const ACTION_META: Record<string, { label: string; color: string; bg: string }> 
   fee_deleted: { label: 'Fee Deleted', color: 'text-red-400', bg: 'bg-red-400/10' },
 };
 
+// ── Payment Requests Tab (student mobile-payment confirmations) ──────────────
+function PaymentRequestsTab() {
+  const queryClient = useQueryClient();
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'waiting' | 'approved' | 'rejected' | 'all'>('waiting');
+
+  const { isLoading: loading } = useQuery({
+    queryKey: ['admin', 'fee-payment-requests', filter],
+    queryFn: async () => {
+      let q = supabase
+        .from('fee_payment_requests')
+        .select(
+          '*, fee:fees(month, amount, status), student:students(name, student_id, phone, batch_id)'
+        )
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (filter !== 'all') {
+        q = q.eq('status', filter);
+      }
+      const { data, error } = await q;
+      if (error) {
+        handleSupabaseError(error);
+        return null;
+      }
+      setRequests((data ?? []) as any[]);
+      return true;
+    },
+  });
+  const [requests, setRequests] = useState<any[]>([]);
+
+  const approve = async (id: string) => {
+    setReviewing(id);
+    try {
+      const { data, error } = await supabase.rpc('admin_approve_payment_request', {
+        p_request_id: id,
+      });
+      if (error) {
+        toast.error('Approve failed: ' + error.message);
+        return;
+      }
+      toast.success(
+        `Payment approved — receipt ${(data as any)?.receipt_no ?? ''}. Fee marked paid.`,
+        { duration: 5000 }
+      );
+      // Refresh every fee view: request list, fees, audit trail.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fee-payment-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fees'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fee-audit-logs'] });
+    } finally {
+      setReviewing(null);
+    }
+  };
+
+  const reject = async (id: string) => {
+    setReviewing(id);
+    try {
+      const { error } = await supabase
+        .from('fee_payment_requests')
+        .update({ status: 'rejected', reviewed_by: 'admin', reviewed_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('status', 'waiting');
+      if (error) {
+        toast.error('Reject failed: ' + error.message);
+        return;
+      }
+      toast.success('Request rejected');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'fee-payment-requests'] });
+    } finally {
+      setReviewing(null);
+    }
+  };
+
+  const waitingCount = (requests as any[]).filter((r) => r.status === 'waiting').length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {(['waiting', 'approved', 'rejected', 'all'] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={cn(
+              'px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all',
+              filter === f
+                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+            )}
+          >
+            {f}
+            {f === 'waiting' && waitingCount > 0 && ` (${waitingCount})`}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 size={24} className="animate-spin text-sky-400" />
+        </div>
+      ) : requests.length === 0 ? (
+        <div className="card p-12 text-center">
+          <p className="text-slate-500 font-hind">No payment requests</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {(requests as any[]).map((r) => {
+            const meta = r?.fee ? r.fee : {};
+            return (
+              <div
+                key={r.id}
+                className={cn(
+                  'card p-4 border-l-4',
+                  r.status === 'waiting'
+                    ? 'border-l-amber-400'
+                    : r.status === 'approved'
+                      ? 'border-l-emerald-400'
+                      : 'border-l-red-400'
+                )}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex-1 min-w-[220px]">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-white font-hind">
+                        {r.student?.name ?? 'Student'}
+                      </h3>
+                      {r.student?.student_id && (
+                        <span className="text-xs text-slate-500">{r.student.student_id}</span>
+                      )}
+                      <span
+                        className={cn(
+                          'text-xs',
+                          r.status === 'waiting'
+                            ? 'badge-yellow'
+                            : r.status === 'approved'
+                              ? 'badge-green'
+                              : 'badge-red'
+                        )}
+                      >
+                        {r.status === 'waiting'
+                          ? 'অপেক্ষমাণ'
+                          : r.status === 'approved'
+                            ? 'নিশ্চিত'
+                            : 'বাতিল'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-300 font-hind">
+                      {meta.month ?? '—'} —{' '}
+                      <span className="font-bold text-white">
+                        {formatCurrency(meta.amount ?? 0)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {r.method === 'bkash' ? 'bKash' : 'Nagad'} • শেষ ৩ ডিজিট:{' '}
+                      <span className="font-inter font-bold text-white tracking-widest">
+                        {r.digits}
+                      </span>{' '}
+                      • {formatDate(r.created_at)}
+                    </p>
+                    {r.reviewed_by && (
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Reviewed by {r.reviewed_by} · {formatDate(r.reviewed_at)}
+                      </p>
+                    )}
+                  </div>
+                  {r.status === 'waiting' && (
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => reject(r.id)}
+                        disabled={reviewing === r.id}
+                        className="btn-outline text-xs py-2 px-3 text-red-400 border-red-400/30"
+                      >
+                        <XCircle size={13} /> Reject
+                      </button>
+                      <button
+                        onClick={() => approve(r.id)}
+                        disabled={reviewing === r.id}
+                        className="btn-primary text-xs py-2 px-3"
+                      >
+                        {reviewing === r.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <>
+                            <CheckCircle2 size={13} /> Approve & mark paid
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AuditLogTab() {
   const [filter, setFilter] = useState<string>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -1670,6 +1869,7 @@ export default function FeesPage() {
       </div>
 
       {tab === 'overview' && <OverviewTab />}
+      {tab === 'requests' && <PaymentRequestsTab />}
       {tab === 'generate' && <GenerateTab batches={batches} />}
       {tab === 'record' && <RecordPaymentTab />}
       {tab === 'due' && <DueReportTab batches={batches} />}
