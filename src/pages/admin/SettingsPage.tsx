@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import { sendSMS } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
+import { SmsGatewayForm } from '@/components/admin/SmsGatewayForm';
 
 type Tab = 'institute' | 'payment' | 'sms' | 'fees' | 'stats' | 'social' | 'appearance' | 'admins';
 const TABS: { id: Tab; label: string; icon: any }[] = [
@@ -433,19 +434,14 @@ export default function SettingsPage() {
 
           {/* ── SMS ── */}
           {tab === 'sms' && (
-            <div className="card p-5 space-y-4">
-              <h3 className="font-semibold text-white text-sm flex items-center gap-2">
-                <Smartphone size={15} className="text-violet-400" /> ZenSMS Configuration
-              </h3>
-              <div className="card-glass p-3 text-xs text-slate-300 leading-relaxed">
-                The SMS API key is stored securely on the server and never exposed to the browser.
-                Configure the <code className="text-sky-400">SMS_API_KEY</code> and{' '}
-                <code className="text-sky-400">SMS_SENDER_ID</code> environment variables in your
-                hosting platform (Render env or Supabase Edge secrets) to enable delivery.
-              </div>
-              <div className="border-t border-white/5 pt-4">
-                <p className="text-xs text-slate-400 mb-2">
-                  Send a test SMS to verify configuration:
+            <div className="space-y-4">
+              <SmsGatewayForm />
+              <div className="card p-5 space-y-4">
+                <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+                  <Smartphone size={15} className="text-violet-400" /> Test delivery
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Sends one real SMS through the configured gateway to verify it end to end.
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -468,15 +464,10 @@ export default function SettingsPage() {
                     Test
                   </button>
                 </div>
-              </div>
-              <div className="card-glass p-3 text-xs text-slate-400 font-hind">
-                <p>
-                  API: <code className="text-sky-400 text-xs">https://api.zendsms.com/api/simple/send</code>
-                </p>
-                <p className="mt-1">
-                  Without a server API key, SMS will be logged as &apos;pending&apos; in the
-                  sms_logs table.
-                </p>
+                <div className="card-glass p-3 text-xs text-slate-400">
+                  Without a gateway key, SMS is logged as &apos;pending&apos; in{' '}
+                  <code className="text-sky-400">sms_logs</code> instead of being silently dropped.
+                </div>
               </div>
             </div>
           )}

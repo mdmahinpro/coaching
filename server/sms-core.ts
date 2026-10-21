@@ -3,13 +3,24 @@
  * Vercel (`api/send-sms.ts`) and Netlify (`netlify/functions/send-sms.ts`)
  * entrypoints.
  *
- * The ZenSMS API key lives ONLY here, sourced from the `SMS_API_KEY` server
- * env var. It is never shipped to the browser bundle.
+ * The SMS gateway credentials live ONLY here: read from the admin-only
+ * `sms_gateway_config` table when an admin has saved a gateway in
+ * Admin → Settings → SMS, otherwise from the `SMS_API_KEY` / `SMS_SENDER_ID` /
+ * `SMS_GATEWAY_URL` server env vars. They are never shipped to the browser.
  *
  * Every request must carry a valid Supabase admin JWT
- * (Authorization: Bearer <token>). The token is verified against Supabase,
- * and the caller must have user_metadata.role === 'admin'.
+ * (Authorization: Bearer *** The token is verified against Supabase via the
+ * `is_admin()` RPC.
  */
+
+import {
+  buildGatewayRequest,
+  gatewayReason,
+  isGatewaySuccess,
+  resolveGatewayConfig,
+  type GatewayConfig,
+  type GatewayRow,
+} from './sms-gateway';
 
 export interface MessageRequestBody {
   channel?: 'sms' | 'email';
@@ -25,8 +36,14 @@ export interface SmsCoreResult {
   body: unknown;
 }
 
-const ZENDSMS_ENDPOINT = 'https://api.zendsms.com/api/simple/send';
 const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
+
+/** The Supabase project credentials for this host (either env convention). */
+function supabaseEnv(): { url: string; anon: string } | null {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  return url && anon ? { url, anon } : null;
+}
 
 /** Basic sanity check for an email address (RFC-lite, enough for gating). */
 export function isEmail(raw: string): boolean {
@@ -42,9 +59,8 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
   // Accept BOTH naming conventions: Render docs (and Vite) use the VITE_
   // prefixed names, while Supabase-style deployments use the bare ones. Only
   // setting one convention used to make every send fail with 401.
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anon) {
+  const env = supabaseEnv();
+  if (!env) {
     return false;
   }
   try {
@@ -52,10 +68,10 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
     // roster the app's own route guard uses (`admin_users` table against
     // `auth.uid()`). Historically this checked `user_metadata.role`, but that
     // field is empty for admins created through the dashboard/fixture flow.
-    const res = await fetch(`${url}/rest/v1/rpc/is_admin`, {
+    const res = await fetch(`${env.url}/rest/v1/rpc/is_admin`, {
       method: 'POST',
       headers: {
-        apikey: anon,
+        apikey: env.anon,
         Authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
@@ -67,6 +83,37 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
     return (await res.json()) === true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Read the gateway the admin saved in Admin → Settings → SMS. The table is
+ * admin-only under RLS, so the query carries the caller's own JWT; a missing
+ * table (migration not run yet) or a read error simply falls back to env vars.
+ */
+async function loadGatewayConfig(authHeader: string | undefined): Promise<GatewayConfig> {
+  const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
+  const env = supabaseEnv();
+  if (!token || !env) {
+    return resolveGatewayConfig(null);
+  }
+  try {
+    const res = await fetch(
+      `${env.url}/rest/v1/sms_gateway_config?select=provider,base_url,sender_id,api_key,http_method&id=eq.1&limit=1`,
+      {
+        headers: {
+          apikey: env.anon,
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      return resolveGatewayConfig(null);
+    }
+    const rows = (await res.json()) as GatewayRow[];
+    return resolveGatewayConfig(rows?.[0] ?? null);
+  } catch {
+    return resolveGatewayConfig(null);
   }
 }
 
@@ -117,21 +164,21 @@ export async function handleSendSms(
     return sendEmails(body);
   }
 
-  // ── SMS channel (ZenSMS) — default ───────────────────────────────────────
+  // ── SMS channel — gateway chosen in Settings, env fallback ───────────────
   const phones = Array.isArray(body?.phones) ? body.phones.filter(Boolean) : [];
   const message = typeof body?.message === 'string' ? body.message : '';
   if (!phones.length || !message) {
     return { ok: false, status: 400, body: { error: 'phones and message are required' } };
   }
 
-  const apiKey = process.env.SMS_API_KEY;
-  const senderId = process.env.SMS_SENDER_ID || '';
+  const config = await loadGatewayConfig(authHeader);
 
-  // No key configured → treat as a no-op "pending" send (dev / demo), but say
+  // Nothing configured → treat as a no-op "pending" send (dev / demo), but say
   // so loudly: a silent no-op is indistinguishable from "SMS never arrived".
-  if (!apiKey) {
+  if (!config.apiKey) {
     console.warn(
-      '[send-sms] SMS_API_KEY is not set on this host — no SMS was sent (status: pending).'
+      '[send-sms] No SMS gateway configured — set one in Admin → Settings → SMS ' +
+        'or SMS_API_KEY/SMS_SENDER_ID in the host env. No SMS was sent (status: pending).'
     );
     return {
       ok: true,
@@ -140,41 +187,33 @@ export async function handleSendSms(
         status: 'pending',
         sent: 0,
         raw: null,
-        hint: 'SMS_API_KEY is not set in the server environment',
+        hint: 'No SMS gateway configured — add one in Admin → Settings → SMS',
       },
     };
   }
 
-  // ZenSMS simple API: one GET per recipient. Send sequentially so a long
-  // recipient list cannot trip rate limits; collect per-number results.
+  // One HTTP call per recipient, sequentially, so a long list cannot trip
+  // rate limits; collect per-number results.
   const results: Array<{ phone: string; ok: boolean; raw: unknown }> = [];
+  const providerLabel = config.provider === 'zendsms' ? 'ZenSMS' : 'SMS gateway';
   try {
     for (const rawPhone of phones) {
       const to = normalisePhone(rawPhone);
-      const url =
-        `${ZENDSMS_ENDPOINT}?api_key=${encodeURIComponent(apiKey)}` +
-        `&to=${encodeURIComponent(to)}` +
-        `&sender_id=${encodeURIComponent(senderId)}` +
-        `&message=${encodeURIComponent(message)}`;
-      const res = await fetch(url);
+      const req = buildGatewayRequest(config, to, message);
+      const res = await fetch(req.url, req.init);
       const raw = await res.json().catch(() => null);
-      const success =
-        res.ok && (raw as { success?: boolean } | null)?.success === true;
+      const success = isGatewaySuccess(res.ok, raw);
       results.push({ phone: to, ok: success, raw });
     }
 
     const sent = results.filter((r) => r.ok).length;
     if (sent < phones.length) {
       // Pass the gateway's own words through — a bare "failed" is unactionable.
-      const firstFail = results.find((r) => !r.ok)?.raw as
-        | { message?: string; error?: string; description?: string; code?: unknown }
-        | null;
-      const reason =
-        firstFail?.message ||
-        firstFail?.error ||
-        firstFail?.description ||
-        (firstFail ? JSON.stringify(firstFail).slice(0, 200) : 'no response from gateway');
-      console.warn(`[send-sms] ZenSMS rejected ${phones.length - sent}/${phones.length}: ${reason}`);
+      const firstFail = results.find((r) => !r.ok)?.raw;
+      const reason = gatewayReason(firstFail);
+      console.warn(
+        `[send-sms] ${providerLabel} rejected ${phones.length - sent}/${phones.length}: ${reason}`
+      );
       return {
         ok: true,
         status: 200,
@@ -182,7 +221,7 @@ export async function handleSendSms(
           status: sent > 0 ? 'partial' : 'failed',
           sent,
           raw: results.map((r) => ({ phone: r.phone, ok: r.ok, raw: r.raw })),
-          hint: `ZenSMS: ${reason}`,
+          hint: `${providerLabel}: ${reason}`,
           error: reason,
         },
       };
@@ -194,6 +233,7 @@ export async function handleSendSms(
       body: {
         status: 'sent',
         sent,
+        source: config.source,
         raw: results,
       },
     };

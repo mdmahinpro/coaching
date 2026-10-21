@@ -400,7 +400,7 @@ function SendSMSTab() {
                 : 'border-navy-700 text-slate-400 hover:border-navy-600'
             }`}
           >
-            <Smartphone className="h-4 w-4" /> SMS <span className="text-xs text-slate-500">(ZenSMS)</span>
+            <Smartphone className="h-4 w-4" /> SMS
           </button>
           <button
             onClick={() => setChannel('email')}
@@ -430,7 +430,7 @@ function SendSMSTab() {
         )}
         {channel === 'sms' && (
           <p className="text-xs text-slate-500">
-            Uses students&apos; phone field via the ZenSMS gateway.
+            Uses students&apos; phone field via the configured SMS gateway.
           </p>
         )}
       </div>
@@ -898,7 +898,7 @@ function SMSSettingsTab() {
       if (res.status === 'sent') {
         toast.success('Test SMS sent! Check SMS Log for the gateway response.');
       } else if (res.status === 'pending') {
-        toast.error(`Not sent: ${res.hint ?? 'SMS_API_KEY is missing on the server'}`);
+        toast.error(`Not sent: ${res.hint ?? 'no SMS gateway is configured on the server'}`);
       } else {
         toast.error(
           `Send failed: ${res.hint ?? JSON.stringify(res.raw).slice(0, 140) ?? 'see SMS Log'}`
@@ -914,14 +914,15 @@ function SMSSettingsTab() {
   return (
     <div className="max-w-lg space-y-5">
       <div className="card p-5 space-y-3">
-        <h3 className="font-semibold text-white">ZenSMS Configuration</h3>
+        <h3 className="font-semibold text-white">SMS Gateway</h3>
         <div className="card p-3 border border-sky-400/20">
           <p className="text-slate-300 text-xs leading-relaxed">
-            The SMS API key is stored securely on the server and is never exposed to the browser.
-            Set the <span className="font-mono text-sky-400">SMS_API_KEY</span> and{' '}
-            <span className="font-mono text-sky-400">SMS_SENDER_ID</span> environment variables in
-            your hosting platform (Render env, or Supabase Edge Function secrets) to enable
-            delivery. Gateway: <span className="font-mono text-sky-400">api.zendsms.com</span>.
+            The gateway (base URL, sender ID and API key) is configured in{' '}
+            <a href="/admin/settings" className="text-sky-400 underline">
+              Admin → Settings → SMS tab
+            </a>
+            . The key lives server-side, is never exposed to the browser, and SMS_API_KEY /
+            SMS_SENDER_ID env vars are used as a fallback while no key is saved.
           </p>
         </div>
       </div>

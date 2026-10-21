@@ -152,60 +152,139 @@ async function sendEmails(body: MessageBody): Promise<Response> {
   }
 }
 
-/** SMS channel — ZenSMS simple API, one request per recipient, sequential. */
-async function sendSms(body: MessageBody): Promise<Response> {
+interface GatewayConfig {
+  provider: 'zendsms' | 'custom';
+  baseUrl: string;
+  senderId: string;
+  apiKey: string;
+  method: 'GET' | 'POST';
+  source: 'database' | 'env' | 'none';
+}
+
+const DEFAULT_GATEWAY = 'https://api.zendsms.com/api/simple/send';
+
+function resolveGateway(row: Record<string, unknown> | null, envKey: string, envSender: string): GatewayConfig {
+  const dbKey = typeof row?.api_key === 'string' ? row.api_key.trim() : '';
+  const dbUrl = typeof row?.base_url === 'string' ? row.base_url.trim() : '';
+  if (dbKey) {
+    return {
+      provider: row?.provider === 'custom' ? 'custom' : 'zendsms',
+      baseUrl: dbUrl || DEFAULT_GATEWAY,
+      senderId: typeof row?.sender_id === 'string' ? row.sender_id.trim() : envSender,
+      apiKey: dbKey,
+      method: row?.http_method === 'POST' ? 'POST' : 'GET',
+      source: 'database',
+    };
+  }
+  const apiKey = envKey.trim();
+  return {
+    provider: 'zendsms',
+    baseUrl: DEFAULT_GATEWAY,
+    senderId: envSender,
+    apiKey,
+    method: 'GET',
+    source: apiKey ? 'env' : 'none',
+  };
+}
+
+/** Gateway credentials saved by the admin (admin-only table, caller JWT). */
+async function loadGatewayConfig(authHeader: string | undefined): Promise<GatewayConfig> {
+  const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
+  const url = Deno.env.get('SUPABASE_URL');
+  const anon = Deno.env.get('SUPABASE_ANON_KEY');
+  const envKey = Deno.env.get('SMS_API_KEY') ?? '';
+  const envSender = Deno.env.get('SMS_SENDER_ID') ?? '';
+  if (!token || !url || !anon) return resolveGateway(null, envKey, envSender);
+  try {
+    const res = await fetch(
+      `${url}/rest/v1/sms_gateway_config?select=provider,base_url,sender_id,api_key,http_method&id=eq.1&limit=1`,
+      { headers: { apikey: anon, 'Authorization': `Bearer ${token}` } }
+    );
+    if (!res.ok) return resolveGateway(null, envKey, envSender);
+    const rows = (await res.json()) as Record<string, unknown>[];
+    return resolveGateway(rows?.[0] ?? null, envKey, envSender);
+  } catch {
+    return resolveGateway(null, envKey, envSender);
+  }
+}
+
+function buildRequest(cfg: GatewayConfig, to: string, message: string): { url: string; init: RequestInit } {
+  if (cfg.method === 'POST') {
+    return {
+      url: cfg.baseUrl,
+      init: {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({ api_key: cfg.apiKey, sender_id: cfg.senderId, to, message }),
+      },
+    };
+  }
+  const u = new URL(cfg.baseUrl);
+  u.searchParams.set('api_key', cfg.apiKey);
+  u.searchParams.set('to', to);
+  u.searchParams.set('sender_id', cfg.senderId);
+  u.searchParams.set('message', message);
+  return { url: u.toString(), init: { method: 'GET' } };
+}
+
+function isSuccess(httpOk: boolean, raw: unknown): boolean {
+  if (!httpOk) return false;
+  const r = raw as { success?: unknown; ok?: unknown; status?: unknown; code?: unknown } | null;
+  if (!r) return true;
+  if (r.success === false || r.ok === false) return false;
+  if (typeof r.status === 'string' && ['failed', 'error', 'rejected'].includes(r.status.toLowerCase())) return false;
+  if (typeof r.code === 'number' && ![0, 200, 1000].includes(r.code)) return false;
+  return true;
+}
+
+function reasonOf(raw: unknown): string {
+  const r = raw as { message?: string; error?: string; description?: string } | null;
+  return r?.message || r?.error || r?.description ||
+    (r ? JSON.stringify(r).slice(0, 200) : 'no response from gateway');
+}
+
+/** SMS channel — configured gateway, one request per recipient, sequential. */
+async function sendSms(body: MessageBody, authHeader: string | undefined): Promise<Response> {
   const phones = Array.isArray(body.phones) ? body.phones.filter(Boolean) : [];
   const message = typeof body.message === 'string' ? body.message : '';
   if (!phones.length || !message) {
     return json(400, { error: 'phones and message are required' });
   }
 
-  const apiKey = Deno.env.get('SMS_API_KEY');
-  const senderId = Deno.env.get('SMS_SENDER_ID') || '';
-
-  if (!apiKey) {
-    return json(200, { status: 'pending', sent: 0, raw: null });
+  const config = await loadGatewayConfig(authHeader);
+  if (!config.apiKey) {
+    return json(200, {
+      status: 'pending',
+      sent: 0,
+      raw: null,
+      hint: 'No SMS gateway configured — add one in Admin → Settings → SMS',
+    });
   }
 
+  const providerLabel = config.provider === 'zendsms' ? 'ZenSMS' : 'SMS gateway';
   const results: Array<{ phone: string; ok: boolean; raw: unknown }> = [];
   try {
     for (const rawPhone of phones) {
       const to = normalisePhone(rawPhone);
-      const url = `${ZENDSMS_ENDPOINT}?api_key=${encodeURIComponent(apiKey)}` +
-        `&to=${encodeURIComponent(to)}` +
-        `&sender_id=${encodeURIComponent(senderId)}` +
-        `&message=${encodeURIComponent(message)}`;
-      const res = await fetch(url);
+      const req = buildRequest(config, to, message);
+      const res = await fetch(req.url, req.init);
       const raw = await res.json().catch(() => null);
-      const success = res.ok && (raw as { success?: boolean } | null)?.success === true;
-      results.push({ phone: to, ok: success, raw });
+      results.push({ phone: to, ok: isSuccess(res.ok, raw), raw });
     }
 
     const sent = results.filter((r) => r.ok).length;
     if (sent < phones.length) {
-      // Pass the gateway's own words through — a bare "failed" is unactionable.
-      const firstFail = results.find((r) => !r.ok)?.raw as
-        | { message?: string; error?: string; description?: string }
-        | null;
-      const reason =
-        firstFail?.message ||
-        firstFail?.error ||
-        firstFail?.description ||
-        (firstFail ? JSON.stringify(firstFail).slice(0, 200) : 'no response from gateway');
-      console.warn(`[send-sms] ZenSMS rejected: ${reason}`);
+      const reason = reasonOf(results.find((r) => !r.ok)?.raw);
+      console.warn(`[send-sms] ${providerLabel} rejected: ${reason}`);
       return json(200, {
         status: sent > 0 ? 'partial' : 'failed',
         sent,
         raw: results,
-        hint: `ZenSMS: ${reason}`,
+        hint: `${providerLabel}: ${reason}`,
         error: reason,
       });
     }
-    return json(200, {
-      status: 'sent',
-      sent,
-      raw: results,
-    });
+    return json(200, { status: 'sent', sent, source: config.source, raw: results });
   } catch (err) {
     return json(502, { status: 'failed', sent: 0, error: String(err) });
   }
@@ -220,7 +299,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(405, { error: 'Method not allowed' });
   }
 
-  if (!(await verifyAdmin(req.headers.get('authorization') ?? undefined))) {
+  const authHeader = req.headers.get('authorization') ?? undefined;
+  if (!(await verifyAdmin(authHeader))) {
     return json(401, { error: 'Unauthorized' });
   }
 
@@ -231,5 +311,5 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json(400, { error: 'Invalid JSON body' });
   }
 
-  return body?.channel === 'email' ? sendEmails(body) : sendSms(body);
+  return body?.channel === 'email' ? sendEmails(body) : sendSms(body, authHeader);
 });
