@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, Menu, LogOut, X, Hash } from 'lucide-react';
+import { Bell, Search, Menu, LogOut, X, Hash, Wallet, Megaphone, ArrowRight } from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +19,23 @@ interface SearchResult {
   photo_url?: string;
 }
 
+interface AdminNotification {
+  id: string;
+  kind: 'payment' | 'notice';
+  title: string;
+  subtitle: string;
+  when: string;
+  href: string;
+}
+
+function timeAgo(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return 'এখনই';
+  if (secs < 3600) return `${Math.floor(secs / 60)} মিনিট আগে`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)} ঘণ্টা আগে`;
+  return `${Math.floor(secs / 86400)} দিন আগে`;
+}
+
 export function AdminHeader({ title, onMenuToggle }: Props) {
   const { user, signOut } = useAuthStore();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -26,6 +43,9 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [notifs, setNotifs] = useState<AdminNotification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [seenCount, setSeenCount] = useState(0);
   const name = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'Admin';
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
@@ -35,6 +55,92 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
     await signOut();
     navigate('/admin/login');
   };
+
+  // ── Admin notifications: waiting payment requests + recent notices ──
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [payRes, noticeRes] = await Promise.all([
+        supabase
+          .from('fee_payment_requests')
+          .select('id, status, created_at, payment_method, amount, student:students(name)')
+          .eq('status', 'waiting')
+          .order('created_at', { ascending: false })
+          .limit(8),
+        supabase
+          .from('notices')
+          .select('id, title, created_at')
+          .order('created_at', { ascending: false })
+          .limit(3),
+      ]);
+      if (!alive) return;
+      const list: AdminNotification[] = [];
+      for (const r of payRes.data ?? []) {
+        const st = r.student as { name?: string } | null;
+        list.push({
+          id: `pay-${r.id}`,
+          kind: 'payment',
+          title: `${st?.name ?? 'ছাত্র'} — ৳${r.amount} পেমেন্ট যাচাই বাকি`,
+          subtitle: `${r.payment_method === 'nagad' ? 'Nagad' : 'bKash'} পেমেন্ট রিকোয়েস্ট — অ্যাপ্রুভ করুন`,
+          when: timeAgo(r.created_at),
+          href: '/admin/fees?tab=requests',
+        });
+      }
+      for (const n of noticeRes.data ?? []) {
+        list.push({
+          id: `notice-${n.id}`,
+          kind: 'notice',
+          title: n.title,
+          subtitle: 'নোটিশ পাবলিশ হয়েছে',
+          when: timeAgo(n.created_at),
+          href: '/admin/notices',
+        });
+      }
+      setNotifs(list);
+    })();
+    const iv = setInterval(async () => {
+      const { count } = await supabase
+        .from('fee_payment_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'waiting');
+      if (alive && typeof count === 'number') {
+        setNotifs((prev) => {
+          if (count > prev.filter((p) => p.kind === 'payment').length) {
+            // refresh full list when new ones appear
+            (async () => {
+              const payRes = await supabase
+                .from('fee_payment_requests')
+                .select('id, status, created_at, payment_method, amount, student:students(name)')
+                .eq('status', 'waiting')
+                .order('created_at', { ascending: false })
+                .limit(8);
+              if (alive && payRes.data) {
+                setNotifs((p2) => {
+                  const notices = p2.filter((x) => x.kind === 'notice');
+                  const fresh: AdminNotification[] = payRes.data.map((r: any) => ({
+                    id: `pay-${r.id}`,
+                    kind: 'payment' as const,
+                    title: `${r.student?.name ?? 'ছাত্র'} — ৳${r.amount} পেমেন্ট যাচাই বাকি`,
+                    subtitle: `${r.payment_method === 'nagad' ? 'Nagad' : 'bKash'} পেমেন্ট রিকোয়েস্ট — অ্যাপ্রুভ করুন`,
+                    when: timeAgo(r.created_at),
+                    href: '/admin/fees?tab=requests',
+                  }));
+                  return [...fresh, ...notices];
+                });
+              }
+            })();
+          }
+          return prev;
+        });
+      }
+    }, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, []);
+
+  const unreadNotifCount = Math.max(0, notifs.length - seenCount);
 
   const handleSearch = (q: string) => {
     setSearchQ(q);
@@ -201,10 +307,81 @@ export function AdminHeader({ title, onMenuToggle }: Props) {
       </div>
 
       {/* Bell */}
-      <button className="relative w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors shrink-0">
-        <Bell size={16} />
-        <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-sky-400 rounded-full" />
-      </button>
+      <div className="relative shrink-0">
+        <button
+          onClick={() => {
+            setNotifOpen((s) => !s);
+            setSeenCount(notifs.length);
+          }}
+          className="relative w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          aria-label="নোটিফিকেশন"
+        >
+          <Bell size={16} />
+          {unreadNotifCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+              {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+            </span>
+          )}
+        </button>
+
+        <AnimatePresence>
+          {notifOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="fixed right-3 top-14 w-[calc(100vw-24px)] max-w-80 card-glass border border-navy-700/60 rounded-xl overflow-hidden z-50 shadow-2xl"
+              >
+                <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                  <p className="text-white text-sm font-semibold">নোটিফিকেশন</p>
+                  {unreadNotifCount > 0 && (
+                    <span className="badge-red text-[10px]">{unreadNotifCount} নতুন</span>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifs.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-slate-500 text-xs">
+                      কোনো নোটিফিকেশন নেই
+                    </p>
+                  ) : (
+                    notifs.map((n) => (
+                      <Link
+                        key={n.id}
+                        to={n.href}
+                        onClick={() => setNotifOpen(false)}
+                        className="flex items-start gap-3 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/[0.03] last:border-0"
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            n.kind === 'payment' ? 'bg-amber-500/15' : 'bg-sky-500/15'
+                          }`}
+                        >
+                          {n.kind === 'payment' ? (
+                            <Wallet size={14} className="text-amber-400" />
+                          ) : (
+                            <Megaphone size={14} className="text-sky-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white text-xs font-medium leading-snug line-clamp-2">
+                            {n.title}
+                          </p>
+                          <p className="text-slate-500 text-[11px] mt-0.5">{n.subtitle}</p>
+                          <p className="text-slate-600 text-[10px] mt-0.5">{n.when}</p>
+                        </div>
+                        <ArrowRight size={12} className="text-slate-600 shrink-0 mt-1" />
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Avatar + dropdown */}
       <div className="relative">
