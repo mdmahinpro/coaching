@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -16,7 +16,8 @@ import {
   Mail,
 } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { sendSMS, fillTemplate, SMS_TEMPLATES } from '@/lib/sms';
+import { sendSMS, fillTemplate, hasPlaceholders, SMS_TEMPLATES } from '@/lib/sms';
+import type { SMSResult } from '@/lib/sms';
 import { handleSupabaseError } from '@/utils/errorHandler';
 
 type Tab = 'send' | 'templates' | 'log' | 'settings';
@@ -53,8 +54,37 @@ const SAMPLE_VARS: Record<string, string> = {
   বার্তা: 'পরীক্ষা আগামীকাল অনুষ্ঠিত হবে',
 };
 
+const TEMPLATE_SETTING_PREFIX = 'sms_template_';
+
+/**
+ * Template bodies as stored by the centre, not the hard-coded defaults.
+ * The Templates tab writes `site_settings.sms_template_<KEY>`; this reads them
+ * back and only falls back to the built-in text for keys never saved.
+ */
+async function loadTemplateBodies(): Promise<Record<string, string>> {
+  const merged: Record<string, string> = Object.fromEntries(
+    Object.values(SMS_TEMPLATES).map((t) => [t.key, t.body])
+  );
+  try {
+    const { data } = await supabase
+      .from('site_settings')
+      .select('key, value')
+      .like('key', `${TEMPLATE_SETTING_PREFIX}%`);
+    for (const row of (data ?? []) as Array<{ key: string; value: string | null }>) {
+      const key = row.key.slice(TEMPLATE_SETTING_PREFIX.length);
+      if (key && typeof row.value === 'string' && row.value.trim()) {
+        merged[key] = row.value;
+      }
+    }
+  } catch (err) {
+    handleSupabaseError(err);
+  }
+  return merged;
+}
+
 // ── Send SMS Tab ──────────────────────────────────────────────────────────────
 function SendSMSTab() {
+  const { settings } = useSettingsStore();
   const [batches, setBatches] = useState<any[]>([]);
   const [channel, setChannel] = useState<'sms' | 'email'>('sms');
   const [emailSubject, setEmailSubject] = useState('');
@@ -69,6 +99,16 @@ function SendSMSTab() {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [templateBodies, setTemplateBodies] = useState<Record<string, string>>(
+    () => Object.fromEntries(Object.values(SMS_TEMPLATES).map((t) => [t.key, t.body]))
+  );
+  useQuery({
+    queryKey: ['admin', 'sms', 'templates', 'send'],
+    queryFn: async () => {
+      setTemplateBodies(await loadTemplateBodies());
+      return true;
+    },
+  });
   useQuery({
     queryKey: ['admin', 'sms', 'batches'],
     queryFn: async () => {
@@ -169,22 +209,26 @@ function SendSMSTab() {
     setProgress(10);
     setResult(null);
 
-    let phones: string[] = [];
-    let recipients: string[] = [];
+    type Target = { value: string; vars: Record<string, string> };
     const emailField = channel === 'email' ? 'email' : 'phone';
-    type RecipientRow = { phone?: string | null; email?: string | null };
-    let studentRows: RecipientRow[] | null = null;
+    const centreVars: Record<string, string> = {
+      ইনস্টিটিউট: settings.centerName ?? 'Coaching Center',
+      তারিখ: new Date().toLocaleDateString('bn-BD'),
+    };
+    let targets: Target[] = [];
     try {
-      // Fetch phone numbers
+      // Resolve recipients (and, for students, their DB row so {নাম}/{আইডি}
+      // and the fee fields are real values rather than sample text).
       if (recipientType === 'custom') {
-        recipients = customNumbers
+        targets = customNumbers
           .split('\n')
           .map((n) => n.trim())
-          .filter(Boolean);
+          .filter(Boolean)
+          .map((value) => ({ value, vars: { ...centreVars } }));
       } else if (recipientType === 'due') {
         let feeQuery = supabase
           .from('fees')
-          .select('student_id')
+          .select('student_id, month, amount')
           .eq('status', dueFilter === 'overdue' ? 'overdue' : 'pending');
         if (dueFilter === 'this_month') {
           const now = new Date();
@@ -206,57 +250,128 @@ function SendSMSTab() {
           feeQuery = feeQuery.eq('month', monthStr);
         }
         const { data: feeRows } = await feeQuery;
-        const studentIds = [
-          ...new Set((feeRows ?? []).map((f: any) => f.student_id).filter(Boolean)),
-        ];
+        const feeByStudent = new Map<string, { month?: string; amount?: number }>();
+        for (const f of (feeRows ?? []) as Array<{
+          student_id: string;
+          month?: string;
+          amount?: number;
+        }>) {
+          if (f.student_id && !feeByStudent.has(f.student_id)) {
+            feeByStudent.set(f.student_id, { month: f.month, amount: f.amount });
+          }
+        }
+        const studentIds = [...feeByStudent.keys()];
         if (studentIds.length > 0) {
           const { data: studs } = await supabase
             .from('students')
-            .select(emailField)
+            .select(`id, name, student_id, ${emailField}`)
             .in('id', studentIds)
             .not(emailField, 'is', null);
-          studentRows = studs ?? [];
+          targets = (studs ?? [])
+            .map((s: any) => {
+              const fee = feeByStudent.get(s.id);
+              const vars: Record<string, string> = {
+                ...centreVars,
+                নাম: s.name ?? '',
+                আইডি: s.student_id ?? '',
+              };
+              // Only claim a month/amount we actually have; otherwise the
+              // placeholder stays visible and the toast names it.
+              if (fee?.month) vars['মাস'] = fee.month;
+              if (fee?.amount != null) vars['পরিমাণ'] = String(fee.amount);
+              return {
+                value: String(s[emailField] ?? '').trim(),
+                vars,
+              };
+            })
+            .filter((t) => t.value);
         }
       } else {
         let q = supabase
           .from('students')
-          .select(emailField)
+          .select(`id, name, student_id, ${emailField}`)
           .eq('status', 'active')
           .not(emailField, 'is', null);
         if (recipientType === 'batch' && batchId) {
           q = q.eq('batch_id', batchId);
         }
         const { data } = await q;
-        studentRows = data ?? [];
+        targets = ((data ?? []) as any[])
+          .map((s) => ({
+            value: String(s[emailField] ?? '').trim(),
+            vars: {
+              ...centreVars,
+              নাম: s.name ?? '',
+              আইডি: s.student_id ?? '',
+            },
+          }))
+          .filter((t) => t.value);
       }
-
-      phones =
-        recipientType === 'custom'
-          ? (recipients as unknown as string[])
-          : (studentRows ?? [])
-              .map((s) => ((channel === 'email' ? s.email : s.phone) ?? '').trim())
-              .filter(Boolean);
 
       setProgress(40);
 
-      if (!phones.length) {
+      if (!targets.length) {
         toast.error('No recipients found');
         return;
       }
 
-      const res = await sendSMS(
-        phones,
-        message,
-        'custom',
-        { channel, subject: emailSubject }
-      );
+      // A message with no {placeholders} is identical for everyone → one call.
+      // With placeholders each recipient needs their own DB-resolved text.
+      const usesVars = hasPlaceholders(message);
+      let res: SMSResult;
+      if (!usesVars) {
+        res = await sendSMS(
+          targets.map((t) => t.value),
+          message,
+          'custom',
+          { channel, subject: emailSubject }
+        );
+      } else {
+        let sent = 0;
+        let failed = 0;
+        let pending = 0;
+        let hint: string | undefined;
+        const unfilled = new Set<string>();
+        for (let i = 0; i < targets.length; i++) {
+          const t = targets[i];
+          const text = fillTemplate(message, t.vars);
+          for (const m of text.matchAll(/\{([^}]+)\}/g)) unfilled.add(m[1]);
+          const one = await sendSMS(t.value, text, 'custom', {
+            channel,
+            subject: emailSubject,
+          });
+          sent += one.sent;
+          failed += one.failed;
+          if (one.status === 'pending') pending++;
+          if (one.hint) hint = one.hint;
+          setProgress(40 + Math.round(((i + 1) / targets.length) * 60));
+        }
+        if (unfilled.size > 0) {
+          // Nothing in the DB could fill these — say so instead of silently
+          // shipping literal braces to the recipient.
+          toast.error(`No data for: ${[...unfilled].map((k) => `{${k}}`).join(', ')}`);
+        }
+        res = {
+          sent,
+          failed,
+          status: pending === targets.length ? 'pending' : sent > 0 ? 'sent' : 'failed',
+          hint:
+            hint ??
+            (failed > 0 ? `${failed} of ${targets.length} recipients rejected` : undefined),
+        };
+      }
       setProgress(100);
       setResult(res);
-      if (res.status === 'sent') {
+      if (res.status === 'sent' && res.failed === 0) {
         toast.success(
           channel === 'email'
             ? `Email sent to ${res.sent} recipient${res.sent > 1 ? 's' : ''}`
             : `SMS sent to ${res.sent} number${res.sent > 1 ? 's' : ''}`
+        );
+      } else if (res.status === 'sent') {
+        // Some numbers went through, some were rejected — never call that a clean success.
+        toast.error(
+          `${res.sent} sent, ${res.failed} failed — ${res.hint ?? 'gateway rejected the rest'}`
         );
       } else if (res.status === 'pending') {
         toast.error(`Not sent — ${res.hint ?? 'no provider key on the server'}`);
@@ -398,8 +513,8 @@ function SendSMSTab() {
             value={templateKey}
             onChange={(e) => {
               setTemplateKey(e.target.value);
-              if (e.target.value && SMS_TEMPLATES[e.target.value]) {
-                setMessage(SMS_TEMPLATES[e.target.value].body);
+              if (e.target.value && templateBodies[e.target.value]) {
+                setMessage(templateBodies[e.target.value]);
               }
             }}
             className="input-field"
@@ -564,6 +679,16 @@ function TemplatesTab() {
     Object.fromEntries(Object.values(SMS_TEMPLATES).map((t) => [t.key, t.body]))
   );
   const [saving, setSaving] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Show what is actually saved in the DB, not just the built-in defaults.
+  useQuery({
+    queryKey: ['admin', 'sms', 'templates', 'edit'],
+    queryFn: async () => {
+      setTemplates(await loadTemplateBodies());
+      return true;
+    },
+  });
 
   const save = async (key: string) => {
     setSaving(key);
@@ -575,6 +700,8 @@ function TemplatesTab() {
         toast.error('Failed to save');
       } else {
         toast.success('Template saved');
+        // Send tab must pick the new body up without a page reload.
+        void queryClient.invalidateQueries({ queryKey: ['admin', 'sms', 'templates', 'send'] });
       }
     } catch (err) {
       handleSupabaseError(err);

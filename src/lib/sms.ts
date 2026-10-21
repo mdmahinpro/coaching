@@ -137,15 +137,22 @@ export async function sendSMS(
   }
 
   // Log to DB (admin is authenticated → RLS permits the insert).
+  // Each row carries only its own number's gateway reply, so a per-number
+  // failure (e.g. 2101 Invalid recipient) is readable in the log.
   try {
+    const last10 = (s: string) => String(s ?? '').replace(/\D/g, '').slice(-10);
+    const entries: any[] = Array.isArray((raw as any)?.raw) ? (raw as any).raw : [];
     await supabase.from('sms_logs').insert(
-      recipients.map((p) => ({
-        phone: p,
-        message,
-        type: logType,
-        status,
-        response: raw,
-      }))
+      recipients.map((p) => {
+        const entry = entries.find((e) => last10(e?.phone) === last10(p));
+        return {
+          phone: p,
+          message,
+          type: logType,
+          status: entry ? (entry.ok ? 'sent' : 'failed') : status,
+          response: entry ?? raw,
+        };
+      })
     );
   } catch (err) {
     handleSupabaseError(err);
@@ -156,6 +163,11 @@ export async function sendSMS(
 
 export function fillTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{([^}]+)\}/g, (_, k) => vars[k] ?? vars[k.trim()] ?? `{${k}}`);
+}
+
+/** True when the body contains `{placeholder}` tokens that need per-recipient data. */
+export function hasPlaceholders(template: string): boolean {
+  return /\{[^}]+\}/.test(template);
 }
 
 export const SMS_TEMPLATES: Record<string, { label: string; key: string; body: string }> = {
