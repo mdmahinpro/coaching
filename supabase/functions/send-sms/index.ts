@@ -50,7 +50,10 @@ function isEmail(raw: string): boolean {
 function normalisePhone(raw: string): string {
   const digits = raw.replace(/\D+/g, '');
   if (digits.startsWith('8801')) return digits;
-  if (digits.startsWith('01')) return `880${digits}`;
+  // Drop the trunk '0' when adding the country code: 01768836443 →
+  // 8801768836443. Keeping it (88001768836443) is rejected with code 2101.
+  if (digits.startsWith('01')) return `880${digits.slice(1)}`;
+  if (digits.startsWith('1') && digits.length === 10) return `880${digits}`;
   return digits;
 }
 

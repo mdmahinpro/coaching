@@ -76,8 +76,14 @@ async function verifyAdmin(authHeader: string | undefined): Promise<boolean> {
  */
 export function normalisePhone(raw: string): string {
   const digits = raw.replace(/\D+/g, '');
+  // Already international (8801…) — keep as is.
   if (digits.startsWith('8801')) return digits;
-  if (digits.startsWith('01')) return `880${digits}`;
+  // Local BD format (01XXXXXXXXX) — the trunk '0' MUST be dropped when
+  // prefixing the country code: 01768836443 → 8801768836443, never
+  // 88001768836443 (ZenSMS rejects the latter with code 2101).
+  if (digits.startsWith('01')) return `880${digits.slice(1)}`;
+  // Bare subscriber number without trunk prefix (1XXXXXXXXX).
+  if (digits.startsWith('1') && digits.length === 10) return `880${digits}`;
   return digits;
 }
 
