@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Search, Menu, LogOut, X, Hash, Wallet, Megaphone, ArrowRight, ShieldCheck } from 'lucide-react';
+import {
+  Bell,
+  Search,
+  Menu,
+  LogOut,
+  X,
+  Hash,
+  Wallet,
+  Megaphone,
+  ArrowRight,
+  ShieldCheck,
+} from 'lucide-react';
 import { Avatar } from '@/components/shared/Avatar';
 import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';

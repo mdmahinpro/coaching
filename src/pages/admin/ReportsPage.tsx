@@ -333,9 +333,7 @@ function FeesTab() {
                   outerRadius={80}
                   dataKey="value"
                   paddingAngle={3}
-                  label={({ percent }) =>
-                    percent >= 0.08 ? `${Math.round(percent * 100)}%` : ''
-                  }
+                  label={({ percent }) => (percent >= 0.08 ? `${Math.round(percent * 100)}%` : '')}
                   labelLine={false}
                 >
                   {donutData.map((_, i) => (
@@ -607,8 +605,12 @@ function ExamSummaryTab() {
                       )}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{s.student?.name ?? '—'}</p>
-                      <p className="font-mono text-sky-400 text-xs truncate">{s.student?.student_id}</p>
+                      <p className="text-white text-sm font-medium truncate">
+                        {s.student?.name ?? '—'}
+                      </p>
+                      <p className="font-mono text-sky-400 text-xs truncate">
+                        {s.student?.student_id}
+                      </p>
                     </div>
                     <span className="font-inter font-bold text-white">{s.score}</span>
                     <span className="text-slate-500 text-xs">
@@ -738,12 +740,12 @@ function TopStudentsTab() {
                   <span className="w-8 text-center text-lg shrink-0">
                     {rank <= 3 ? (
                       rank === 1 ? (
-                      <Medal className="h-5 w-5 text-amber-400" />
-                    ) : rank === 2 ? (
-                      <Medal className="h-5 w-5 text-slate-300" />
-                    ) : (
-                      <Medal className="h-5 w-5 text-amber-700" />
-                    )
+                        <Medal className="h-5 w-5 text-amber-400" />
+                      ) : rank === 2 ? (
+                        <Medal className="h-5 w-5 text-slate-300" />
+                      ) : (
+                        <Medal className="h-5 w-5 text-amber-700" />
+                      )
                     ) : (
                       <span className="text-slate-500 text-sm font-mono">#{rank}</span>
                     )}

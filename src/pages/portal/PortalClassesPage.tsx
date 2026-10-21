@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Loader2, Youtube, FileText, PlayCircle, ExternalLink, X } from 'lucide-react';
+import { ArrowLeft, Loader2, Youtube, FileText, PlayCircle, ExternalLink, X } from 'lucide-react';
+import { PortalLayout } from '@/components/portal/PortalLayout';
 import { fetchResources } from '@/lib/portalApi';
 
 export interface PortalResource {
@@ -46,102 +48,114 @@ export default function PortalClassesPage() {
   }, [playing]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
-    >
-      <h1 className="text-xl font-bold text-white">ক্লাস ও ম্যাটেরিয়ালস</h1>
-
-      {loading ? (
-        <div className="py-16 flex justify-center">
-          <Loader2 className="animate-spin text-slate-400" size={28} />
+    <PortalLayout>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-6"
+      >
+        <div className="flex items-center gap-2">
+          <Link
+            to="/portal/dashboard"
+            aria-label="ড্যাশবোর্ডে ফিরে যান"
+            className="w-8 h-8 -ml-1 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-colors shrink-0"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+          <h1 className="font-inter font-bold text-xl text-white font-hind">
+            ক্লাস ও ম্যাটেরিয়ালস
+          </h1>
         </div>
-      ) : videos.length === 0 && documents.length === 0 ? (
-        <div className="card p-8 text-center text-slate-500 text-sm">
-          এখনো কোনো ক্লাস বা ম্যাটেরিয়াল শেয়ার করা হয়নি।
-        </div>
-      ) : (
-        <>
-          {/* ── Live classes — YouTube-style thumbnail grid ── */}
-          {videos.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <Youtube size={16} className="text-rose-400" /> লাইভ ক্লাস ({videos.length})
-              </h2>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {videos.map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setPlaying(v)}
-                    className="text-left group"
-                  >
-                    <div className="relative rounded-xl overflow-hidden bg-navy-800 aspect-video">
-                      {v.youtube_id ? (
-                        <img
-                          src={`https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`}
-                          alt=""
-                          loading="lazy"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+        {loading ? (
+          <div className="py-16 flex justify-center">
+            <Loader2 className="animate-spin text-slate-400" size={28} />
+          </div>
+        ) : videos.length === 0 && documents.length === 0 ? (
+          <div className="card p-8 text-center text-slate-500 text-sm">
+            এখনো কোনো ক্লাস বা ম্যাটেরিয়াল শেয়ার করা হয়নি।
+          </div>
+        ) : (
+          <>
+            {/* ── Live classes — YouTube-style thumbnail grid ── */}
+            {videos.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <Youtube size={16} className="text-rose-400" /> লাইভ ক্লাস ({videos.length})
+                </h2>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {videos.map((v) => (
+                    <button key={v.id} onClick={() => setPlaying(v)} className="text-left group">
+                      <div className="relative rounded-xl overflow-hidden bg-navy-800 aspect-video">
+                        {v.youtube_id ? (
+                          <img
+                            src={`https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`}
+                            alt=""
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <PlayCircle size={36} className="text-slate-500" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                        <PlayCircle
+                          size={34}
+                          className="absolute inset-0 m-auto text-white/90 drop-shadow group-hover:scale-110 transition-transform"
                         />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <PlayCircle size={36} className="text-slate-500" />
+                      </div>
+                      <div className="mt-1.5 min-w-0">
+                        <div className="text-[13px] font-medium text-white leading-snug line-clamp-2">
+                          {v.title}
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                      <PlayCircle
-                        size={34}
-                        className="absolute inset-0 m-auto text-white/90 drop-shadow group-hover:scale-110 transition-transform"
-                      />
-                    </div>
-                    <div className="mt-1.5 min-w-0">
-                      <div className="text-[13px] font-medium text-white leading-snug line-clamp-2">
-                        {v.title}
+                        {v.caption && (
+                          <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                            {v.caption}
+                          </div>
+                        )}
                       </div>
-                      {v.caption && (
-                        <div className="text-[11px] text-slate-500 truncate mt-0.5">{v.caption}</div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
-          {/* ── Documents ── */}
-          {documents.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <FileText size={16} className="text-emerald-400" /> ম্যাটেরিয়ালস ({documents.length})
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {documents.map((d) => (
-                  <a
-                    key={d.id}
-                    href={d.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="card p-4 flex items-center gap-3 hover:border-sky-500/40 transition-colors"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <FileText size={18} className="text-emerald-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-white truncate">{d.title}</div>
-                      <div className="text-xs text-slate-500 truncate">
-                        {d.caption || d.batch_name || 'সব শিক্ষার্থী'}
+            {/* ── Documents ── */}
+            {documents.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <FileText size={16} className="text-emerald-400" /> ম্যাটেরিয়ালস (
+                  {documents.length})
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {documents.map((d) => (
+                    <a
+                      key={d.id}
+                      href={d.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="card p-4 flex items-center gap-3 hover:border-sky-500/40 transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <FileText size={18} className="text-emerald-400" />
                       </div>
-                    </div>
-                    <ExternalLink size={14} className="text-slate-500 shrink-0" />
-                  </a>
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-white truncate">{d.title}</div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {d.caption || d.batch_name || 'সব শিক্ষার্থী'}
+                        </div>
+                      </div>
+                      <ExternalLink size={14} className="text-slate-500 shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+      </motion.div>
 
       {/* ── Fullscreen player overlay (takes the whole window) ── */}
       {playing && (
@@ -185,6 +199,6 @@ export default function PortalClassesPage() {
           </div>
         </div>
       )}
-    </motion.div>
+    </PortalLayout>
   );
 }

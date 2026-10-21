@@ -286,6 +286,11 @@ grant execute on function public.admin_approve_payment_request(uuid) to authenti
 -- (Student client still tracks read state locally; the count returned
 --  here reflects rows the student has never expanded, per-device —
 --  simplest correct-enough contract that matches the existing UI.)
+
+-- The RPC below selects n.updated_at; without this column every student
+-- notice call failed with "column n.updated_at does not exist".
+alter table public.notices add column if not exists updated_at timestamptz default now();
+
 create or replace function public.portal_get_notices_v2(p_token text, p_type text default null)
 returns table (
   id           uuid,
