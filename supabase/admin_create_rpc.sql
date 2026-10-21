@@ -33,6 +33,7 @@ declare
   v_uid   uuid;
   v_email text := lower(trim(p_email));
   v_name  text := nullif(trim(p_name), '');
+  v_col   text;
 begin
   if not coalesce(public.is_admin(), false) then
     raise exception 'not-authorized' using errcode = '42501';
@@ -82,6 +83,25 @@ begin
   insert into public.admin_users (user_id, email)
   values (v_uid, v_email)
   on conflict do nothing;
+
+  -- GoTrue scans auth.users into a fixed Go struct: token columns must be ''
+  -- and metadata must be a json object. A NULL in any of them makes EVERY
+  -- auth query fail with "Database error querying schema", not just this user.
+  -- Only columns that actually exist in this project are touched.
+  for v_col in
+    select column_name
+      from information_schema.columns
+     where table_schema = 'auth'
+       and table_name   = 'users'
+       and column_name  = any (array[
+             'confirmation_token', 'recovery_token', 'email_change',
+             'email_change_token_new', 'email_change_token_current',
+             'phone_change', 'phone_change_token', 'reauthentication_token'])
+  loop
+    execute format('update auth.users set %I = %L where id = $1 and %I is null',
+                   v_col, '', v_col)
+       using v_uid;
+  end loop;
 
   return v_email;
 end;
