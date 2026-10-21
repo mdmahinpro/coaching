@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { handleSupabaseError } from '@/utils/errorHandler';
 import { cn, formatDate, sanitize } from '@/lib/utils';
+import { parseBulkQuestions } from '@/lib/bulkQuestions';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   Plus,
@@ -399,31 +400,10 @@ function BulkImportModal({
   const [preview, setPreview] = useState<Question[]>([]);
 
   const parse = () => {
-    const blocks = text
-      .split(/\n---\n|\n---$/)
-      .map((b) => b.trim())
-      .filter(Boolean);
-    const out: Question[] = [];
-    for (const block of blocks) {
-      const get = (prefix: string) => {
-        const m = block.match(new RegExp(`^${prefix}:\\s*(.+)$`, 'm'));
-        return m?.[1]?.trim() ?? '';
-      };
-      const q: Question = {
-        id: mkId(),
-        question_text: get('Q'),
-        option_a: get('A'),
-        option_b: get('B'),
-        option_c: get('C'),
-        option_d: get('D'),
-        correct_option: (get('ANS').toUpperCase() as 'A' | 'B' | 'C' | 'D') || 'A',
-        marks: Number(get('MARKS')) || 1,
-      };
-      if (q.question_text) {
-        out.push(q);
-      }
-    }
-    setPreview(out);
+    // Splits on blank lines, `---` lines, or the next `Q:` line, so pasted
+    // questions separated by a two-line gap all import (previously only the
+    // first one survived because the parser required an explicit `---`).
+    setPreview(parseBulkQuestions(text).map((q) => ({ ...q, id: mkId() })));
   };
 
   return (
@@ -456,10 +436,10 @@ function BulkImportModal({
           D: অপশন ডি
           <br />
           ANS: B<br />
-          MARKS: 1<br />
-          ---
+          MARKS: 1
           <br />
-          (next question)
+          <br />
+          (blank line or --- between questions)
         </div>
         <textarea
           value={text}
